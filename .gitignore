@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project data (input and output files)
+# Ignore everything in the data folder...
+data/*
+
+# ...except README.md so the folder is tracked
+!data/README.md
