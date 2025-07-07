@@ -1,9 +1,14 @@
 from pathlib import Path
+import xml.etree.ElementTree as ET
+import re
+from encoding_utils import load_or_create_encodings
 
 def check_required_files() -> bool:
     """
-    Verifies that the required XML files are present in the /data folder.
-    Returns True if all files are found, otherwise prints instructions and returns False.
+    Check for the presence of required XML files in the 'data' folder.
+
+    Returns:
+        bool: True if both mame.xml and history.xml are found, False otherwise.
     """
     data_dir = Path("data")
     mame_file = data_dir / "mame.xml"
@@ -40,14 +45,97 @@ def check_required_files() -> bool:
 
     return True
 
+def get_xml_version(file_path: Path, root_tag: str) -> str:
+    """
+    Extract version or build info from the root tag of the XML file.
+
+    Parameters:
+        file_path (Path): Path to the XML file.
+        root_tag (str): Expected name of the root element.
+
+    Returns:
+        str: Version or build value, or 'Unknown' if not found.
+    """
+    try:
+        for event, elem in ET.iterparse(file_path, events=('start',)):
+            if elem.tag == root_tag:
+                return elem.attrib.get("build") or elem.attrib.get("version", "Unknown")
+    except ET.ParseError:
+        return "Parse Error"
+    return "Unknown"
+
+def normalise_version(version_str: str) -> str:
+    """
+    Normalises version strings to match MAME's format (e.g. '0.278').
+
+    - If version starts with '0.', remove any trailing bracketed info.
+    - If version is like '2.78', convert to float and divide by 10.
+    - If parsing fails, return 'Unknown'.
+
+    Parameters:
+        version_str (str): Raw version string from XML attribute.
+
+    Returns:
+        str: Normalised version string in the format '0.XXX'.
+    """
+    version_str = version_str.strip()
+    version_str = re.sub(r"\s*\(.*?\)", "", version_str)
+
+    if version_str.startswith("0."):
+        return version_str
+
+    try:
+        version_float = float(version_str)
+        normalised = version_float / 10
+        return f"{normalised:.3f}"
+    except ValueError:
+        return "Unknown"
+
 def main():
+    """
+    Entry point for the TM470 XML parsing pipeline.
+
+    Checks file presence, loads cached or detected encodings, and reports
+    version metadata for both MAME and Gaming-History XML files.
+    """
     print("Starting TM470 XML parsing pipeline...\n")
 
     if not check_required_files():
         print("Aborting. Required files missing.")
         return
 
-    print("All required files found. Ready to begin parsing.")
+    # Define file paths
+    mame_file = Path("data/mame.xml")
+    history_file = Path("data/history.xml")
+    xml_files = [mame_file, history_file]
+
+    # Load or detect encodings (with file-level output from encoding_utils)
+    encodings = load_or_create_encodings(xml_files)
+
+    mame_encoding = encodings.get("mame.xml", "Unknown")
+    history_encoding = encodings.get("history.xml", "Unknown")
+
+    print(f"\nMAME XML encoding:     {mame_encoding}")
+    print(f"History XML encoding:  {history_encoding}")
+
+    # Extract raw versions
+    mame_version_raw = get_xml_version(mame_file, "mame")
+    history_version_raw = get_xml_version(history_file, "history")
+
+    print(f"MAME XML version:      {mame_version_raw}")
+    print(f"History XML version:   {history_version_raw}")
+
+    # Normalise for comparison
+    mame_version = normalise_version(mame_version_raw)
+    history_version = normalise_version(history_version_raw)
+
+    print(f"Normalised MAME version:    {mame_version}")
+    print(f"Normalised History version: {history_version}")
+
+    if mame_version != history_version:
+        print("\nWARNING: MAME and History XML versions do not match. This may cause misalignment.")
+
+    print("\nAll checks passed. Ready to begin parsing.")
     # Future calls to:
     # parse_mame_xml()
     # parse_history_xml()
