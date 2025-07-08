@@ -2,6 +2,9 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import re
 from encoding_utils import load_or_create_encodings
+from logger import setup_logger
+
+log = setup_logger()
 
 def check_required_files() -> bool:
     """
@@ -18,28 +21,31 @@ def check_required_files() -> bool:
 
     if not mame_file.is_file():
         missing.append("mame.xml")
+    else:
+        log.info("Found file: data/mame.xml")
 
     if not history_file.is_file():
         missing.append("history.xml")
+    else:
+        log.info("Found file: data/history.xml")
 
     if missing:
-        print("\nMissing required files in /data:")
+        log.error("Missing required files in /data:")
         for fname in missing:
-            print(f" - {fname}")
+            log.error(f" - {fname}")
 
-        print("\nInstructions:")
-
+        log.info("Instructions:")
         if "mame.xml" in missing:
-            print("• Download the MAME XML from https://www.mamedev.org/release.php")
-            print("• Extract the file from the mameXXXXlx.zip archive")
-            print("• Rename the extracted file to 'mame.xml'")
-            print("• Move it to the 'data' folder")
+            log.info("• Download the MAME XML from https://www.mamedev.org/release.php")
+            log.info("• Extract the file from the mameXXXXlx.zip archive")
+            log.info("• Rename the extracted file to 'mame.xml'")
+            log.info("• Move it to the 'data' folder")
 
         if "history.xml" in missing:
-            print("• Download the Gaming-History XML from:")
-            print("  https://www.arcade-history.com/index.php?page=download")
-            print("• Extract 'history.xml' from inside the 'history' folder of the ZIP")
-            print("• Move it to the 'data' folder")
+            log.info("• Download the Gaming-History XML from:")
+            log.info("  https://www.arcade-history.com/index.php?page=download")
+            log.info("• Extract 'history.xml' from inside the 'history' folder of the ZIP")
+            log.info("• Move it to the 'data' folder")
 
         return False
 
@@ -98,10 +104,10 @@ def main():
     Checks file presence, loads cached or detected encodings, and reports
     version metadata for both MAME and Gaming-History XML files.
     """
-    print("Starting TM470 XML parsing pipeline...\n")
+    log.info("Starting TM470 XML parsing pipeline...")
 
     if not check_required_files():
-        print("Aborting. Required files missing.")
+        log.error("Aborting. Required files missing.")
         return
 
     # Define file paths
@@ -115,27 +121,27 @@ def main():
     mame_encoding = encodings.get("mame.xml", "Unknown")
     history_encoding = encodings.get("history.xml", "Unknown")
 
-    print(f"\nMAME XML encoding:     {mame_encoding}")
-    print(f"History XML encoding:  {history_encoding}")
+    log.info(f"MAME XML encoding:     {mame_encoding}")
+    log.info(f"History XML encoding:  {history_encoding}")
 
     # Extract raw versions
     mame_version_raw = get_xml_version(mame_file, "mame")
     history_version_raw = get_xml_version(history_file, "history")
 
-    print(f"MAME XML version:      {mame_version_raw}")
-    print(f"History XML version:   {history_version_raw}")
+    log.info(f"MAME XML version:      {mame_version_raw}")
+    log.info(f"History XML version:   {history_version_raw}")
 
     # Normalise for comparison
     mame_version = normalise_version(mame_version_raw)
     history_version = normalise_version(history_version_raw)
 
-    print(f"Normalised MAME version:    {mame_version}")
-    print(f"Normalised History version: {history_version}")
+    log.info(f"Normalised MAME version:    {mame_version}")
+    log.info(f"Normalised History version: {history_version}")
 
     if mame_version != history_version:
-        print("\nWARNING: MAME and History XML versions do not match. This may cause misalignment.")
+        log.warning("Version mismatch detected – MAME and Gaming-History XML versions do not match.")
 
-    print("\nAll checks passed. Ready to begin parsing.")
+    log.info("All checks passed. Ready to begin parsing.")
     # Future calls to:
     # parse_mame_xml()
     # parse_history_xml()

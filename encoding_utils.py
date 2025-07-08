@@ -1,6 +1,9 @@
 from pathlib import Path
 import chardet
 import json
+from logger import setup_logger
+
+log = setup_logger()
 
 ENCODING_FILE = Path("data/encodings.json")
 
@@ -34,19 +37,19 @@ def load_or_create_encodings(xml_files: list[Path]) -> dict:
         try:
             with open(ENCODING_FILE, 'r', encoding='utf-8') as f:
                 encodings = json.load(f)
-                print("Using cached encodings from encodings.json")
+                log.info("Using cached encodings from encodings.json")
                 return encodings
         except (json.JSONDecodeError, IOError):
-            print("Warning: Failed to read encodings.json. Regenerating.")
+            log.warning("Failed to read encodings.json. Regenerating.")
 
     encodings = {}
     for xml_file in xml_files:
-        print(f"Detecting encoding for {xml_file.name}...")
+        log.info(f"Detecting encoding for {xml_file.name}...")
         encoding = detect_encoding_chardet(xml_file)
         encodings[xml_file.name] = encoding
 
     with open(ENCODING_FILE, 'w', encoding='utf-8') as f:
         json.dump(encodings, f, indent=2)
 
-    print("Encodings detected and saved to encodings.json")
+    log.info("Encodings detected and saved to encodings.json")
     return encodings

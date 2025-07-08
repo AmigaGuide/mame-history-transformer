@@ -209,6 +209,8 @@ __marimo__/
 # Project data (input and output files)
 # Ignore everything in the data folder...
 data/*
-
 # ...except README.md so the folder is tracked
 !data/README.md
+
+# Project logs folder
+logs/
