@@ -1,10 +1,13 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import re
+
 from encoding_utils import load_or_create_encodings
+from mame_parser import parse_mame_xml
 from logger import setup_logger
 
 log = setup_logger()
+
 
 def check_required_files() -> bool:
     """
@@ -51,6 +54,7 @@ def check_required_files() -> bool:
 
     return True
 
+
 def get_xml_version(file_path: Path, root_tag: str) -> str:
     """
     Extract version or build info from the root tag of the XML file.
@@ -69,6 +73,7 @@ def get_xml_version(file_path: Path, root_tag: str) -> str:
     except ET.ParseError:
         return "Parse Error"
     return "Unknown"
+
 
 def normalise_version(version_str: str) -> str:
     """
@@ -97,6 +102,7 @@ def normalise_version(version_str: str) -> str:
     except ValueError:
         return "Unknown"
 
+
 def main():
     """
     Entry point for the TM470 XML parsing pipeline.
@@ -115,16 +121,15 @@ def main():
     history_file = Path("data/history.xml")
     xml_files = [mame_file, history_file]
 
-    # Load or detect encodings (with file-level output from encoding_utils)
+    # Load or detect encodings
     encodings = load_or_create_encodings(xml_files)
-
     mame_encoding = encodings.get("mame.xml", "Unknown")
     history_encoding = encodings.get("history.xml", "Unknown")
 
     log.info(f"MAME XML encoding:     {mame_encoding}")
     log.info(f"History XML encoding:  {history_encoding}")
 
-    # Extract raw versions
+    # Extract raw version info
     mame_version_raw = get_xml_version(mame_file, "mame")
     history_version_raw = get_xml_version(history_file, "history")
 
@@ -142,11 +147,22 @@ def main():
         log.warning("Version mismatch detected – MAME and Gaming-History XML versions do not match.")
 
     log.info("All checks passed. Ready to begin parsing.")
-    # Future calls to:
-    # parse_mame_xml()
+
+    # Parse MAME XML (limited to 1000 records during development)
+    #machines = parse_mame_xml(mame_file, max_records=1000)
+    machines = parse_mame_xml(mame_file, max_records=0)  # 0 = no limit
+
+
+    if machines:
+        log.info(f"First parsed machine: {machines[0]}")
+    else:
+        log.warning("No machines were parsed from mame.xml.")
+
+    # Future calls:
     # parse_history_xml()
     # transform_data()
     # write_output()
+
 
 if __name__ == "__main__":
     main()
