@@ -11,44 +11,48 @@ log = setup_logger()
 
 def check_required_files() -> bool:
     """
-    Check for the presence of required XML files in the 'data' folder.
+    Check for the presence of required XML and INI files in the 'data' folder.
 
     Returns:
-        bool: True if both mame.xml and history.xml are found, False otherwise.
+        bool: True if all required files are found, False otherwise.
     """
     data_dir = Path("data")
-    mame_file = data_dir / "mame.xml"
-    history_file = data_dir / "history.xml"
+    required_files = {
+        "mame.xml": "MAME XML dataset",
+        "history.xml": "Gaming-History XML dataset",
+        "[GAMING HISTORY] Game Or No Game.ini": "Gaming-History classification: Game Or No Game",
+        "[GAMING HISTORY] Machine Category.ini": "Gaming-History classification: Machine Category",
+        "[GAMING HISTORY] Machine Type.ini": "Gaming-History classification: Machine Type",
+    }
 
     missing = []
 
-    if not mame_file.is_file():
-        missing.append("mame.xml")
-    else:
-        log.info("Found file: data/mame.xml")
-
-    if not history_file.is_file():
-        missing.append("history.xml")
-    else:
-        log.info("Found file: data/history.xml")
+    for fname, description in required_files.items():
+        file_path = data_dir / fname
+        if not file_path.is_file():
+            missing.append((fname, description))
+        else:
+            log.info(f"Found file: data/{fname}")
 
     if missing:
         log.error("Missing required files in /data:")
-        for fname in missing:
-            log.error(f" - {fname}")
+        for fname, desc in missing:
+            log.error(f" - {fname} ({desc})")
 
         log.info("Instructions:")
-        if "mame.xml" in missing:
-            log.info("• Download the MAME XML from https://www.mamedev.org/release.php")
-            log.info("• Extract the file from the mameXXXXlx.zip archive")
-            log.info("• Rename the extracted file to 'mame.xml'")
-            log.info("• Move it to the 'data' folder")
-
-        if "history.xml" in missing:
-            log.info("• Download the Gaming-History XML from:")
-            log.info("  https://www.arcade-history.com/index.php?page=download")
-            log.info("• Extract 'history.xml' from inside the 'history' folder of the ZIP")
-            log.info("• Move it to the 'data' folder")
+        for fname, desc in missing:
+            if fname == "mame.xml":
+                log.info("• Download the MAME XML from https://www.mamedev.org/release.php")
+                log.info("• Extract the file from the mameXXXXlx.zip archive")
+                log.info("• Rename it to 'mame.xml' and move it to the 'data' folder")
+            elif fname == "history.xml":
+                log.info("• Download the Gaming-History ZIP archive from:")
+                log.info("  https://www.arcade-history.com/index.php?page=download")
+                log.info("• Extract 'history.xml' from the 'history' subfolder inside the ZIP")
+                log.info("• Move it to the 'data' folder")
+            elif fname.startswith("[GAMING HISTORY]"):
+                log.info(f"• Extract '{fname}' from the 'folders' subfolder inside the Gaming-History ZIP")
+                log.info("• Move it to the 'data' folder, alongside history.xml")
 
         return False
 
@@ -79,10 +83,6 @@ def normalise_version(version_str: str) -> str:
     """
     Normalises version strings to match MAME's format (e.g. '0.278').
 
-    - If version starts with '0.', remove any trailing bracketed info.
-    - If version is like '2.78', convert to float and divide by 10.
-    - If parsing fails, return 'Unknown'.
-
     Parameters:
         version_str (str): Raw version string from XML attribute.
 
@@ -106,9 +106,6 @@ def normalise_version(version_str: str) -> str:
 def main():
     """
     Entry point for the TM470 XML parsing pipeline.
-
-    Checks file presence, loads cached or detected encodings, and reports
-    version metadata for both MAME and Gaming-History XML files.
     """
     log.info("Starting TM470 XML parsing pipeline...")
 
@@ -119,24 +116,38 @@ def main():
     # Define file paths
     mame_file = Path("data/mame.xml")
     history_file = Path("data/history.xml")
-    xml_files = [mame_file, history_file]
+    ini_game = Path("data/[GAMING HISTORY] Game Or No Game.ini")
+    ini_category = Path("data/[GAMING HISTORY] Machine Category.ini")
+    ini_type = Path("data/[GAMING HISTORY] Machine Type.ini")
 
-    # Load or detect encodings
-    encodings = load_or_create_encodings(xml_files)
-    mame_encoding = encodings.get("mame.xml", "Unknown")
-    history_encoding = encodings.get("history.xml", "Unknown")
+    all_files = [mame_file, history_file, ini_game, ini_category, ini_type]
 
-    log.info(f"MAME XML encoding:     {mame_encoding}")
-    log.info(f"History XML encoding:  {history_encoding}")
+    # Detect encodings
+    encodings = load_or_create_encodings(all_files)
 
-    # Extract raw version info
+    log.info(f"MAME XML encoding:                 {encodings.get('mame.xml', 'Unknown')}")
+    log.info(f"History XML encoding:              {encodings.get('history.xml', 'Unknown')}")
+    log.info(f"INI: Game Or No Game encoding:     {encodings.get('[GAMING HISTORY] Game Or No Game.ini', 'Unknown')}")
+    log.info(f"INI: Machine Category encoding:    {encodings.get('[GAMING HISTORY] Machine Category.ini', 'Unknown')}")
+    log.info(f"INI: Machine Type encoding:        {encodings.get('[GAMING HISTORY] Machine Type.ini', 'Unknown')}")
+
+    # Fail if any .ini encoding is unknown
+    for fname in [
+        "[GAMING HISTORY] Game Or No Game.ini",
+        "[GAMING HISTORY] Machine Category.ini",
+        "[GAMING HISTORY] Machine Type.ini"
+    ]:
+        if encodings.get(fname) == "Unknown":
+            log.error(f"Encoding detection failed for {fname}. Please ensure the file is valid.")
+            return
+
+    # Extract version metadata from both XML files
     mame_version_raw = get_xml_version(mame_file, "mame")
     history_version_raw = get_xml_version(history_file, "history")
 
     log.info(f"MAME XML version:      {mame_version_raw}")
     log.info(f"History XML version:   {history_version_raw}")
 
-    # Normalise for comparison
     mame_version = normalise_version(mame_version_raw)
     history_version = normalise_version(history_version_raw)
 
@@ -148,20 +159,12 @@ def main():
 
     log.info("All checks passed. Ready to begin parsing.")
 
-    # Parse MAME XML (limited to 1000 records during development)
-    #machines = parse_mame_xml(mame_file, max_records=1000)
-    machines = parse_mame_xml(mame_file, max_records=0)  # 0 = no limit
+    # Parse MAME XML (0 = no record limit)
+    machines = parse_mame_xml(mame_file, max_records=0)
 
-
-    if machines:
-        log.info(f"First parsed machine: {machines[0]}")
-    else:
-        log.warning("No machines were parsed from mame.xml.")
-
-    # Future calls:
-    # parse_history_xml()
-    # transform_data()
-    # write_output()
+    # Future: parse_history_xml()
+    # Future: transform_data()
+    # Future: write_output()
 
 
 if __name__ == "__main__":

@@ -59,10 +59,4 @@ def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
     # Post-parsing clone reporting
     log.info(f"{len(clones_dict)} machines have at least one clone.")
 
-    if "puckman" in clones_dict:
-        puckman_clones = clones_dict["puckman"]
-        log.info(f"Clones of 'puckman' ({len(puckman_clones)} total): {puckman_clones}")
-    else:
-        log.info("No clones found for 'puckman'.")
-
     return machines
