@@ -1,6 +1,7 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import re
+import json
 
 from encoding_utils import load_or_create_encodings
 from mame_parser import parse_mame_xml
@@ -11,10 +12,10 @@ log = setup_logger()
 
 def check_required_files() -> bool:
     """
-    Check for the presence of required XML and INI files in the 'data' folder.
+    Verifies the presence of all required XML and INI files in the 'data' directory.
 
     Returns:
-        bool: True if all required files are found, False otherwise.
+        bool: True if all required files are present, False otherwise.
     """
     data_dir = Path("data")
     required_files = {
@@ -61,14 +62,14 @@ def check_required_files() -> bool:
 
 def get_xml_version(file_path: Path, root_tag: str) -> str:
     """
-    Extract version or build info from the root tag of the XML file.
+    Extracts the version or build string from the root element of an XML file.
 
-    Parameters:
+    Args:
         file_path (Path): Path to the XML file.
-        root_tag (str): Expected name of the root element.
+        root_tag (str): Expected name of the root element (e.g. "mame", "history").
 
     Returns:
-        str: Version or build value, or 'Unknown' if not found.
+        str: The version/build string, or 'Unknown' if not found.
     """
     try:
         for event, elem in ET.iterparse(file_path, events=('start',)):
@@ -79,15 +80,47 @@ def get_xml_version(file_path: Path, root_tag: str) -> str:
     return "Unknown"
 
 
-def normalise_version(version_str: str) -> str:
+def get_ini_version(file_path: Path) -> str:
     """
-    Normalises version strings to match MAME's format (e.g. '0.278').
+    Extracts the MAME version string from the comment header of a .ini file.
 
-    Parameters:
-        version_str (str): Raw version string from XML attribute.
+    Assumes the version is mentioned on a line starting with ';;' and
+    containing a pattern like 'MAME 0.278' within the first 20 lines.
+
+    Args:
+        file_path (Path): Path to the .ini file.
 
     Returns:
-        str: Normalised version string in the format '0.XXX'.
+        str: Detected version string (e.g. '0.278'), or 'Unknown' if not found.
+    """
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i > 20:
+                    break
+                if line.strip().startswith(";;") and "MAME" in line:
+                    match = re.search(r"MAME\s+([0-9.]+)", line)
+                    if match:
+                        return match.group(1)
+    except Exception as e:
+        log.warning(f"Failed to extract version from {file_path.name}: {e}")
+    return "Unknown"
+
+
+def normalise_version(version_str: str) -> str:
+    """
+    Converts various version string formats into a standardised MAME-style format (e.g. '0.278').
+
+    Handles strings like:
+    - '0.278'
+    - '2.78' -> becomes '0.278'
+    - '0.278 (mame0278)' -> becomes '0.278'
+
+    Args:
+        version_str (str): Raw version string extracted from file metadata.
+
+    Returns:
+        str: Normalised version string, or 'Unknown' if it cannot be parsed.
     """
     version_str = version_str.strip()
     version_str = re.sub(r"\s*\(.*?\)", "", version_str)
@@ -106,6 +139,9 @@ def normalise_version(version_str: str) -> str:
 def main():
     """
     Entry point for the TM470 XML parsing pipeline.
+
+    This function checks for the required XML and INI files, validates encodings,
+    extracts version information, checks for consistency, and initiates parsing of mame.xml.
     """
     log.info("Starting TM470 XML parsing pipeline...")
 
@@ -131,7 +167,6 @@ def main():
     log.info(f"INI: Machine Category encoding:    {encodings.get('[GAMING HISTORY] Machine Category.ini', 'Unknown')}")
     log.info(f"INI: Machine Type encoding:        {encodings.get('[GAMING HISTORY] Machine Type.ini', 'Unknown')}")
 
-    # Fail if any .ini encoding is unknown
     for fname in [
         "[GAMING HISTORY] Game Or No Game.ini",
         "[GAMING HISTORY] Machine Category.ini",
@@ -141,21 +176,42 @@ def main():
             log.error(f"Encoding detection failed for {fname}. Please ensure the file is valid.")
             return
 
-    # Extract version metadata from both XML files
+    # Extract version info
     mame_version_raw = get_xml_version(mame_file, "mame")
     history_version_raw = get_xml_version(history_file, "history")
-
-    log.info(f"MAME XML version:      {mame_version_raw}")
-    log.info(f"History XML version:   {history_version_raw}")
-
     mame_version = normalise_version(mame_version_raw)
     history_version = normalise_version(history_version_raw)
 
+    ini_versions = {
+        "Game Or No Game": get_ini_version(ini_game),
+        "Machine Category": get_ini_version(ini_category),
+        "Machine Type": get_ini_version(ini_type),
+    }
+
+    log.info(f"MAME XML version:      {mame_version_raw}")
+    log.info(f"History XML version:   {history_version_raw}")
     log.info(f"Normalised MAME version:    {mame_version}")
     log.info(f"Normalised History version: {history_version}")
 
-    if mame_version != history_version:
-        log.warning("Version mismatch detected – MAME and Gaming-History XML versions do not match.")
+    for label, version in ini_versions.items():
+        log.info(f"{label} INI version: {version}")
+
+    # Version consistency checks
+    if history_version == mame_version:
+        log.info("History XML version matches MAME XML version.")
+    else:
+        log.warning(f"History XML version ({history_version}) does not match MAME XML version ({mame_version}).")
+        log.warning("This may lead to partial metadata alignment or missing entries during merging.")
+
+    ini_mismatches = {label: v for label, v in ini_versions.items() if normalise_version(v) != mame_version}
+
+    if ini_mismatches:
+        log.warning("One or more INI classification files do not match the MAME XML version:")
+        for label, v in ini_mismatches.items():
+            log.warning(f" - {label} INI version: {v} (expected: {mame_version})")
+        log.warning("This may result in missing or misclassified machines during filtering.")
+    else:
+        log.info("All INI classification file versions match the MAME XML version.")
 
     log.info("All checks passed. Ready to begin parsing.")
 
