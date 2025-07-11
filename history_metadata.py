@@ -1,43 +1,44 @@
 from pathlib import Path
+from collections import defaultdict
 import json
 
-# Paths
-ini_dir = Path("data")
-encodings_path = ini_dir / "encodings.json"
+from logger import setup_logger
+from encoding_utils import load_or_create_encodings
 
-# INI files to process
-ini_files = {
-    "game_status": "[GAMING HISTORY] Game Or No Game.ini",
-    "category": "[GAMING HISTORY] Machine Category.ini",
-    "type": "[GAMING HISTORY] Machine Type.ini"
+log = setup_logger()
+
+# Paths to .ini files
+DATA_DIR = Path("data")
+INI_FILES = {
+    "game_status": DATA_DIR / "[GAMING HISTORY] Game Or No Game.ini",
+    "category": DATA_DIR / "[GAMING HISTORY] Machine Category.ini",
+    "type": DATA_DIR / "[GAMING HISTORY] Machine Type.ini"
 }
 
-_ini_data_cache = None
+_ini_data_cache = {
+    "game_status": {},
+    "category": {},
+    "type": {}
+}
+
+_ini_parsed = False
 
 
-def _load_encoding(file_name: str) -> str:
+def _parse_ini_file(path: Path, encoding: str) -> dict[str, str]:
     """
-    Loads the encoding for a given file from encodings.json.
-    Falls back to 'utf-8' if not found (though this should not occur if main.py ran).
-    """
-    try:
-        with open(encodings_path, encoding="utf-8") as f:
-            encodings = json.load(f)
-        return encodings.get(file_name, "utf-8")
-    except (FileNotFoundError, json.JSONDecodeError):
-        return "utf-8"
+    Parses an INI-style file where each [section] is followed by machine names.
 
+    Args:
+        path (Path): Path to the .ini file.
+        encoding (str): File encoding.
 
-def _load_custom_ini_file(filepath: Path, label: str) -> dict:
+    Returns:
+        dict: Mapping of machine_name -> section label.
     """
-    Parses a Gaming-History .ini file using its detected encoding.
-    Skips comments and [FOLDER_SETTINGS].
-    """
-    data = {}
     current_section = None
-    encoding = _load_encoding(filepath.name)
+    mapping = {}
 
-    with open(filepath, encoding=encoding) as f:
+    with open(path, encoding=encoding) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith(";;"):
@@ -45,36 +46,114 @@ def _load_custom_ini_file(filepath: Path, label: str) -> dict:
             if line.startswith("[") and line.endswith("]"):
                 current_section = line[1:-1]
                 continue
-            if current_section == "FOLDER_SETTINGS":
-                continue
-            machine_name = line
-            if machine_name:
-                data.setdefault(machine_name, {})[label] = current_section
-    return data
+            if current_section and current_section != "FOLDER_SETTINGS":
+                mapping[line] = current_section
+
+    return mapping
 
 
-def _load_all_ini_data() -> dict:
+def _load_ini_classifications():
     """
-    Loads and merges all .ini metadata into a single dictionary keyed by machine name.
+    Loads all classification .ini files into internal cache.
+    Automatically detects encoding using the existing encodings.json logic.
     """
-    combined = {}
-    for label, filename in ini_files.items():
-        path = ini_dir / filename
-        parsed = _load_custom_ini_file(path, label)
-        for machine, values in parsed.items():
-            combined.setdefault(machine, {}).update(values)
-    return combined
+    global _ini_parsed
+    if _ini_parsed:
+        return
+
+    encoding_paths = list(INI_FILES.values())
+    encodings = load_or_create_encodings(encoding_paths)
+
+    for key, path in INI_FILES.items():
+        encoding = encodings.get(path.name, "utf-8")
+        _ini_data_cache[key] = _parse_ini_file(path, encoding)
+
+    _ini_parsed = True
 
 
-def classify_machine(machine_name: str) -> dict:
+def classify_machine(machine_name: str) -> dict[str, str]:
     """
-    Returns classification metadata for a given MAME machine name.
+    Returns classification details for a MAME machine from the .ini metadata.
+
+    Args:
+        machine_name (str): MAME machine name.
 
     Returns:
-        dict: e.g. { 'game_status': 'Game', 'category': 'Arcade', 'type': 'Arcade Video game' }
-              or empty {} if not found.
+        dict: {
+            "game_status": "Game" | "No Game" | "<not available>",
+            "category":    section label or "<not available>",
+            "type":        section label or "<not available>"
+        }
     """
-    global _ini_data_cache
-    if _ini_data_cache is None:
-        _ini_data_cache = _load_all_ini_data()
-    return _ini_data_cache.get(machine_name, {})
+    _load_ini_classifications()
+
+    result = {}
+    for key in ["game_status", "category", "type"]:
+        value = _ini_data_cache[key].get(machine_name, "<not available>")
+        result[key] = value
+
+    return result
+
+
+def is_valid_arcade_game(machine_name: str) -> bool:
+    """
+    Returns True if the machine is considered a valid arcade game,
+    based on 'Game Or No Game' and 'Machine Category' .ini files.
+
+    Args:
+        machine_name (str): MAME machine name.
+
+    Returns:
+        bool: True if it passes both classification checks.
+    """
+    _load_ini_classifications()
+
+    game_status = _ini_data_cache["game_status"].get(machine_name, "<not available>")
+    category = _ini_data_cache["category"].get(machine_name, "<not available>")
+
+    return game_status == "Game" and category in {"Arcade", "Coin-Op (Games)"}
+
+
+def summarise_ini_classifications() -> dict[str, dict[str, int]]:
+    """
+    Produces a count of how many machines fall under each section for each .ini file.
+
+    Returns:
+        dict: Summary dictionary by ini type, e.g.
+              { "game_status": {"Game": 10000, "No Game": 3000}, ... }
+    """
+    _load_ini_classifications()
+
+    summary = {}
+    for key in ["game_status", "category", "type"]:
+        counts = defaultdict(int)
+        for section in _ini_data_cache[key].values():
+            counts[section] += 1
+        summary[key] = dict(counts)
+
+    return summary
+
+
+def get_excluded_machine_preview(limit: int = 10) -> list[tuple[str, str, str]]:
+    """
+    Returns the first N machine names that would be excluded based on game status and category rules.
+
+    Args:
+        limit (int): Number of machines to return.
+
+    Returns:
+        list of tuples: [(machine_name, game_status, category), ...]
+    """
+    _load_ini_classifications()
+
+    excluded = []
+    all_machines = set().union(*[_ini_data_cache[k].keys() for k in _ini_data_cache])
+
+    for machine in sorted(all_machines):
+        if not is_valid_arcade_game(machine):
+            result = classify_machine(machine)
+            excluded.append((machine, result["game_status"], result["category"]))
+            if len(excluded) >= limit:
+                break
+
+    return excluded
