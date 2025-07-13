@@ -1,11 +1,13 @@
 from pathlib import Path
 from collections import defaultdict
 import json
+import time
 
+from config import LOG_LEVEL
 from logger import setup_logger
 from encoding_utils import load_or_create_encodings
 
-log = setup_logger()
+log = setup_logger(log_level=LOG_LEVEL)
 
 # Paths to .ini files
 DATA_DIR = Path("data")
@@ -22,7 +24,6 @@ _ini_data_cache = {
 }
 
 _ini_parsed = False
-
 
 def _parse_ini_file(path: Path, encoding: str) -> dict[str, str]:
     """
@@ -51,7 +52,6 @@ def _parse_ini_file(path: Path, encoding: str) -> dict[str, str]:
 
     return mapping
 
-
 def _load_ini_classifications():
     """
     Loads all classification .ini files into internal cache.
@@ -61,15 +61,18 @@ def _load_ini_classifications():
     if _ini_parsed:
         return
 
+    start = time.perf_counter()
     encoding_paths = list(INI_FILES.values())
     encodings = load_or_create_encodings(encoding_paths)
 
     for key, path in INI_FILES.items():
         encoding = encodings.get(path.name, "utf-8")
+        log.debug(f"Parsing {path.name} with encoding {encoding}...")
         _ini_data_cache[key] = _parse_ini_file(path, encoding)
 
     _ini_parsed = True
-
+    duration = time.perf_counter() - start
+    log.info(f"INI classification data loaded in {duration:.2f} seconds")
 
 def classify_machine(machine_name: str) -> dict[str, str]:
     """
@@ -94,7 +97,6 @@ def classify_machine(machine_name: str) -> dict[str, str]:
 
     return result
 
-
 def is_valid_arcade_game(machine_name: str) -> bool:
     """
     Returns True if the machine is considered a valid arcade game,
@@ -113,7 +115,6 @@ def is_valid_arcade_game(machine_name: str) -> bool:
 
     return game_status == "Game" and category in {"Arcade", "Coin-Op (Games)"}
 
-
 def summarise_ini_classifications() -> dict[str, dict[str, int]]:
     """
     Produces a count of how many machines fall under each section for each .ini file.
@@ -130,9 +131,9 @@ def summarise_ini_classifications() -> dict[str, dict[str, int]]:
         for section in _ini_data_cache[key].values():
             counts[section] += 1
         summary[key] = dict(counts)
+        log.debug(f"Classification summary for {key}: {dict(counts)}")
 
     return summary
-
 
 def get_excluded_machine_preview(limit: int = 10) -> list[tuple[str, str, str]]:
     """

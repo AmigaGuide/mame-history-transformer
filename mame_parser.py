@@ -1,10 +1,14 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+import time
+import logging
+
+from config import LOG_LEVEL
 from logger import setup_logger
 from history_metadata import classify_machine, is_valid_arcade_game
 
-log = setup_logger()
+log = setup_logger(log_level=LOG_LEVEL)
 
 def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
     """
@@ -21,13 +25,13 @@ def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
     Returns:
         list[dict]: Filtered list of arcade/playable machines, clone-aware.
     """
+    start_time = time.perf_counter()
     log.info(f"Starting MAME XML parsing: {file_path.name}" +
              (f" (max {max_records} records)" if max_records else " (no limit)"))
 
     machines = []
     all_machines = {}
     clones_by_parent = defaultdict(list)  # e.g. {"puckman": ["pacman", "pacmanf"]}
-
     current = None
 
     try:
@@ -59,6 +63,10 @@ def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
     log.info(f"Finished parsing MAME XML – {len(all_machines)} machines loaded")
     log.info(f"{len(clones_by_parent)} machines have at least one clone.")
 
+    if log.isEnabledFor(logging.DEBUG) and "puckman" in clones_by_parent:
+        puckman_clones = clones_by_parent["puckman"]
+        log.debug(f"'puckman' has {len(puckman_clones)} clones: {puckman_clones}")
+
     # --- Filtering Phase ---
 
     # Step 1: Valid arcade machines based on .ini classification
@@ -87,5 +95,11 @@ def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
     log.info("First 10 machines excluded (not valid or clone of valid):")
     for name, meta in excluded[:10]:
         log.info(f"  - {name}: {meta}")
+
+    filter_time = time.perf_counter() - start_time
+    log.info(f"Filtering completed in {filter_time:.2f} seconds")
+
+    parse_time = time.perf_counter() - start_time
+    log.info(f"MAME XML parsing completed in {parse_time:.2f} seconds")
 
     return filtered_machines

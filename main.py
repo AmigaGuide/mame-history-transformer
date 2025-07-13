@@ -1,14 +1,16 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import re
+import time
+import logging
 
+from config import LOG_LEVEL
 from encoding_utils import load_or_create_encodings
 from mame_parser import parse_mame_xml
 from history_metadata import summarise_ini_classifications
 from logger import setup_logger
 
-log = setup_logger()
-
+log = setup_logger(log_level=LOG_LEVEL)
 
 def check_required_files() -> bool:
     """
@@ -33,7 +35,7 @@ def check_required_files() -> bool:
         if not file_path.is_file():
             missing.append(fname)
         else:
-            log.info(f"Found file: data/{fname}")
+            log.debug(f"Verified: data/{fname} exists")
 
     if missing:
         log.error("Missing required files in /data:")
@@ -59,8 +61,8 @@ def check_required_files() -> bool:
 
         return False
 
+    log.info("All required files found.")
     return True
-
 
 def get_xml_version(file_path: Path, root_tag: str) -> str:
     """
@@ -78,9 +80,9 @@ def get_xml_version(file_path: Path, root_tag: str) -> str:
             if elem.tag == root_tag:
                 return elem.attrib.get("build") or elem.attrib.get("version", "Unknown")
     except ET.ParseError:
+        log.error(f"Parse error reading {file_path}")
         return "Parse Error"
     return "Unknown"
-
 
 def normalise_version(version_str: str) -> str:
     """
@@ -103,8 +105,8 @@ def normalise_version(version_str: str) -> str:
         normalised = version_float / 10
         return f"{normalised:.3f}"
     except ValueError:
+        log.warning(f"Could not normalise version string: {version_str}")
         return "Unknown"
-
 
 def main():
     """
@@ -119,22 +121,20 @@ def main():
         log.error("Aborting. Required files missing.")
         return
 
-    # Define file paths
     data_dir = Path("data")
     mame_file = data_dir / "mame.xml"
     history_file = data_dir / "history.xml"
     xml_files = [mame_file, history_file]
 
-    # Load or detect encodings
+    start_enc = time.perf_counter()
     encodings = load_or_create_encodings(xml_files + list(data_dir.glob("*.ini")))
+    end_enc = time.perf_counter()
 
-    log.info(f"MAME XML encoding:                 {encodings.get('mame.xml', 'Unknown')}")
-    log.info(f"History XML encoding:              {encodings.get('history.xml', 'Unknown')}")
-    log.info(f"INI: Game Or No Game encoding:     {encodings.get('[GAMING HISTORY] Game Or No Game.ini', 'Unknown')}")
-    log.info(f"INI: Machine Category encoding:    {encodings.get('[GAMING HISTORY] Machine Category.ini', 'Unknown')}")
-    log.info(f"INI: Machine Type encoding:        {encodings.get('[GAMING HISTORY] Machine Type.ini', 'Unknown')}")
+    log.info("Detected File Encodings:")
+    for fname, encoding in encodings.items():
+        log.info(f"{fname}: {encoding}")
+    log.info(f"Encoding detection completed in {end_enc - start_enc:.2f} seconds")
 
-    # Extract and compare versions
     mame_version_raw = get_xml_version(mame_file, "mame")
     history_version_raw = get_xml_version(history_file, "history")
 
@@ -149,21 +149,20 @@ def main():
     if mame_version != history_version:
         log.warning("Version mismatch: MAME and Gaming-History XML versions differ.")
 
-    # Show classification summary from .ini files
     summary = summarise_ini_classifications()
     log.info("INI Classification Summary:")
     for category, counts in summary.items():
         log.info(f"--- {category} ---")
         for label, count in sorted(counts.items()):
-            log.info(f"{label}: {count}")
+            log.debug(f"    {label}: {count}")
 
-    log.info("All checks passed. Ready to begin parsing.")
-
-    # Parse MAME XML (includes clone-aware filtering)
+    log.info("Beginning MAME XML parsing...")
+    #start_parse = time.perf_counter()
     machines = parse_mame_xml(mame_file, max_records=0)
+    #end_parse = time.perf_counter()
 
+    #log.info(f"MAME XML parsing completed in {end_parse - start_parse:.2f} seconds")
     log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
-
 
 if __name__ == "__main__":
     main()
