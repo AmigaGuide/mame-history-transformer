@@ -1,3 +1,22 @@
+"""
+Filename: encoding_utils.py
+
+Author: Jason (XtC) Skelly (Open University TM470, 2025)
+
+Part of the TM470 Project:
+"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+
+Description:
+Detects and caches file encodings using the `chardet` library.
+Primarily supports MAME XML, Gaming-History XML, and related INI files.
+
+Encodings are stored in a local encodings.json file to avoid repeated detection.
+Also provides logic for safely loading and storing these results as part of the
+project’s preprocessing pipeline.
+
+This file is part of a student project and is not intended for commercial use.
+"""
+
 from pathlib import Path
 import chardet
 import json

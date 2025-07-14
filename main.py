@@ -1,3 +1,22 @@
+"""
+Filename: main.py
+
+Author: Jason (XtC) Skelly (Open University TM470, 2025)
+
+Part of the TM470 Project:
+"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+
+Description:
+Entry point for the XML parsing and classification pipeline. Validates the presence
+of required source files, detects encodings, verifies version consistency, logs 
+classification summaries, and initiates parsing of the MAME XML dataset.
+
+The output is a clone-aware, classification-filtered list of valid arcade machines
+from the MAME XML, suitable for transformation into wiki-compatible JSON.
+
+This file is part of a student project and is not intended for commercial use.
+"""
+
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import re

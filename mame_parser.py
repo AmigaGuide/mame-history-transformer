@@ -1,3 +1,22 @@
+"""
+Filename: mame_parser.py
+
+Author: Jason (XtC) Skelly (Open University TM470, 2025)
+
+Part of the TM470 Project:
+"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+
+Description:
+Parses the MAME XML file to extract machine metadata, build clone relationships,
+and apply classification filtering using data from Gaming-History .ini files.
+
+Implements clone-aware logic to preserve child machines of valid arcade parents,
+even if the clones lack independent classification. Returns a structured list
+of machines suitable for JSON export.
+
+This file is part of a student project and is not intended for commercial use.
+"""
+
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from collections import defaultdict

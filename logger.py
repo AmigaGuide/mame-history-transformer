@@ -1,3 +1,21 @@
+"""
+Filename: logger.py
+
+Author: Jason (XtC) Skelly (Open University TM470, 2025)
+
+Part of the TM470 Project:
+"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+
+Description:
+Sets up a reusable logging facility for the entire pipeline. Creates timestamped
+log files in the /logs directory and outputs to both file and console. Logging
+level is controlled via a global LOG_LEVEL setting defined in config.py.
+
+This module ensures consistent and configurable runtime diagnostics across all scripts.
+
+This file is part of a student project and is not intended for commercial use.
+"""
+
 import logging
 from pathlib import Path
 from datetime import datetime

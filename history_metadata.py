@@ -1,3 +1,24 @@
+"""
+Filename: history_metadata.py
+
+Author: Jason (XtC) Skelly (Open University TM470, 2025)
+
+Part of the TM470 Project:
+"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+
+Description:
+Parses and caches classification metadata from three Gaming-History .ini files:
+- Game Or No Game.ini
+- Machine Category.ini
+- Machine Type.ini
+
+Provides functions to determine whether a MAME machine is a valid arcade game,
+summarise classifications, and retrieve detailed metadata for use in downstream
+processing and final data exports.
+
+This file is part of a student project and is not intended for commercial use.
+"""
+
 from pathlib import Path
 from collections import defaultdict
 import json
