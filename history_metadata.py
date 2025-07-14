@@ -21,8 +21,8 @@ This file is part of a student project and is not intended for commercial use.
 
 from pathlib import Path
 from collections import defaultdict
-import json
 import time
+import json
 
 from config import LOG_LEVEL
 from logger import setup_logger
@@ -152,7 +152,10 @@ def summarise_ini_classifications() -> dict[str, dict[str, int]]:
         for section in _ini_data_cache[key].values():
             counts[section] += 1
         summary[key] = dict(counts)
-        log.debug(f"Classification summary for {key}: {dict(counts)}")
+
+        log.info(f"--- {key} ---")
+        for label, count in sorted(counts.items()):
+            log.debug(f"    {label}: {count}")
 
     return summary
 

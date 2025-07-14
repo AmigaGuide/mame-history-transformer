@@ -21,13 +21,12 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import re
 import time
-import logging
 
 from config import LOG_LEVEL
+from logger import setup_logger
 from encoding_utils import load_or_create_encodings
 from mame_parser import parse_mame_xml
 from history_metadata import summarise_ini_classifications
-from logger import setup_logger
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -103,6 +102,32 @@ def get_xml_version(file_path: Path, root_tag: str) -> str:
         return "Parse Error"
     return "Unknown"
 
+def get_ini_version(file_path: Path, encoding: str) -> str:
+    """
+    Extract version string (e.g. '0.278') from the top of a .ini file.
+
+    Looks for a line such as:
+    ;; [GAMING HISTORY] Game Or No Game.ini for MAME 0.278 (mame0278) generated @ ...
+
+    Parameters:
+        file_path (Path): INI file path.
+        encoding (str): Detected file encoding.
+
+    Returns:
+        str: Extracted version string (e.g. '0.278'), or 'Unknown'.
+    """
+    try:
+        with open(file_path, encoding=encoding) as f:
+            for line in f:
+                if line.strip().startswith(";;") and "MAME" in line:
+                    match = re.search(r"MAME\s+([0-9]+\.[0-9]+)", line)
+                    if match:
+                        return match.group(1)
+    except Exception as e:
+        log.warning(f"Could not extract version from {file_path.name}: {e}")
+    return "Unknown"
+
+
 def normalise_version(version_str: str) -> str:
     """
     Normalises version strings to match MAME's format (e.g. '0.278').
@@ -143,10 +168,15 @@ def main():
     data_dir = Path("data")
     mame_file = data_dir / "mame.xml"
     history_file = data_dir / "history.xml"
-    xml_files = [mame_file, history_file]
+    ini_paths = [
+        data_dir / "[GAMING HISTORY] Game Or No Game.ini",
+        data_dir / "[GAMING HISTORY] Machine Category.ini",
+        data_dir / "[GAMING HISTORY] Machine Type.ini"
+    ]
 
+    # Detect encodings
     start_enc = time.perf_counter()
-    encodings = load_or_create_encodings(xml_files + list(data_dir.glob("*.ini")))
+    encodings = load_or_create_encodings([mame_file, history_file] + ini_paths)
     end_enc = time.perf_counter()
 
     log.info("Detected File Encodings:")
@@ -154,6 +184,7 @@ def main():
         log.info(f"{fname}: {encoding}")
     log.info(f"Encoding detection completed in {end_enc - start_enc:.2f} seconds")
 
+    # Extract XML versions
     mame_version_raw = get_xml_version(mame_file, "mame")
     history_version_raw = get_xml_version(history_file, "history")
 
@@ -165,9 +196,21 @@ def main():
     log.info(f"Normalised MAME version:    {mame_version}")
     log.info(f"Normalised History version: {history_version}")
 
-    if mame_version != history_version:
-        log.warning("Version mismatch: MAME and Gaming-History XML versions differ.")
+    # Extract INI file versions
+    ini_versions = {}
+    for ini_path in ini_paths:
+        ini_version = get_ini_version(ini_path, encodings.get(ini_path.name, "utf-8"))
+        ini_versions[ini_path.name] = ini_version
+        log.info(f"{ini_path.name} version: {ini_version}")
 
+    # Compare all versions
+    all_versions = [history_version] + list(ini_versions.values())
+    if any(ver != mame_version for ver in all_versions):
+        log.warning("Version mismatch: MAME, Gaming-History XML, and/or INI files do not match.")
+    else:
+        log.info("All file versions match: MAME XML, History XML, and all .ini files.")
+
+    # Summarise INI classification breakdowns
     summary = summarise_ini_classifications()
     log.info("INI Classification Summary:")
     for category, counts in summary.items():
@@ -175,12 +218,9 @@ def main():
         for label, count in sorted(counts.items()):
             log.debug(f"    {label}: {count}")
 
+    # Parse the MAME XML
     log.info("Beginning MAME XML parsing...")
-    #start_parse = time.perf_counter()
     machines = parse_mame_xml(mame_file, max_records=0)
-    #end_parse = time.perf_counter()
-
-    #log.info(f"MAME XML parsing completed in {end_parse - start_parse:.2f} seconds")
     log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
 
 if __name__ == "__main__":

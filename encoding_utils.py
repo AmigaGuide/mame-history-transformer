@@ -20,6 +20,7 @@ This file is part of a student project and is not intended for commercial use.
 from pathlib import Path
 import chardet
 import json
+import time
 
 from config import LOG_LEVEL
 from logger import setup_logger
@@ -64,14 +65,21 @@ def load_or_create_encodings(xml_files: list[Path]) -> dict:
             log.warning("Failed to read encodings.json. Regenerating.")
 
     encodings = {}
+    overall_start = time.time()
+
     for xml_file in xml_files:
         log.info(f"Detecting encoding for {xml_file.name}...")
+        start_time = time.time()
         encoding = detect_encoding_chardet(xml_file)
+        duration = time.time() - start_time
+
         encodings[xml_file.name] = encoding
-        log.debug(f"Detected encoding for {xml_file.name}: {encoding}")
+        log.debug(f"Detected encoding for {xml_file.name}: {encoding} (in {duration:.2f} seconds)")
 
     with open(ENCODING_FILE, 'w', encoding='utf-8') as f:
         json.dump(encodings, f, indent=2)
 
-    log.info("Encodings detected and saved to encodings.json")
+    total_time = time.time() - overall_start
+    log.info(f"Encodings detected and saved to encodings.json")
+    log.info(f"Encoding detection completed in {total_time:.2f} seconds")
     return encodings
