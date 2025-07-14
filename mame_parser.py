@@ -29,7 +29,7 @@ from history_metadata import classify_machine, is_valid_arcade_game
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
+def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> list[dict]:
     """
     Parses the MAME XML file and extracts machine metadata.
 
@@ -39,6 +39,7 @@ def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
 
     Args:
         file_path (Path): Path to mame.xml
+        encodings (dict): Encodings dictionary (from main.py)
         max_records (int): Optional cap on how many machine entries to parse (0 = no limit)
 
     Returns:
@@ -48,32 +49,35 @@ def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
     log.info(f"Starting MAME XML parsing: {file_path.name}" +
              (f" (max {max_records} records)" if max_records else " (no limit)"))
 
+    mame_encoding = encodings["mame.xml"]
+
     machines = []
     all_machines = {}
-    clones_by_parent = defaultdict(list)  # e.g. {"puckman": ["pacman", "pacmanf"]}
+    clones_by_parent = defaultdict(list)
     current = None
 
     try:
-        for event, elem in ET.iterparse(file_path, events=('start', 'end')):
-            if event == "start" and elem.tag == "machine":
-                machine_name = elem.attrib.get("name", "Unknown")
-                cloneof = elem.attrib.get("cloneof")
-                current = {"name": machine_name}
-                if cloneof:
-                    current["cloneof"] = cloneof
-                    clones_by_parent[cloneof].append(machine_name)
+        with open(file_path, encoding=mame_encoding) as f:
+            for event, elem in ET.iterparse(f, events=('start', 'end')):
+                if event == "start" and elem.tag == "machine":
+                    machine_name = elem.attrib.get("name", "Unknown")
+                    cloneof = elem.attrib.get("cloneof")
+                    current = {"name": machine_name}
+                    if cloneof:
+                        current["cloneof"] = cloneof
+                        clones_by_parent[cloneof].append(machine_name)
 
-            elif event == "end" and elem.tag == "description" and current is not None:
-                current["description"] = elem.text or ""
+                elif event == "end" and elem.tag == "description" and current is not None:
+                    current["description"] = elem.text or ""
 
-            elif event == "end" and elem.tag == "machine":
-                if current:
-                    all_machines[current["name"]] = current
-                    if max_records and len(all_machines) >= max_records:
-                        log.info(f"Reached parsing limit of {max_records} machines.")
-                        break
-                current = None
-                elem.clear()
+                elif event == "end" and elem.tag == "machine":
+                    if current:
+                        all_machines[current["name"]] = current
+                        if max_records and len(all_machines) >= max_records:
+                            log.info(f"Reached parsing limit of {max_records} machines.")
+                            break
+                    current = None
+                    elem.clear()
 
     except ET.ParseError as e:
         log.error(f"XML parse error while reading {file_path.name}: {e}")
@@ -88,24 +92,20 @@ def parse_mame_xml(file_path: Path, max_records: int = 0) -> list[dict]:
 
     # --- Filtering Phase ---
 
-    # Step 1: Valid arcade machines based on .ini classification
-    valid_arcade = {name for name in all_machines if is_valid_arcade_game(name)}
+    valid_arcade = {name for name in all_machines if is_valid_arcade_game(name, encodings)}
 
-    # Step 2: Promote clones of valid parents
     added_clones = set()
-    for parent in list(valid_arcade):  # use a static list copy
+    for parent in list(valid_arcade):
         for clone in clones_by_parent.get(parent, []):
             if clone in all_machines and clone not in valid_arcade:
                 valid_arcade.add(clone)
                 added_clones.add(clone)
 
-    # Step 3: Excluded machines (not valid, not a valid clone)
     excluded = []
     for name in all_machines:
         if name not in valid_arcade:
-            excluded.append((name, classify_machine(name)))
+            excluded.append((name, classify_machine(name, encodings)))
 
-    # Step 4: Build output list
     filtered_machines = [all_machines[name] for name in valid_arcade if name in all_machines]
 
     log.info(f"Included {len(filtered_machines)} machines after filtering")

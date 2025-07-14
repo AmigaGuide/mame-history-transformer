@@ -27,6 +27,7 @@ from logger import setup_logger
 from encoding_utils import load_or_create_encodings
 from mame_parser import parse_mame_xml
 from history_metadata import summarise_ini_classifications
+from history_parser import parse_history_xml
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -211,7 +212,8 @@ def main():
         log.info("All file versions match: MAME XML, History XML, and all .ini files.")
 
     # Summarise INI classification breakdowns
-    summary = summarise_ini_classifications()
+    #summary = summarise_ini_classifications()
+    summary = summarise_ini_classifications(encodings)
     log.info("INI Classification Summary:")
     for category, counts in summary.items():
         log.info(f"--- {category} ---")
@@ -220,8 +222,16 @@ def main():
 
     # Parse the MAME XML
     log.info("Beginning MAME XML parsing...")
-    machines = parse_mame_xml(mame_file, max_records=0)
+    machines = parse_mame_xml(mame_file, encodings=encodings, max_records=0)
+    #mame_encoding = encodings["mame.xml"]
+    #machines = parse_mame_xml(mame_file, encoding=mame_encoding, encodings=encodings, max_records=0)
+    #machines = parse_mame_xml(mame_file, max_records=0)
     log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
+
+    # Parse the History XML
+    log.info("Beginning History XML parsing...")
+    parse_history_xml(history_file, encodings["history.xml"])
+
 
 if __name__ == "__main__":
     main()

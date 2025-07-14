@@ -22,11 +22,9 @@ This file is part of a student project and is not intended for commercial use.
 from pathlib import Path
 from collections import defaultdict
 import time
-import json
 
 from config import LOG_LEVEL
 from logger import setup_logger
-from encoding_utils import load_or_create_encodings
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -73,21 +71,21 @@ def _parse_ini_file(path: Path, encoding: str) -> dict[str, str]:
 
     return mapping
 
-def _load_ini_classifications():
+def _load_ini_classifications(encodings: dict[str, str]):
     """
-    Loads all classification .ini files into internal cache.
-    Automatically detects encoding using the existing encodings.json logic.
+    Loads all classification .ini files into internal cache using provided encodings.
+
+    Args:
+        encodings (dict): Mapping of filename -> encoding, passed from main.py
     """
     global _ini_parsed
     if _ini_parsed:
         return
 
     start = time.perf_counter()
-    encoding_paths = list(INI_FILES.values())
-    encodings = load_or_create_encodings(encoding_paths)
 
     for key, path in INI_FILES.items():
-        encoding = encodings.get(path.name, "utf-8")
+        encoding = encodings[path.name]
         log.debug(f"Parsing {path.name} with encoding {encoding}...")
         _ini_data_cache[key] = _parse_ini_file(path, encoding)
 
@@ -95,12 +93,13 @@ def _load_ini_classifications():
     duration = time.perf_counter() - start
     log.info(f"INI classification data loaded in {duration:.2f} seconds")
 
-def classify_machine(machine_name: str) -> dict[str, str]:
+def classify_machine(machine_name: str, encodings: dict[str, str]) -> dict[str, str]:
     """
     Returns classification details for a MAME machine from the .ini metadata.
 
     Args:
         machine_name (str): MAME machine name.
+        encodings (dict): Encoding dictionary from main.py
 
     Returns:
         dict: {
@@ -109,7 +108,7 @@ def classify_machine(machine_name: str) -> dict[str, str]:
             "type":        section label or "<not available>"
         }
     """
-    _load_ini_classifications()
+    _load_ini_classifications(encodings)
 
     result = {}
     for key in ["game_status", "category", "type"]:
@@ -118,33 +117,37 @@ def classify_machine(machine_name: str) -> dict[str, str]:
 
     return result
 
-def is_valid_arcade_game(machine_name: str) -> bool:
+def is_valid_arcade_game(machine_name: str, encodings: dict[str, str]) -> bool:
     """
     Returns True if the machine is considered a valid arcade game,
     based on 'Game Or No Game' and 'Machine Category' .ini files.
 
     Args:
         machine_name (str): MAME machine name.
+        encodings (dict): Encoding dictionary from main.py
 
     Returns:
         bool: True if it passes both classification checks.
     """
-    _load_ini_classifications()
+    _load_ini_classifications(encodings)
 
     game_status = _ini_data_cache["game_status"].get(machine_name, "<not available>")
     category = _ini_data_cache["category"].get(machine_name, "<not available>")
 
     return game_status == "Game" and category in {"Arcade", "Coin-Op (Games)"}
 
-def summarise_ini_classifications() -> dict[str, dict[str, int]]:
+def summarise_ini_classifications(encodings: dict[str, str]) -> dict[str, dict[str, int]]:
     """
     Produces a count of how many machines fall under each section for each .ini file.
+
+    Args:
+        encodings (dict): Encoding dictionary from main.py
 
     Returns:
         dict: Summary dictionary by ini type, e.g.
               { "game_status": {"Game": 10000, "No Game": 3000}, ... }
     """
-    _load_ini_classifications()
+    _load_ini_classifications(encodings)
 
     summary = {}
     for key in ["game_status", "category", "type"]:
@@ -159,24 +162,25 @@ def summarise_ini_classifications() -> dict[str, dict[str, int]]:
 
     return summary
 
-def get_excluded_machine_preview(limit: int = 10) -> list[tuple[str, str, str]]:
+def get_excluded_machine_preview(encodings: dict[str, str], limit: int = 10) -> list[tuple[str, str, str]]:
     """
     Returns the first N machine names that would be excluded based on game status and category rules.
 
     Args:
+        encodings (dict): Encoding dictionary from main.py
         limit (int): Number of machines to return.
 
     Returns:
         list of tuples: [(machine_name, game_status, category), ...]
     """
-    _load_ini_classifications()
+    _load_ini_classifications(encodings)
 
     excluded = []
     all_machines = set().union(*[_ini_data_cache[k].keys() for k in _ini_data_cache])
 
     for machine in sorted(all_machines):
-        if not is_valid_arcade_game(machine):
-            result = classify_machine(machine)
+        if not is_valid_arcade_game(machine, encodings):
+            result = classify_machine(machine, encodings)
             excluded.append((machine, result["game_status"], result["category"]))
             if len(excluded) >= limit:
                 break
