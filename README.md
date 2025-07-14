@@ -1,28 +1,41 @@
-# TM470 - Lost in Translation Parser
+# TM470 – Lost in Translation Parser
 
-This repository contains code developed for the Open University TM470 project, titled:
+This repository contains code developed for the Open University TM470 project:
 
 **"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."**
 
 ## Overview
 
-The project parses and transforms metadata from:
+This project automates the extraction and transformation of metadata from:
 
-- MAME XML: structured arcade hardware and ROM data
-- Gaming-History XML: semi-structured trivia and conversion notes
+- **MAME XML** – Structured descriptions of arcade hardware, ROMs, and device relationships.
+- **Gaming-History XML** – Semi-structured trivia including notes on arcade-to-home system conversions.
 
-The goal is to extract key information about arcade-to-home conversions and export it as structured JSON suitable for use in ExoticA’s MediaWiki-based infoboxes.
+The output is a structured JSON representation of valid arcade machines, enriched with classification data. This will be used to populate infoboxes on ExoticA’s *Lost in Translation* wiki section.
 
 ## Core Components
 
-- `mame_parser.py`
-- `history_parser.py`
-- `transformer.py`
-- `json_writer.py`
-- `logger.py`, `config.py`
+| Module               | Purpose                                                                 |
+|----------------------|-------------------------------------------------------------------------|
+| `main.py`            | Pipeline controller and entry point                                     |
+| `mame_parser.py`     | Parses MAME XML and applies clone-aware filtering using `.ini` metadata |
+| `history_metadata.py`| Parses classification `.ini` files and maps metadata to each machine     |
+| `encoding_utils.py`  | Detects and caches file encodings using `chardet`                        |
+| `logger.py`          | Central logging configuration with support for multiple verbosity levels|
+| `config.py`          | Defines global project constants, including logging level                |
+
+> Note: `history_parser.py`, `transformer.py`, and `json_writer.py` are placeholders for upcoming stages.
+
+## Features
+
+- Clone-aware arcade filtering logic
+- Classification-based validation using `.ini` files
+- Detailed logging with toggleable verbosity (`INFO` or `DEBUG`)
+- Performance timing for encoding detection and XML parsing
+- Structured summaries of classification statistics
 
 ## Status
 
-Planning Complete  
-Implementation In Progress  
-Testing Planned
+- ✔ Planning Complete  
+- 🛠 Implementation In Progress  
+- 🧪 Testing Planned
