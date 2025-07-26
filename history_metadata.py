@@ -24,7 +24,7 @@ from collections import defaultdict
 import time
 
 from config import LOG_LEVEL
-from logger import setup_logger
+from logger import setup_logger, debug_log
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -86,7 +86,7 @@ def _load_ini_classifications(encodings: dict[str, str]):
 
     for key, path in INI_FILES.items():
         encoding = encodings[path.name]
-        log.debug(f"Parsing {path.name} with encoding {encoding}...")
+        debug_log(f"Parsing {path.name} with encoding {encoding}...")
         _ini_data_cache[key] = _parse_ini_file(path, encoding)
 
     _ini_parsed = True
@@ -158,7 +158,7 @@ def summarise_ini_classifications(encodings: dict[str, str]) -> dict[str, dict[s
 
         log.info(f"--- {key} ---")
         for label, count in sorted(counts.items()):
-            log.debug(f"    {label}: {count}")
+            debug_log(f"    {label}: {count}")
 
     return summary
 

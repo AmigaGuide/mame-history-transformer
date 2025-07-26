@@ -17,44 +17,44 @@ from the MAME XML, suitable for transformation into wiki-compatible JSON.
 This file is part of a student project and is not intended for commercial use.
 """
 
-from pathlib import Path
-import xml.etree.ElementTree as ET
+import json
 import re
 import time
+from pathlib import Path
+import xml.etree.ElementTree as ET
 
 from config import LOG_LEVEL
-from logger import setup_logger
-from encoding_utils import load_or_create_encodings
+from logger import setup_logger, debug_log
+from encoding_utils import detect_encoding
 from mame_parser import parse_mame_xml
 from history_metadata import summarise_ini_classifications
 from history_parser import parse_history_xml
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-def check_required_files() -> bool:
+ENCODINGS_PATH = Path("data/encodings.json")
+
+def check_required_files() -> list[Path] | None:
     """
     Check for the presence of required XML and INI files in the 'data' folder.
     If any are missing, print download instructions.
 
     Returns:
-        bool: True if all required files are present, False otherwise.
+        list[Path]: List of required file paths, or None if missing.
     """
     data_dir = Path("data")
-    required_files = [
+    filenames = [
         "mame.xml",
         "history.xml",
         "[GAMING HISTORY] Game Or No Game.ini",
         "[GAMING HISTORY] Machine Category.ini",
         "[GAMING HISTORY] Machine Type.ini",
     ]
+    missing = [f for f in filenames if not (data_dir / f).is_file()]
 
-    missing = []
-    for fname in required_files:
-        file_path = data_dir / fname
-        if not file_path.is_file():
-            missing.append(fname)
-        else:
-            log.debug(f"Verified: data/{fname} exists")
+    for fname in filenames:
+        if fname not in missing:
+            debug_log(f"Verified: data/{fname} exists")
 
     if missing:
         log.error("Missing required files in /data:")
@@ -63,36 +63,22 @@ def check_required_files() -> bool:
 
         log.info("Instructions:")
         if "mame.xml" in missing:
-            log.info("• Download the MAME XML from https://www.mamedev.org/release.php")
-            log.info("• Extract the file from the mameXXXXlx.zip archive")
-            log.info("• Rename the extracted file to 'mame.xml'")
-            log.info("• Move it to the 'data' folder")
-
+            log.info("• Download MAME XML from https://www.mamedev.org/release.php")
+            log.info("• Extract and rename it to 'mame.xml' in the 'data' folder")
         if "history.xml" in missing:
-            log.info("• Download the Gaming-History XML from:")
-            log.info("  https://www.arcade-history.com/index.php?page=download")
-            log.info("• Extract 'history.xml' from inside the 'history' folder of the ZIP")
-            log.info("• Move it to the 'data' folder")
-
+            log.info("• Download Gaming-History XML from arcade-history.com")
+            log.info("• Extract 'history.xml' to the 'data' folder")
         if any(".ini" in f for f in missing):
-            log.info("• The Gaming-History ZIP also includes .ini classification files.")
-            log.info("• Extract all three .ini files and place them in the 'data' folder.")
+            log.info("• The same ZIP includes .ini files — extract all three to the 'data' folder.")
 
-        return False
+        return None
 
     log.info("All required files found.")
-    return True
+    return [data_dir / f for f in filenames]
 
 def get_xml_version(file_path: Path, root_tag: str) -> str:
     """
     Extract version or build info from the root tag of the XML file.
-
-    Parameters:
-        file_path (Path): Path to the XML file.
-        root_tag (str): Expected name of the root element.
-
-    Returns:
-        str: Version or build value, or 'Unknown' if not found.
     """
     try:
         for event, elem in ET.iterparse(file_path, events=('start',)):
@@ -105,17 +91,7 @@ def get_xml_version(file_path: Path, root_tag: str) -> str:
 
 def get_ini_version(file_path: Path, encoding: str) -> str:
     """
-    Extract version string (e.g. '0.278') from the top of a .ini file.
-
-    Looks for a line such as:
-    ;; [GAMING HISTORY] Game Or No Game.ini for MAME 0.278 (mame0278) generated @ ...
-
-    Parameters:
-        file_path (Path): INI file path.
-        encoding (str): Detected file encoding.
-
-    Returns:
-        str: Extracted version string (e.g. '0.278'), or 'Unknown'.
+    Extract version string from top of .ini file.
     """
     try:
         with open(file_path, encoding=encoding) as f:
@@ -128,16 +104,9 @@ def get_ini_version(file_path: Path, encoding: str) -> str:
         log.warning(f"Could not extract version from {file_path.name}: {e}")
     return "Unknown"
 
-
 def normalise_version(version_str: str) -> str:
     """
-    Normalises version strings to match MAME's format (e.g. '0.278').
-
-    Parameters:
-        version_str (str): Raw version string from XML attribute.
-
-    Returns:
-        str: Normalised version string in the format '0.XXX'.
+    Normalises version strings to format '0.XXX'
     """
     version_str = version_str.strip()
     version_str = re.sub(r"\s*\(.*?\)", "", version_str)
@@ -147,91 +116,94 @@ def normalise_version(version_str: str) -> str:
 
     try:
         version_float = float(version_str)
-        normalised = version_float / 10
-        return f"{normalised:.3f}"
+        return f"{version_float / 10:.3f}"
     except ValueError:
         log.warning(f"Could not normalise version string: {version_str}")
         return "Unknown"
 
 def main():
-    """
-    Entry point for the TM470 XML parsing pipeline.
-
-    Validates file presence, detects encodings, extracts version info,
-    logs .ini classification summaries, and parses MAME XML machines.
-    """
     log.info("Starting TM470 XML parsing pipeline...")
 
-    if not check_required_files():
+    required_paths = check_required_files()
+    if not required_paths:
         log.error("Aborting. Required files missing.")
         return
 
     data_dir = Path("data")
-    mame_file = data_dir / "mame.xml"
-    history_file = data_dir / "history.xml"
-    ini_paths = [
-        data_dir / "[GAMING HISTORY] Game Or No Game.ini",
-        data_dir / "[GAMING HISTORY] Machine Category.ini",
-        data_dir / "[GAMING HISTORY] Machine Type.ini"
-    ]
+    encoding_cache = {}
 
-    # Detect encodings
-    start_enc = time.perf_counter()
-    encodings = load_or_create_encodings([mame_file, history_file] + ini_paths)
-    end_enc = time.perf_counter()
+    # Load existing encodings.json if it exists
+    if ENCODINGS_PATH.exists():
+        try:
+            with open(ENCODINGS_PATH, "r", encoding="utf-8") as f:
+                encoding_cache = json.load(f)
+            log.info("Loaded encoding cache from encodings.json")
+        except (json.JSONDecodeError, IOError):
+            log.warning("Could not read encodings.json. Will re-parse all files.")
 
-    log.info("Detected File Encodings:")
-    for fname, encoding in encodings.items():
-        log.info(f"{fname}: {encoding}")
-    log.info(f"Encoding detection completed in {end_enc - start_enc:.2f} seconds")
+    updated_encodings = {}
 
-    # Extract XML versions
-    mame_version_raw = get_xml_version(mame_file, "mame")
-    history_version_raw = get_xml_version(history_file, "history")
+    for file_path in required_paths:
+        fname = file_path.name
+        stored_entry = encoding_cache.get(fname)
+        version = "Unknown"
+        encoding = "Unknown"
 
-    mame_version = normalise_version(mame_version_raw)
-    history_version = normalise_version(history_version_raw)
+        # Use previous encoding to extract version
+        if stored_entry:
+            if fname.endswith(".xml"):
+                version = get_xml_version(file_path, "mame" if "mame" in fname.lower() else "history")
+            elif fname.endswith(".ini"):
+                version = get_ini_version(file_path, stored_entry["encoding"])
 
-    log.info(f"MAME XML version:      {mame_version_raw}")
-    log.info(f"History XML version:   {history_version_raw}")
-    log.info(f"Normalised MAME version:    {mame_version}")
-    log.info(f"Normalised History version: {history_version}")
+            version = normalise_version(version)
+            if version != stored_entry.get("version"):
+                log.info(f"Version mismatch for {fname}, re-parsing...")
+            else:
+                debug_log(f"{fname} version matches stored record.")
+                updated_encodings[fname] = stored_entry
+                continue
 
-    # Extract INI file versions
-    ini_versions = {}
-    for ini_path in ini_paths:
-        ini_version = get_ini_version(ini_path, encodings.get(ini_path.name, "utf-8"))
-        ini_versions[ini_path.name] = ini_version
-        log.info(f"{ini_path.name} version: {ini_version}")
+        # Detect encoding and version anew
+        start = time.perf_counter()
+        encoding = detect_encoding(file_path)
 
-    # Compare all versions
-    all_versions = [history_version] + list(ini_versions.values())
-    if any(ver != mame_version for ver in all_versions):
-        log.warning("Version mismatch: MAME, Gaming-History XML, and/or INI files do not match.")
-    else:
-        log.info("All file versions match: MAME XML, History XML, and all .ini files.")
+        if fname.endswith(".xml"):
+            version = get_xml_version(file_path, "mame" if "mame" in fname.lower() else "history")
+        elif fname.endswith(".ini"):
+            version = get_ini_version(file_path, encoding)
 
-    # Summarise INI classification breakdowns
-    #summary = summarise_ini_classifications()
+        version = normalise_version(version)
+        updated_encodings[fname] = {
+            "encoding": encoding,
+            "version": version
+        }
+        end = time.perf_counter()
+        log.info(f"Parsed {fname} in {end - start:.2f} seconds")
+
+    # Save new encodings.json
+    with open(ENCODINGS_PATH, "w", encoding="utf-8") as f:
+        json.dump(updated_encodings, f, indent=2)
+
+    log.info("Saved updated encodings.json")
+    log.info("Proceeding to XML parsing...")
+
+    # Pass encodings to downstream modules
+    encodings = {k: v["encoding"] for k, v in updated_encodings.items()}
+
     summary = summarise_ini_classifications(encodings)
     log.info("INI Classification Summary:")
     for category, counts in summary.items():
         log.info(f"--- {category} ---")
         for label, count in sorted(counts.items()):
-            log.debug(f"    {label}: {count}")
+            debug_log(f"    {label}: {count}")
 
-    # Parse the MAME XML
     log.info("Beginning MAME XML parsing...")
-    machines = parse_mame_xml(mame_file, encodings=encodings, max_records=0)
-    #mame_encoding = encodings["mame.xml"]
-    #machines = parse_mame_xml(mame_file, encoding=mame_encoding, encodings=encodings, max_records=0)
-    #machines = parse_mame_xml(mame_file, max_records=0)
+    machines = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
     log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
 
-    # Parse the History XML
     log.info("Beginning History XML parsing...")
-    parse_history_xml(history_file, encodings["history.xml"])
-
+    parse_history_xml(data_dir / "history.xml", encodings["history.xml"])
 
 if __name__ == "__main__":
     main()

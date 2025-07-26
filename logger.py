@@ -17,16 +17,18 @@ This file is part of a student project and is not intended for commercial use.
 """
 
 import logging
+import inspect
 from pathlib import Path
 from datetime import datetime
+from config import LOG_LEVEL  # Import the global log level setting
 
-def setup_logger(name: str = "tm470", log_level: int = logging.INFO) -> logging.Logger:
+def setup_logger(name: str = "tm470", log_level: int = LOG_LEVEL) -> logging.Logger:
     """
     Sets up a logger that writes to /logs/pipeline_<timestamp>.log and also prints to console.
 
     Args:
         name (str): Name of the logger instance. Defaults to "tm470".
-        log_level (int): Logging level (e.g. logging.INFO, logging.DEBUG). Defaults to logging.INFO.
+        log_level (int): Logging level (e.g. logging.INFO, logging.DEBUG). Defaults to LOG_LEVEL from config.py.
 
     Returns:
         logging.Logger: Configured logger instance.
@@ -57,3 +59,15 @@ def setup_logger(name: str = "tm470", log_level: int = logging.INFO) -> logging.
         logger.addHandler(console_handler)
 
     return logger
+
+def debug_log(message: str):
+    """
+    Automatically prefixes debug messages with [filename::function_name].
+
+    Args:
+        message (str): Debug message to log.
+    """
+    frame = inspect.currentframe().f_back
+    function = frame.f_code.co_name
+    filename = inspect.getmodule(frame).__name__.split('.')[-1]
+    logging.getLogger("tm470").debug(f"[{filename}::{function}] {message}")

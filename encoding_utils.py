@@ -7,79 +7,35 @@ Part of the TM470 Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
 
 Description:
-Detects and caches file encodings using the `chardet` library.
-Primarily supports MAME XML, Gaming-History XML, and related INI files.
+Detects the encoding of a given file using the `chardet` library.
 
-Encodings are stored in a local encodings.json file to avoid repeated detection.
-Also provides logic for safely loading and storing these results as part of the
-project’s preprocessing pipeline.
+This module does not handle any caching or version tracking logic—
+it simply returns the encoding of the requested file.
 
 This file is part of a student project and is not intended for commercial use.
 """
 
 from pathlib import Path
 import chardet
-import json
-import time
 
-from config import LOG_LEVEL
-from logger import setup_logger
+from logger import debug_log
 
-log = setup_logger(log_level=LOG_LEVEL)
-
-ENCODING_FILE = Path("data/encodings.json")
-
-def detect_encoding_chardet(file_path: Path) -> str:
+def detect_encoding(file_path: Path) -> str:
     """
-    Use chardet to detect the encoding of the given XML or INI file.
+    Detect the encoding of a file using the `chardet` library.
 
     Parameters:
-        file_path (Path): Path to the file.
+        file_path (Path): Path to the XML or INI file.
 
     Returns:
         str: Detected encoding (or 'Unknown' if detection fails).
     """
+    debug_log(f"Detecting encoding for: {file_path.name}")
+
     with open(file_path, 'rb') as f:
         raw_data = f.read()
         result = chardet.detect(raw_data)
-        return result['encoding'] or "Unknown"
+        encoding = result['encoding'] or "Unknown"
 
-def load_or_create_encodings(xml_files: list[Path]) -> dict:
-    """
-    Load encoding information from a JSON file in /data if it exists.
-    Otherwise, detect encodings using chardet and save the results.
-
-    Parameters:
-        xml_files (list[Path]): List of XML/INI file paths.
-
-    Returns:
-        dict: Dictionary of {filename: encoding}
-    """
-    if ENCODING_FILE.exists():
-        try:
-            with open(ENCODING_FILE, 'r', encoding='utf-8') as f:
-                encodings = json.load(f)
-                log.info("Using cached encodings from encodings.json")
-                return encodings
-        except (json.JSONDecodeError, IOError):
-            log.warning("Failed to read encodings.json. Regenerating.")
-
-    encodings = {}
-    overall_start = time.time()
-
-    for xml_file in xml_files:
-        log.info(f"Detecting encoding for {xml_file.name}...")
-        start_time = time.time()
-        encoding = detect_encoding_chardet(xml_file)
-        duration = time.time() - start_time
-
-        encodings[xml_file.name] = encoding
-        log.debug(f"Detected encoding for {xml_file.name}: {encoding} (in {duration:.2f} seconds)")
-
-    with open(ENCODING_FILE, 'w', encoding='utf-8') as f:
-        json.dump(encodings, f, indent=2)
-
-    total_time = time.time() - overall_start
-    log.info(f"Encodings detected and saved to encodings.json")
-    log.info(f"Encoding detection completed in {total_time:.2f} seconds")
-    return encodings
+    debug_log(f"Detected encoding for {file_path.name}: {encoding}")
+    return encoding

@@ -24,7 +24,7 @@ import time
 import logging
 
 from config import LOG_LEVEL
-from logger import setup_logger
+from logger import setup_logger, debug_log
 from history_metadata import classify_machine, is_valid_arcade_game
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -88,7 +88,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     if log.isEnabledFor(logging.DEBUG) and "puckman" in clones_by_parent:
         puckman_clones = clones_by_parent["puckman"]
-        log.debug(f"'puckman' has {len(puckman_clones)} clones: {puckman_clones}")
+        debug_log(f"'puckman' has {len(puckman_clones)} clones: {puckman_clones}")
 
     # --- Filtering Phase ---
 
