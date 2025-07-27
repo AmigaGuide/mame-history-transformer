@@ -7,9 +7,8 @@ Part of the TM470 Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
 
 Description:
-Parses the Gaming-History XML file and provides structured metadata per <system> entry.
-Counts all <entry> elements, differentiates between <systems> and <software>, extracts GH IDs,
-aliases, and initial metadata placeholders. Also outputs debug information for puckman and pacman.
+Parses the Gaming-History XML file and provides a summary count of all <entry> elements,
+distinguishing between those with <systems> (arcade-relevant) and <software> (home/non-arcade).
 
 This file is part of a student project and is not intended for commercial use.
 """
@@ -18,106 +17,168 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import time
 import re
-from collections import Counter
+import json
+import html
+from collections import Counter, defaultdict
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-def extract_gh_id(text: str) -> int | None:
+def parse_ports(text_block: str) -> tuple[str, Counter]:
     """
-    Extracts the Gaming-History ID from a CONTRIBUTE link.
-    """
-    match = re.search(r'id=(\d+)', text)
-    return int(match.group(1)) if match else None
+    Extracts an optional overview and platform categories from a PORTS section.
 
-def parse_history_entries(file_path: Path, encoding: str) -> dict[str, dict]:
+    Args:
+        text_block (str): Full <text> content from a <system> entry.
+
+    Returns:
+        tuple[str, Counter]: Tuple of optional overview string and Counter of platform categories.
     """
-    Parses <entry> blocks in history.xml and returns structured GH metadata.
+    lines = text_block.splitlines()
+    in_ports_section = False
+    overview_lines = []
+    platform_counter = Counter()
+    found_first_platform = False
+
+    known_platforms = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
+
+    for line in lines:
+        line = line.strip()
+
+        if not in_ports_section:
+            if re.fullmatch(r"-+\s*PORTS\s*-+", line.upper()):
+                in_ports_section = True
+            continue
+
+        if not found_first_platform:
+            if re.fullmatch(r"\*[A-Z0-9 &]+:\s*", line):
+                platform = line.strip("*:").strip().upper()
+                if platform in known_platforms:
+                    platform_counter[platform] += 1
+                    found_first_platform = True
+                else:
+                    overview_lines.append(line)
+            elif line:
+                overview_lines.append(line)
+            continue
+
+        if re.fullmatch(r"\*[A-Z0-9 &]+:\s*", line):
+            platform = line.strip("*:").strip().upper()
+            if platform in known_platforms:
+                platform_counter[platform] += 1
+
+    overview = " ".join(overview_lines).strip() if overview_lines else ""
+    return overview, platform_counter
+
+def parse_history_entries(file_path: Path, encoding: str) -> dict:
+    """
+    Parses the Gaming-History XML file and extracts relevant data from <systems> entries.
+    Stores primary system name, GH ID from CONTRIBUTE section, aliases, and PORTS summary.
 
     Args:
         file_path (Path): Path to history.xml
-        encoding (str): Encoding to use for reading the file
+        encoding (str): Detected encoding for history.xml (from encodings.json)
 
     Returns:
-        dict[str, dict]: Structured GH metadata per primary <system>
+        dict: Dictionary of system entries with GH metadata.
     """
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
     total_entries = 0
     systems_count = 0
     software_count = 0
-    headings_counter = Counter()
-    result = {}
-    heading_pattern = re.compile(r"^\s*-\s*([A-Z0-9 &]+?)\s*-\s*$")
-
-    start = time.perf_counter()
+    port_overview_count = 0
+    platform_totals = Counter()
+    gh_entries = {}
 
     try:
         with open(file_path, encoding=encoding) as f:
             for event, elem in ET.iterparse(f, events=("end",)):
-                if elem.tag == "entry":
-                    total_entries += 1
-                    has_systems = False
-                    text_elem = elem.find("text")
-                    text_content = text_elem.text if text_elem is not None else ""
+                if elem.tag != "entry":
+                    continue
 
-                    for child in elem:
-                        if child.tag == "systems":
-                            has_systems = True
-                            systems_count += 1
-                        elif child.tag == "software":
-                            software_count += 1
+                total_entries += 1
+                entry_data = {
+                    "gh_id": None,
+                }
 
-                    if has_systems:
-                        systems_elem = elem.find("systems")
-                        system_tags = systems_elem.findall("system") if systems_elem is not None else []
-                        if not system_tags:
-                            elem.clear()
-                            continue
+                systems_elem = elem.find("systems")
+                software_elem = elem.find("software")
 
-                        first_name = system_tags[0].attrib.get("name")
-                        aliases = [s.attrib.get("name") for s in system_tags[1:]]
-                        gh_id = extract_gh_id(text_content or "")
+                if systems_elem is not None:
+                    systems_count += 1
+                    system_names = [s.attrib.get("name") for s in systems_elem.findall("system") if s.attrib.get("name")]
 
-                        result[first_name] = {
-                            "gh_id": gh_id,
-                            "is_primary": True,
-                            "aliases": aliases,
-                            "sections": {
-                                "Overview": "",
-                            }
-                        }
-
-                        # Debug permanent for puckman and pacman
-                        if first_name in {"puckman", "pacman"} or any(a in {"puckman", "pacman"} for a in aliases):
-                            log.debug(f"[history_parser::parse_history_entries] {first_name}:")
-                            log.debug(f"  GH ID: {gh_id}")
-                            log.debug(f"  Aliases: {aliases}")
-
-                        # Scan for headings
-                        if text_content:
-                            for line in text_content.splitlines():
-                                match = heading_pattern.match(line)
-                                if match:
-                                    heading = match.group(1).strip().upper()
-                                    headings_counter[heading] += 1
-
+                    if system_names:
+                        primary = system_names[0]
+                        aliases = system_names[1:]
+                        if aliases:
+                            entry_data["aliases"] = aliases
+                    else:
+                        elem.clear()
+                        continue
+                elif software_elem is not None:
+                    software_count += 1
                     elem.clear()
+                    continue
+                else:
+                    elem.clear()
+                    continue
+
+                text_elem = elem.find("text")
+                if text_elem is not None and text_elem.text:
+                    raw_text = html.unescape(text_elem.text)
+                    match = re.search(r"id=(\d+)", raw_text)
+                    if match:
+                        entry_data["gh_id"] = int(match.group(1))
+
+                    overview, platform_counts = parse_ports(raw_text)
+                    if overview:
+                        entry_data["port_overview"] = overview
+                        port_overview_count += 1
+                    platform_totals.update(platform_counts)
+
+                gh_entries[primary] = entry_data
+
+                if primary in ("puckman", "pacman"):
+                    debug_log(f"[history_parser::parse_history_entries] {primary}:")
+                    debug_log(f"  GH ID: {entry_data['gh_id']}")
+                    debug_log(f"  Aliases: {entry_data['aliases']}")
+
+                elem.clear()
 
     except ET.ParseError as e:
         log.error(f"XML parse error in {file_path.name}: {e}")
-    except Exception as e:
-        log.error(f"Unexpected error while parsing {file_path.name}: {e}")
+        return {}
 
     log.info(f"Parsed {total_entries} <entry> elements from history.xml")
     log.info(f"  - {systems_count} entries had <systems> (arcade-relevant)")
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
+    log.debug(f"[history_parser::parse_history_entries] Unique PORTS platform categories found: {len(platform_totals)}")
+    for platform, count in sorted(platform_totals.items(), key=lambda x: (-x[1], x[0])):
+        log.debug(f"  - {platform}: {count}")
+    log.info(f"  - {port_overview_count} entries contained a port overview")
 
-    log.debug(f"[history_parser::parse_history_entries] Found {len(headings_counter)} unique headings across {systems_count} system entries.")
-    for heading, count in sorted(headings_counter.items(), key=lambda x: (-x[1], x[0])):
-        log.debug(f"  - {heading}: {count}")
+    count = 0
+    for name, data in gh_entries.items():
+        if data.get("port_overview"):
+            debug_log(f"[history_parser::parse_history_entries] Port overview for {name}: {data['port_overview'][:100]}...")
+            count += 1
+            if count >= 10:
+                break
 
-    log.info(f"history.xml parsing completed in {time.perf_counter() - start:.2f} seconds")
-    return result
+    # Write gh_entries.json
+    output_dir = Path("output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / "gh_entries.json"
+    try:
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(gh_entries, f, indent=2)
+        log.info(f"Saved parsed GH metadata to {output_file}")
+    except Exception as e:
+        log.error(f"Failed to write GH entries JSON: {e}")
+
+    log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")
+    return gh_entries

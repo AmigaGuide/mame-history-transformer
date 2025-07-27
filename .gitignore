@@ -214,3 +214,4 @@ data/*
 
 # Project logs folder
 logs/
+output/
