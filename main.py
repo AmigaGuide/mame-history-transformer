@@ -28,7 +28,8 @@ from logger import setup_logger, debug_log
 from encoding_utils import detect_encoding
 from mame_parser import parse_mame_xml
 from history_metadata import summarise_ini_classifications
-from history_parser import parse_history_xml
+from history_parser import parse_history_entries
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -203,7 +204,9 @@ def main():
     log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
 
     log.info("Beginning History XML parsing...")
-    parse_history_xml(data_dir / "history.xml", encodings["history.xml"])
+    gh_entries = parse_history_entries(data_dir / "history.xml", encodings["history.xml"])
+
+
 
 if __name__ == "__main__":
     main()
