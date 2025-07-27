@@ -111,9 +111,9 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     log.info(f"Included {len(filtered_machines)} machines after filtering")
     log.info(f"  - {len(added_clones)} were added as clones of valid parents")
     log.info(f"Excluded {len(excluded)} machines (not arcade/playable)")
-    log.info("First 10 machines excluded (not valid or clone of valid):")
+    debug_log("First 10 machines excluded (not valid or clone of valid):")
     for name, meta in excluded[:10]:
-        log.info(f"  - {name}: {meta}")
+        debug_log(f"  - {name}: {meta}")
 
     filter_time = time.perf_counter() - start_time
     log.info(f"Filtering completed in {filter_time:.2f} seconds")

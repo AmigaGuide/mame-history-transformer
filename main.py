@@ -192,11 +192,11 @@ def main():
     encodings = {k: v["encoding"] for k, v in updated_encodings.items()}
 
     summary = summarise_ini_classifications(encodings)
-    log.info("INI Classification Summary:")
-    for category, counts in summary.items():
-        log.info(f"--- {category} ---")
-        for label, count in sorted(counts.items()):
-            debug_log(f"    {label}: {count}")
+    #log.info("INI Classification Summary:")
+    #for category, counts in summary.items():
+    #    log.info(f"--- {category} ---")
+    #    for label, count in sorted(counts.items()):
+    #        debug_log(f"    {label}: {count}")
 
     log.info("Beginning MAME XML parsing...")
     machines = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
