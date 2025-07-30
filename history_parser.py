@@ -32,6 +32,9 @@ import re
 import json
 import html
 from collections import Counter, defaultdict
+#from dateutil.parser import parse as parse_date
+from dateutil.parser import parse as date_parse
+from dateutil.parser import ParserError
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
@@ -74,8 +77,7 @@ def segment_text_sections(text: str) -> dict:
 
     return sections
 
-
-def extract_ports_section(lines: list[str]) -> tuple[str, Counter, dict]:
+def extract_ports_section(lines: list[str], system_name: str) -> tuple[str, Counter, dict]:
     """
     Parses the lines from the PORTS section of a <system> entry to extract structured data.
 
@@ -127,14 +129,16 @@ def extract_ports_section(lines: list[str]) -> tuple[str, Counter, dict]:
             continue
 
         if current_platform and line:
-            parsed_entry = parse_port_entry(line)
+            #parsed_entry = parse_port_entry(line)
+            #parsed_entry = parse_port_entry(line, system_name=primary)
+            parsed_entry = parse_port_entry(line, system_name=system_name)
             platform_entries[current_platform].append(parsed_entry)
 
     overview = " ".join(overview_lines).strip() if overview_lines else ""
     return overview, platform_counter, platform_entries
    
 
-def parse_port_entry(line: str) -> dict:
+def parse_port_entry(line: str, system_name: str = "") -> dict:
     """
     Parses a single port entry line into structured metadata fields.
 
@@ -158,7 +162,7 @@ def parse_port_entry(line: str) -> dict:
               - platform (str)
               - model (str)
               - title (str)
-              - year (str)
+              - date (str)
               - publisher (str)
               - comment (str)
               - additional_tags (list[str])
@@ -169,7 +173,7 @@ def parse_port_entry(line: str) -> dict:
         "platform": None,
         "model": None,
         "title": None,
-        "year": None,
+        "date": None,
         "publisher": None,
         "comment": None,
         "additional_tags": [],
@@ -179,11 +183,22 @@ def parse_port_entry(line: str) -> dict:
     original_line = line.strip()
     working_line = original_line
 
-    # 1. Extract comment (everything after the first colon)
-    if ":" in working_line:
-        main_part, comment = working_line.split(":", 1)
-        entry["comment"] = comment.strip()
-        working_line = main_part.strip()
+    # 1. Extract comment (everything after the first colon, unless inside quotes)
+    original_line = line.strip()
+    working_line = original_line
+    comment_index = -1
+    in_quotes = False
+
+    for i, char in enumerate(working_line):
+        if char == '"':
+            in_quotes = not in_quotes
+        elif char == ':' and not in_quotes:
+            comment_index = i
+            break
+
+    if comment_index != -1:
+        entry["comment"] = working_line[comment_index + 1:].strip()
+        working_line = working_line[:comment_index].strip()
 
     # 2. Extract square bracketed tags
     square_brackets = re.findall(r"\[(.*?)\]", working_line)
@@ -203,11 +218,34 @@ def parse_port_entry(line: str) -> dict:
         entry["title"] = match_title.group(1).strip()
         working_line = working_line.replace(match_title.group(0), "")
 
-    # 4. Extract year in parentheses
-    match_year = re.search(r"\((.*?)\)", working_line)
-    if match_year:
-        entry["year"] = match_year.group(1).strip()
-        working_line = working_line.replace(match_year.group(0), "")
+    # Step 4: Extract date in parentheses
+    match_date = re.search(r"\((.*?)\)", working_line)
+    if match_date:
+        raw_date = match_date.group(1).strip()
+        working_line = working_line.replace(match_date.group(0), "")
+
+        if not raw_date or "?" in raw_date:
+            entry["date"] = f"({raw_date})"
+            log.warning(f"Uncertain or placeholder date for {system_name} -> line: {original_line}")
+        else:
+            try:
+                parsed_date = date_parse(raw_date, fuzzy=True)
+                year = parsed_date.year
+
+                # Fresh evaluation of granularity
+                has_month = bool(re.search(r"[.\-/_](0?[1-9]|1[0-2])", raw_date))
+                has_day = bool(re.search(r"[.\-/_](\d{1,2})$", raw_date)) and has_month
+
+                if has_day:
+                    entry["date"] = f"{year:04d}-{parsed_date.month:02d}-{parsed_date.day:02d}"
+                elif has_month:
+                    entry["date"] = f"{year:04d}-{parsed_date.month:02d}-XX"
+                else:
+                    entry["date"] = f"{year:04d}-XX-XX"
+            except Exception:
+                entry["date"] = f"({raw_date})"
+                log.warning(f"Unparseable date '{raw_date}' in system '{system_name}' -> line: {original_line}")
+
 
     # 5. Extract publisher (by XYZ)
     match_pub = re.search(r"\bby\s+(.+)", working_line)
@@ -271,7 +309,14 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                     continue
 
                 total_entries += 1
-                entry_data = {}
+                #entry_data = {}
+                
+                entry_data = {
+                    "gh_id": None,
+                    "aliases": [],
+                    "port_overview": "",
+                    "ports": {}
+                }
 
                 systems_elem = elem.find("systems")
                 software_elem = elem.find("software")
@@ -317,7 +362,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                                 break
 
                     if "PORTS" in sectioned:
-                        overview, platform_counts, platform_ports = extract_ports_section(sectioned["PORTS"])
+                        #overview, platform_counts, platform_ports = extract_ports_section(sectioned["PORTS"])
+                        overview, platform_counts, platform_ports = extract_ports_section(sectioned["PORTS"], primary)
                         for entries in platform_ports.values():
                             for entry in entries:
                                 if entry.get("residue"):
