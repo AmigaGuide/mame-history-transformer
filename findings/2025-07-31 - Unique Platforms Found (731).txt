@@ -1,0 +1,733 @@
+Unique Platforms Found: 731
+
+* Hanhelds: 1
+* Others: 2
+APF Match: 1
+APF Sportsarama: 1
+APF TV FUN: 1
+Academy Video Game: 1
+Acorn Archimedes: 4
+Acorn Electron: 14
+Acorn Electron   - Acornsoft: 1
+Acorn Electron   - Gemini: 1
+Allied's: 2
+Amiga: 3
+Amiga CD32: 1
+Amstrad CPC: 315
+Amstrad CPC   Elite: 1
+Amstrad CPC   Encore Edition: 1
+Amstrad CPC  128 ko version: 1
+Amstrad CPC 464/664/6128: 1
+Amstrad CPC Cassette: 1
+Amstrad CPC Disk: 1
+Amstrad CPC+: 4
+Amstrad GX4000: 5
+Amstrad PCW: 1
+Android: 19
+Android Market: 10
+Anstrad CPC: 1
+AppStore: 1
+Apple App Store: 7
+Apple II: 60
+Apple II  Star Craft Tokyo.: 1
+Apple II E: 1
+Apple II GS: 3
+Apple IIE: 1
+Apple IIGS: 4
+Apple IPhone/IPod: 1
+Apple MacIntosh: 19
+Apple Macintosh: 8
+Apple Store: 27
+Apple iOS: 1
+Apple iPad/iPhone: 1
+Apple iPhone: 3
+Apple iPhone/iPad: 20
+Apple iPhone/iPod: 74
+Apple iPhone/iPod Touch: 1
+Apple iPod: 1
+Arcade: 94
+Arcade   as a hidden game.: 1
+Arcade Gold featuring Pac-Man: 7
+Arcade Gold featuring Pac-Man (2007: 1
+Arcade Legends: 3
+Arcade System IGS PGM2: 1
+Asaflex Video Sports: 1
+Atari: 6
+Atari 10 in 1 TV Game: 1
+Atari 2600: 147
+Atari 2600  - Prototype: 1
+Atari 400: 2
+Atari 400/800: 1
+Atari 5200: 51
+Atari 7800: 40
+Atari 8-Bit: 3
+Atari 8-bit: 2
+Atari 800: 51
+Atari Flashback 2: 4
+Atari Flashback 2+: 4
+Atari Flashback 4: 1
+Atari Flashback 5: 1
+Atari Flashback 6: 1
+Atari Flashback 7: 2
+Atari Flashback 8: 2
+Atari Flashback 8 Gold Edition: 2
+Atari Flashback Classic Game Console: 1
+Atari Flashback Portable Game Player: 1
+Atari Jaguar: 5
+Atari Jaguar CD: 2
+Atari Lynx: 41
+Atari Paddle TV Game: 2
+Atari ST: 200
+Atari ST   - PD / Shareware: 1
+Atari ST  Budget edition: 1
+Atari ST  KlassiX: 1
+Atari ST/E: 1
+Atari Ultimate Portable Game Player: 1
+Atari Video Pinball: 1
+Atari XE: 1
+Atari XEGS: 42
+Atari XL/XE: 2
+Audiosonic Color TV Game: 1
+Audiosonic Home's TV Set: 1
+BBC B: 24
+BBC B   - Acornsoft: 1
+BBC B   - Gemini: 1
+BBC B  - Superior: 1
+BBC Electron: 1
+BBC Micro: 24
+BBC Micro Model B: 1
+BK11M: 1
+Bally Astrocade: 12
+Bandai WonderSwan: 15
+Bandai WonderSwan Color: 1
+Bentley Compu-Vision: 1
+Binatone: 1
+Binatone Colour TV Game: 1
+Binatone Colour TV Game 4 Plus 2: 1
+Binatone TV Master MK IV: 1
+Binatone TV-Master MK 10: 1
+Binatone TV-Master MK 6: 1
+Binatone TV-Master MK 8: 1
+Binatone TV-TRON: 1
+Bingo TVG 203: 1
+Bingo Video Game: 1
+BlackBerry: 10
+Blackberry: 3
+Blaupunkt TV-Action: 1
+Blaze Evercade: 1
+Boots Audio: 1
+CD-I: 1
+CPS Changer: 3
+Canadian Tire: 1
+Casio PV-1000: 10
+Casio PV-2000: 1
+Coleco: 7
+Coleco Telstar Colortron: 1
+Coleco Telstar Marksman: 1
+ColecoVision: 7
+Colecovision: 55
+Commodore 16: 8
+Commodore 64: 18
+Commodore Amiga: 210
+Commodore Amiga   - Shareware: 1
+Commodore Amiga  Kixx Collection 3: 1
+Commodore Amiga CD32: 1
+Commodore C16: 1
+Commodore C64: 405
+Commodore C64    (unauthorized clone): 1
+Commodore C64  Budget edition: 1
+Commodore C64  Unlicensed: 2
+Commodore C64  as: 2
+Commodore C64 Disk: 1
+Commodore Plus/4: 2
+Commodore T.V. Game: 1
+Commodore VIC-20: 24
+Commodore Vic 20: 2
+Concept 2000 Spectrum 6: 1
+Concept 2000 TV +4: 1
+Conic Video Game: 1
+Continental Edison: 1
+Creatronic Bi.Bip 4: 1
+Creatronic Bi.Bip 8: 1
+DDR TV-Spiele: 1
+DMS Tele-Action: 1
+DOS: 1
+DVD Player: 1
+DVD Video: 1
+DVD-Video: 3
+Dayya Marume 2000: 1
+Decca Sports TV Game: 1
+Derby Master: 1
+Digitek TV Game: 1
+Dragon 32: 1
+Dyn: 1
+DynaVision: 9
+E&P 4 Electronic TV Sport Games: 1
+EZweb: 1
+Electrophonic Pro-Sports: 1
+Emerson Arcadia: 12
+Emerson Arcadia 2001: 2
+Emerson Arcadia 2001   clone, as "Space Attack ": 1
+Enterprex Color Home Video Game: 1
+Entex: 1
+Entex Adventure Vision: 1
+Entex AdventureVision: 1
+Entex Adventurevision: 1
+Epoch Cassette Vision: 1
+Executive Games: 1
+Exidy Sorcerer: 3
+FM Towns: 3
+FM Towns CD: 2
+FM Towns Marty: 12
+FM Towns PC: 20
+FM-7: 6
+FM-77AV: 1
+FM-Towns Marty: 2
+FM7: 2
+First Dimension: 3
+Frogger Plug 'n Play TV Game: 1
+Fujitsu FM Towns CD: 1
+Fujitsu FM-7: 11
+Fujitsu FM-77: 1
+Fujitsu FM-77AV: 3
+G7000 Videopac: 1
+GBA: 1
+GCE Vectrex: 12
+GHP: 1
+Game Boy: 2
+Game Boy Color: 25
+Google Play: 24
+Granada: 1
+Grandstand: 1
+Grandstand Sports Centre: 1
+Grunding Tele-Spiel 1: 1
+Gulliver Triple Challenge: 1
+Hanimex Electronic TV Game: 1
+Hanimex Jeu-Tele Electronique: 1
+Hanimex TV Scoreboard: 1
+Harvard Mini Color TV Game: 1
+Hit-Go: 1
+Home DVD Player: 1
+Hometronics Telecourt: 1
+Honeybell Video Sports color: 1
+IBM PC: 6
+IBM PC/AT: 1
+ITMC 6 Jeux: 1
+ITT / Ideal Color Tele-Match Cassette: 1
+ITT / Ideal Color Tele-Match Cassette 2: 1
+ITT / Ideal Tele-Match Cassette: 1
+Ingersoll mini TV Game: 1
+Intel Super-Telesport: 1
+Intel TV Sport: 1
+Intellivision: 3
+Intercord TV Games: 1
+Interton Club Exclusiv 2000: 1
+Interton Video 2400: 1
+Interton Video 2501: 1
+Interton Video 2800: 1
+Interton Video 3000: 1
+Interton Video 3001: 1
+K-Mart S Eight Thousand: 1
+K-Mart S Four Thousand: 1
+Klervox Jeu TV: 1
+Konami Arcade Advanced Plug 'n Play TV Game: 5
+Korting Tele-Multi-Play: 1
+LCD Barcodzz handheld game: 1
+LCD Game & Watch: 1
+LCD Handheld Game: 4
+LCD Handheld game: 1
+LCD Handheld game   released: 1
+LCD Keychains handheld game: 1
+LCD Keychains handheld game  released: 1
+LCD handheld color game  released: 1
+LCD handheld game: 38
+LCD handheld game   released: 4
+LCD handheld game  released: 7
+LCD handheld game with calculator: 1
+LCD large tabletop: 1
+LCD tabletop game: 2
+LED handheld game  black version: 1
+LED handheld game  grey version: 1
+LSI Portable game: 1
+Let's TV play classic series - Namco Nostalgia 1: 1
+Let's! TV play classic series - Namco Nostalgia 1: 1
+Let's! TV play classic series - Namco Nostalgia 2: 2
+Lloyds: 1
+MAC OS: 8
+MAC OS 10.1: 1
+MBO Tele-Ball V: 1
+MBO Tele-Ball VIII: 1
+MECCA: 1
+MS Windows: 3
+MS Windows 95: 1
+MS-DOS: 2
+MSC: 1
+MSX: 139
+MSX 2: 8
+MSX2: 15
+Macintosh: 3
+Magnavox: 9
+Magnavox Odyssey 2: 5
+Markint 4a: 1
+Markint 6: 1
+Markint TV Sports: 1
+Markint Tele-Sports: 1
+Match Color: 1
+Match Spectrum 6: 1
+Mattel Aquarius: 4
+Mattel Intellivision: 26
+Memotech MTX: 1
+Memotech MTX 512: 1
+Memotech MTX512: 1
+Mestron: 1
+Microbee: 1
+Microsoft Windows: 9
+Microsoft Windows 98: 1
+Microsoft X-BOX: 2
+Microsoft XBOX: 420
+Microsoft XBOX   - Atari 2600 version: 12
+Microsoft XBOX   included in.: 1
+Microsoft XBOX  ): 1
+Microsoft XBOX 360: 399
+Microsoft XBOX 360    - XBLA version: 2
+Microsoft XBOX 360   - XBLA version: 4
+Microsoft XBOX 360   Online Edition: 1
+Microsoft XBOX 360   XBLA version: 1
+Microsoft XBOX One: 25
+Microsoft XBOX360: 6
+Microsoft XBox 360: 1
+Microsoft Xbox: 1
+Microsoft Xbox 360: 5
+Microsoft Xbox One: 2
+Microtan 65: 3
+Mobile: 1
+Mobile Phone: 6
+Mobile Phones: 55
+Mobile Phones   Nintendo NES Version: 1
+Mobile phone: 5
+Mobile phones: 14
+Montgomery-Ward: 1
+Mortal Kombat TV Game: 1
+Ms. Pac-Man TV Game: 5
+Ms. Pac-Man TV Game Wireless Version: 7
+NEC PC 8801: 8
+NEC PC 9801: 8
+NEC PC Engine: 2
+NEC PC Engine Arcade CD-ROM²: 1
+NEC PC Engine CD/SCD: 1
+NEC PC-6001: 1
+NEC PC-6001 Mk2: 4
+NEC PC-8001: 2
+NEC PC-88: 2
+NEC PC-8801: 12
+NEC PC-98: 1
+NEC PC-9800 series: 1
+NEC PC-9801: 15
+NEC PC-Engine: 79
+NEC PC-Engine  - featuring Doraemon characters.: 1
+NEC PC-Engine Arcade CD: 1
+NEC PC-Engine CD: 12
+NEC PC-Engine CD-ROM: 1
+NEC PC-Engine CD-ROM²: 5
+NEC PC-Engine Super CD: 2
+NEC PC-Engine Super CD-ROM: 3
+NEC PC-Engine Super CD-ROM2: 2
+NEC PC-Engine Super CD-ROM²: 6
+NEC PC-Engine Super CD-ROM² System: 1
+NEC PC-FX: 1
+NEC PC8801: 3
+NEC PC9801: 3
+NEC PCFX: 1
+NEC SuperGrafx: 2
+NEC Turbo CD: 1
+NEC TurboGrafx 16: 1
+NEC TurboGrafx-16: 16
+NEC TurboGrafx-CD: 4
+NES: 3
+NUON: 1
+Namco Classics TV Game: 4
+Namco Classics TV game: 1
+National Semiconductor: 1
+Nec PC Engine: 1
+Nec PC-Engine CD-ROM²: 1
+Neo Cherry Master Color - Neo Geo Pocket Color: 1
+Neo-Geo Pocket Color: 2
+Nintendo: 4
+Nintendo 3DS: 33
+Nintendo 3DS     Famicom version: 1
+Nintendo 3DS     Game Boy version: 2
+Nintendo 3DS    Game Boy version: 4
+Nintendo 64: 55
+Nintendo BS: 1
+Nintendo Color TV Block Kusure: 1
+Nintendo DS: 179
+Nintendo DS   - Atari 2600 version: 4
+Nintendo DSi: 2
+Nintendo Entertainment System: 1
+Nintendo FamiCom: 1
+Nintendo Famicom: 175
+Nintendo Famicom   (Unlicensed): 1
+Nintendo Famicom / NES: 1
+Nintendo Famicom Disc System: 1
+Nintendo Famicom Disk: 20
+Nintendo Famicom Disk System: 8
+Nintendo Famicon: 1
+Nintendo GBA: 111
+Nintendo Game Boy: 223
+Nintendo Game Boy   Game Boy version: 1
+Nintendo Game Boy Advance: 45
+Nintendo Game Boy Color: 76
+Nintendo Game Boy Colour: 1
+Nintendo Game Cube: 2
+Nintendo GameBoy: 1
+Nintendo GameBoy Advance: 2
+Nintendo GameCube: 126
+Nintendo Gameboy Advance: 1
+Nintendo NES: 184
+Nintendo NES  - developed: 1
+Nintendo NES/Famicom: 1
+Nintendo SFC / SNES: 1
+Nintendo SNES: 96
+Nintendo SNES / Super Famicom: 1
+Nintendo Super Famicom: 105
+Nintendo Super Famicom/SNES: 1
+Nintendo Super Famicon: 1
+Nintendo Super NES: 25
+Nintendo Switch: 3
+Nintendo Virtual Boy: 1
+Nintendo Wii: 305
+Nintendo Wii     Famicom version: 1
+Nintendo Wii     Neo-Geo version: 1
+Nintendo Wii     SNES version: 2
+Nintendo Wii     Super Comboy version: 1
+Nintendo Wii     Super Famicom version: 1
+Nintendo Wii    Famicom version: 1
+Nintendo Wii    NES version: 6
+Nintendo Wii    Neo Geo version: 1
+Nintendo Wii    Neo-Geo version: 5
+Nintendo Wii    PC-Engine Super CD-ROM version: 1
+Nintendo Wii    PC-Engine version: 4
+Nintendo Wii    TurboGrafx version: 1
+Nintendo Wii    TurboGrafx-16 version: 2
+Nintendo Wii   ": 3
+Nintendo Wii   " : Translated as "Everybody plays! Namco Carnival".: 1
+Nintendo Wii   Famicom version: 1
+Nintendo Wii   PC-Engine ver.: 1
+Nintendo Wii   PC-Engine version: 1
+Nintendo Wii   TurboGrafx version: 1
+Nintendo Wii  ): 1
+Nokia N-Gage: 41
+Noval 760: 2
+Novex Colour Video Sports Game: 1
+Nuon: 2
+OPL Optim Sport: 1
+Occitane: 2
+Olympos Electronic Gamatic 7706: 1
+Online slot: 3
+Oric: 4
+Oric I: 2
+Oric-1: 1
+PC: 785
+PC    , a part of the "Friendlyware PC Arcade" suite: 1
+PC    - Atari 2600 version: 6
+PC    - Atari 2600 version, as part of "Atari Kids 2006": 2
+PC    - CHAMProgramming: 2
+PC    - PD / Shareware: 1
+PC    : This port of Pit-Fighter inexplicably uses a sprite resizing algorithm that stretches only vertically, not horizontally. This results in very odd-looking 'skinny' fighters onscreen.: 1
+PC    Kixx Collection 3: 1
+PC   ): 1
+PC   , a part of the "Friendlyware PC Arcade" suite: 3
+PC   , part of "Windows Arcade Pack": 3
+PC   , part of the "Friendlyware PC Arcade" suite: 1
+PC   Hopper, as part of  suite.: 1
+PC   Sega Classics edition: 1
+PC   Xplosiv edition: 1
+PC  : Re-released in 1991 .: 1
+PC - 1991: 1
+PC - DOS: 1
+PC / IBM Compatible: 1
+PC 6001: 1
+PC 8801: 3
+PC 9801  - Home Data: 1
+PC DOS: 1
+PC Engine Super CD-ROM: 1
+PC MS-DOS: 1
+PC Windows: 3
+PC Windows 10 Apps: 1
+PC Windows 95: 1
+PC-9801: 2
+PC-CD Windows 95/98/2000: 1
+PC-Compatible: 1
+PC-DOS: 1
+PC-Engine CD-ROM²: 1
+PC88: 1
+PC9801: 3
+PSN: 1
+Pac-Man Connect and Play: 10
+Pac-Man Connect and Play  Bandai: 1
+Packel Instrument: 1
+Palladium Tele-Match 4000: 1
+Palm OS: 6
+Panasonic 3DO: 26
+Philips CD-I: 3
+Philips CD-i: 2
+Philips G7000 Videopac: 2
+Philips Odyssey 2001: 1
+Philips Odyssey 2100: 1
+Philips Odyssey²: 1
+Philips Tele-Spiel Las Vegas: 1
+Philips Videopac G7000: 1
+Phillips CD-I: 6
+Pioneer LaserActive: 2
+Pioneer Palcom PX-7: 4
+Pizon Bros.: 2
+Pizon-Bross Visiomat 11: 1
+PlayStation 3: 1
+PlayStation Portable: 1
+Polistil Video Games: 1
+Poppy Color Video Game: 1
+Poppy Tele-Spiel: 1
+Poppy Tv-Game Fernseh Spiel: 1
+Prinztronic Tournament Colour Programmable 2000: 1
+Prinztronic Tournament II Deluxe: 1
+Prinztronic Tournament Mini: 1
+Prinztronic Videosport: 1
+RDI Halcyon System: 1
+RIL Robot: 1
+Radio Shack: 1
+Radio Shack LCD handheld: 1
+Radofin Colour TV Game: 1
+Radofin Electronic TV Game: 1
+Radofin SC Eight Thousand: 1
+Radofin Tele-Sports: 1
+Radofin Tele-Sports Mini: 1
+Retro Arcade featuring Pac-Man: 12
+Ricochet Electronic Super Pro: 1
+Ridgewood: 1
+Roberts Rally IV: 1
+Roberts Rally X: 1
+Roberts Sportrama 8: 1
+Rollet Robot: 1
+SEB Telescore: 1
+SNK Neo Geo: 1
+SNK Neo Geo AES: 1
+SNK Neo Geo Pocket Color: 2
+SNK Neo-Geo: 19
+SNK Neo-Geo AES: 119
+SNK Neo-Geo CD: 124
+SNK Neo-Geo MVS: 2
+SNK Neo-Geo Pocket: 7
+SNK Neo-Geo Pocket Color: 12
+STEAM: 1
+Saft-Leclanch TV 8 Sports: 1
+Sam Coupe: 4
+Samdo: 1
+Samsung Gam*Boy: 1
+Sands Color TV Game: 1
+Santron Home T.V. Game: 1
+Sanwa Tele-Spiel: 1
+Scomark 4 Sports Tele: 1
+Sears: 12
+Sears Hockey-Tennis: 1
+Sega 32X: 12
+Sega 32x: 3
+Sega CD: 18
+Sega Dreamcast: 228
+Sega Dreamcast   ": 1
+Sega Game Gear: 75
+Sega Genesis: 75
+Sega Genesis / Mega Drive: 1
+Sega Genesis 32X: 3
+Sega Genesis/Mega Drive: 3
+Sega Mark III: 10
+Sega Mark III/Master System: 1
+Sega Master System: 121
+Sega Mega 32X: 1
+Sega Mega CD: 9
+Sega Mega Drive: 219
+Sega Mega Drive / Genesis: 2
+Sega Mega Drive 32X: 3
+Sega Mega-CD: 17
+Sega Megadrive: 4
+Sega SC-1000: 2
+Sega SG-1000: 37
+Sega SG-1000  Hyper Sports: 1
+Sega Saturn: 346
+Sega Saturn  ): 1
+Sega Saturn  Features four extra stages exclusive to the Saturn version.: 1
+Sega Saturn  unreleased/unfinished prototype: 1
+Sega Super 32X: 4
+Sennheiser TV Game: 1
+Sharp: 1
+Sharp MZ-1500: 1
+Sharp MZ-2000: 3
+Sharp MZ-700: 2
+Sharp MZ-80K Pacman: 1
+Sharp MZ1200/1500: 1
+Sharp MZ2500: 4
+Sharp X-1: 1
+Sharp X1: 16
+Sharp X68000: 100
+Sheen Colour Video Sport: 1
+Sheen Video Sport: 1
+Sinclair QL: 2
+Sinclair ZX 81: 1
+Sinclair ZX Spectrum: 257
+Sinclair ZX Spectrum   - Your Computer (UK Magazine) Type-in issue Nov '85, page 82: 1
+Sinclair ZX Spectrum  Budget Edition: 1
+Sinclair ZX Spectrum  Budget edition: 1
+Sinclair ZX Spectrum  Encore Edition: 2
+Sinclair ZX Spectrum +3: 1
+Sinclair ZX Spectrum+3: 1
+Sinclair ZX-Spectrum: 15
+Sinclair ZX-Spectrum   - Anirog Software: 2
+Sinclair ZX-Spectrum  Vectis Software: 1
+Sinclair ZX81: 2
+Sinclair Zx-Spectrum: 1
+Sinoca T.V. Game: 1
+Société occitane d'électronique: 2
+Sonesta Hide-Away TV Game: 1
+Sony PS Vita: 1
+Sony PS2: 871
+Sony PS2   - Atari 2600 version: 6
+Sony PS3: 6
+Sony PS4: 30
+Sony PSN: 5
+Sony PSP: 511
+Sony PSP  , as "Burnin' Rubber": 1
+Sony PlayStation: 671
+Sony PlayStation  Famicom version: 2
+Sony PlayStation  PS1 Classics: 3
+Sony PlayStation 2: 272
+Sony PlayStation 3: 260
+Sony PlayStation 4: 153
+Sony PlayStation Portable: 15
+Sony PlayStation Store: 9
+Sony PlayStation Vita: 1
+Sony Playstation: 8
+Sony Playstation 2: 8
+Sony Playstation 3: 6
+Sony Playstation 3   Online Edition: 1
+Sord M-5: 3
+Sord M5: 3
+Sord-M5: 5
+Spectravideo: 3
+Sportel: 1
+Sportron: 1
+Starex: 1
+Steam: 28
+Street Fighter II' Special Champion Edition Plug 'n Play TV Game: 1
+Super Cassette Vision: 3
+Super NES: 4
+Super Nintendo: 1
+Super Pac-Man TV game: 4
+Superlectron Fernsehspiel: 1
+Superlectron TV Challenger: 1
+Syrelec Videosport 2: 1
+TCR Video Sport: 1
+TI-99/4A: 2
+TI99: 3
+TI99/4A: 4
+TI99/4a: 3
+TRS-80: 1
+TRS-80 CoCo: 1
+TV 18 Spannende Videospiele: 1
+TV-Games: 1
+Tabletop Game: 1
+Tandy CoCo 1 and 2: 1
+Tandy Color Computer: 85
+Tandy Color Computer 1 or 2: 1
+Tandy Color Computer 2: 1
+Tandy Color Computer 3: 9
+Tandy TV Scoreboard: 1
+Tangerine Microtan 65: 3
+Tapwave Zodiac: 3
+Tectoy S.A. Zeebo: 1
+Tele-Match 4: 1
+Tele-Match Concert Hall IV: 1
+Tele-Match Television Computer Game: 1
+Teleng Colourstars: 1
+Television Gaming Unit: 1
+Tempest Video Game: 1
+Texas Instruments TI-99/4A: 14
+Thomson Jeu Video: 1
+Thomson M05: 4
+Thomson MO5: 1
+Thomson TO7: 3
+Thomson TO8: 6
+Tiger Game.Com: 3
+Tiger Game.com: 5
+Tiger Handheld LCD Game: 6
+Tiger LCD Handheld Game: 4
+Tiger LCD Tabletop Game: 1
+Tiger R-Zone: 5
+Tommy Tutor: 5
+Tomy Tutor: 2
+Turbo Grafx 16: 1
+TurboGrafx-16: 1
+Unimex Mark V-C: 1
+Unisonic Olympian 2600: 1
+Unisonic Sportsman - Tournament 101: 1
+Unisonic Tournament 100: 1
+Unisonic Tournament 1000: 1
+Unisonic Tournament 150: 1
+Unisonic Tournament 200: 1
+Unisonic Tournament 2000: 1
+Unisonic Tournament 2501: 1
+Universal Research: 4
+Universum Color Multi-Spiel: 1
+Universum TV Multi-Spiel: 1
+Universum Tele-Sports: 1
+Univox: 1
+Univox Tele-Sports 6: 1
+VFD Handheld Game: 1
+VFD Portable Game: 1
+VFD handheld game: 18
+VFD handheld game   released: 2
+VFD handheld game  released: 5
+VFD handheld game released: 1
+VFD portable game: 6
+VFD portable game   , German version: 1
+VFD portable game   , Hales UK version: 1
+VFD tabletop game: 5
+VTech Laser-VZ: 8
+Vectrex: 1
+Venture Electronics Video Sports: 1
+Vic 20: 1
+Vic-20: 5
+Video 4000-EX: 1
+Video Stellar: 1
+Videomaster: 3
+Videomaster Colourscore: 1
+Videomaster Colourscore 2: 1
+Videomaster Colourshot: 1
+Videomaster Strika 2: 1
+Videomaster Superscore: 1
+Videomaster Visionscore: 1
+Virtual Boy: 1
+Wii: 4
+Wii Virtual Console: 1
+Windows: 4
+Windows Mobile: 13
+Windows Mobile Phones: 2
+Windows PC: 1
+Windows PC  (2017) Shock Troopers: 1
+Windows PC  (February 2014): 1
+Windows PC  (May 18, 2016) Shock Troopers: 1
+Windsor TV Game: 1
+Windtronics Video Game: 1
+Wonderswan Color: 1
+X68000: 6
+Xbox 360: 4
+Xbox Live: 5
+Xbox Live Arcade: 2
+Xbox One: 1
+Yahoo Mobile: 1
+ZX Spectrum: 4
+ZX-Spectrum: 2
+Zeebo: 11
+as DLC.: 8
+i-mode: 1
+i-mode Mobile Phones: 1
+iOS: 1
+iPhone/iPod: 1
