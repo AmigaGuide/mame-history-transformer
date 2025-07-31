@@ -32,12 +32,11 @@ import re
 import json
 import html
 from collections import Counter, defaultdict
-#from dateutil.parser import parse as parse_date
-from dateutil.parser import parse as date_parse
-from dateutil.parser import ParserError
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
+from date_utils import parse_date_string
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -129,8 +128,6 @@ def extract_ports_section(lines: list[str], system_name: str) -> tuple[str, Coun
             continue
 
         if current_platform and line:
-            #parsed_entry = parse_port_entry(line)
-            #parsed_entry = parse_port_entry(line, system_name=primary)
             parsed_entry = parse_port_entry(line, system_name=system_name)
             platform_entries[current_platform].append(parsed_entry)
 
@@ -166,9 +163,9 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
               - publisher (str)
               - comment (str)
               - additional_tags (list[str])
-              - residue (str)
+              - residue (list[str])
     """
-    entry = {
+    port = {
         "regions": [],
         "platform": None,
         "model": None,
@@ -177,7 +174,7 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
         "publisher": None,
         "comment": None,
         "additional_tags": [],
-        "residue": None
+        "residue": []
     }
 
     original_line = line.strip()
@@ -197,7 +194,7 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
             break
 
     if comment_index != -1:
-        entry["comment"] = working_line[comment_index + 1:].strip()
+        port["comment"] = working_line[comment_index + 1:].strip()
         working_line = working_line[:comment_index].strip()
 
     # 2. Extract square bracketed tags
@@ -205,66 +202,51 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
     for tag in square_brackets:
         tag_clean = tag.strip()
         if tag_clean.startswith("Model"):
-            entry["model"] = tag_clean.replace("Model", "").strip()
+            port["model"] = tag_clean.replace("Model", "").strip()
         elif len(tag_clean) == 2:
-            entry["regions"].append(tag_clean)
+            port["regions"].append(tag_clean)
         else:
-            entry["additional_tags"].append(tag_clean)
+            port["additional_tags"].append(tag_clean)
         working_line = working_line.replace(f"[{tag}]", "")
 
     # 3. Extract quoted title
     match_title = re.search(r'"(.*?)"', working_line)
     if match_title:
-        entry["title"] = match_title.group(1).strip()
+        port["title"] = match_title.group(1).strip()
         working_line = working_line.replace(match_title.group(0), "")
 
     # Step 4: Extract date in parentheses
     match_date = re.search(r"\((.*?)\)", working_line)
     if match_date:
-        raw_date = match_date.group(1).strip()
-        working_line = working_line.replace(match_date.group(0), "")
+        date_raw = match_date.group(1).strip()
+        normalised_date = parse_date_string(date_raw, context=system_name)
 
-        if not raw_date or "?" in raw_date:
-            entry["date"] = f"({raw_date})"
-            log.warning(f"Uncertain or placeholder date for {system_name} -> line: {original_line}")
+        if normalised_date:
+            port["date"] = normalised_date
         else:
-            try:
-                parsed_date = date_parse(raw_date, fuzzy=True)
-                year = parsed_date.year
+            #port.setdefault("residue", []).append(date_raw)
+            port["residue"].append(date_raw)
 
-                # Fresh evaluation of granularity
-                has_month = bool(re.search(r"[.\-/_](0?[1-9]|1[0-2])", raw_date))
-                has_day = bool(re.search(r"[.\-/_](\d{1,2})$", raw_date)) and has_month
-
-                if has_day:
-                    entry["date"] = f"{year:04d}-{parsed_date.month:02d}-{parsed_date.day:02d}"
-                elif has_month:
-                    entry["date"] = f"{year:04d}-{parsed_date.month:02d}-XX"
-                else:
-                    entry["date"] = f"{year:04d}-XX-XX"
-            except Exception:
-                entry["date"] = f"({raw_date})"
-                log.warning(f"Unparseable date '{raw_date}' in system '{system_name}' -> line: {original_line}")
+        # Remove from working line regardless of validity
+        working_line = working_line.replace(match_date.group(0), "").strip()
 
 
     # 5. Extract publisher (by XYZ)
     match_pub = re.search(r"\bby\s+(.+)", working_line)
     if match_pub:
-        entry["publisher"] = match_pub.group(1).strip()
+        port["publisher"] = match_pub.group(1).strip()
         working_line = working_line[:match_pub.start()].strip()
 
     # 6. Remaining content assumed to be platform
     platform_candidate = working_line.strip()
     if platform_candidate:
-        entry["platform"] = platform_candidate
+        port["platform"] = platform_candidate
         working_line = working_line.replace(platform_candidate, "", 1)
 
-    # 7. Any leftover content is residue
-    residue = working_line.strip()
-    if residue:
-        entry["residue"] = residue
+    # Step 7: Always include residue field
+    port.setdefault("residue", [])
 
-    return entry
+    return port
 
    
 def parse_history_entries(file_path: Path, encoding: str) -> dict:
