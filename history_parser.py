@@ -40,6 +40,13 @@ from date_utils import parse_date_string
 
 log = setup_logger(log_level=LOG_LEVEL)
 
+# Global variables
+unique_platforms = set()
+unparsable_dates = {}  # {system_name: [bad date strings]}
+#systems_with_residue = []  # List of system names where residue was detected
+systems_with_residue = set()
+
+
 SECTION_PATTERN = re.compile(r"^-+\s*(.+?)\s*-+$")
 
 
@@ -93,12 +100,15 @@ def extract_ports_section(lines: list[str], system_name: str) -> tuple[str, Coun
             - Counter: A tally of platform categories encountered (e.g., CONSOLES: 5).
             - dict: A dictionary mapping platform categories to lists of parsed port entries.
     """
+    global systems_with_residue
+
     overview_lines = []
     platform_counter = Counter()
     platform_entries = {}
     current_platform = None
     known_platforms = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
     found_first_platform = False
+    total_port_lines = 0
 
     for line in lines:
         line = line.strip()
@@ -130,9 +140,14 @@ def extract_ports_section(lines: list[str], system_name: str) -> tuple[str, Coun
         if current_platform and line:
             parsed_entry = parse_port_entry(line, system_name=system_name)
             platform_entries[current_platform].append(parsed_entry)
+            total_port_lines += 1
+            # Track if this port had residue
+            if parsed_entry["residue"]:
+                systems_with_residue.add(system_name)
 
     overview = " ".join(overview_lines).strip() if overview_lines else ""
-    return overview, platform_counter, platform_entries
+    return overview, platform_counter, platform_entries, total_port_lines
+
    
 
 def parse_port_entry(line: str, system_name: str = "") -> dict:
@@ -177,8 +192,10 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
         "residue": []
     }
 
+    global unparsable_dates
     original_line = line.strip()
     working_line = original_line
+    port["residue"] = []
 
     # 1. Extract comment (everything after the first colon, unless inside quotes)
     original_line = line.strip()
@@ -224,8 +241,8 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
         if normalised_date:
             port["date"] = normalised_date
         else:
-            #port.setdefault("residue", []).append(date_raw)
             port["residue"].append(date_raw)
+            unparsable_dates.setdefault(system_name, []).append(date_raw)
 
         # Remove from working line regardless of validity
         working_line = working_line.replace(match_date.group(0), "").strip()
@@ -241,10 +258,12 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
     platform_candidate = working_line.strip()
     if platform_candidate:
         port["platform"] = platform_candidate
+        global unique_platforms
+        unique_platforms.add(platform_candidate)
         working_line = working_line.replace(platform_candidate, "", 1)
 
     # Step 7: Always include residue field
-    port.setdefault("residue", [])
+    #port.setdefault("residue", [])
 
     return port
 
@@ -276,6 +295,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
               - ports (dict[str, list[dict]], optional)
     """
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
+    
+    global unique_platforms
+    unique_platforms.clear()
+    
     total_entries = 0
     systems_count = 0
     software_count = 0
@@ -283,6 +306,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     platform_totals = Counter()
     gh_entries = {}
     residue_count = 0
+    systems_with_ports = 0
+    systems_with_aliases = 0
+    unique_platforms = set()
+    total_port_lines_all = 0
 
     try:
         with open(file_path, encoding=encoding) as f:
@@ -310,6 +337,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                         primary = system_names[0]
                         aliases = system_names[1:]
                         if aliases:
+                            systems_with_aliases += 1
                             entry_data["aliases"] = aliases
                     else:
                         elem.clear()
@@ -344,8 +372,12 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                                 break
 
                     if "PORTS" in sectioned:
-                        #overview, platform_counts, platform_ports = extract_ports_section(sectioned["PORTS"])
-                        overview, platform_counts, platform_ports = extract_ports_section(sectioned["PORTS"], primary)
+                        systems_with_ports += 1
+                        #overview, platform_counts, platform_ports = extract_ports_section(sectioned["PORTS"], primary)
+                        #overview, platform_counts, platform_ports, total_port_lines = extract_ports_section(sectioned["PORTS"], primary)
+                        overview, platform_counts, platform_ports, port_lines = extract_ports_section(sectioned["PORTS"], primary)
+                        total_port_lines_all += port_lines
+                        
                         for entries in platform_ports.values():
                             for entry in entries:
                                 if entry.get("residue"):
@@ -385,5 +417,35 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
 
     log.info(f"  - {residue_count} port entries contained residue after parsing")
 
-    log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")
+
+    # After all parsing is done
+    parsing_summary = {
+        "systems_total": systems_count,
+        "systems_with_ports": systems_with_ports,
+        "systems_with_aliases": systems_with_aliases,
+        "port_lines_parsed": total_port_lines_all,
+        "invalid_dates": {
+            "count": len(unparsable_dates),
+            "examples": unparsable_dates  # Dict[str, List[str]]
+        },
+        "systems_with_residue": {
+            "count": len(systems_with_residue),
+            "examples": sorted(list(systems_with_residue))
+        },
+        "unique_platforms": {
+            "count": len(unique_platforms),
+            "examples": sorted(unique_platforms)  # Sorted list
+        }
+    }
+
+    summary_path = Path("data/history_parsing_summary.json")
+    try:
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(parsing_summary, f, indent=2)
+        debug_log(f"Wrote parsing summary to {summary_path}")
+    except Exception as e:
+        log.warning(f"Could not write parsing summary: {e}")
+
+
+    log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")    
     return gh_entries
