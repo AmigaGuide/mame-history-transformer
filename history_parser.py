@@ -31,17 +31,14 @@ import time
 import re
 import json
 import html
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, OrderedDict
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
 from date_utils import parse_date_string
 
-
 log = setup_logger(log_level=LOG_LEVEL)
 
-
-#SECTION_PATTERN = re.compile(r"^-+\s*(.+?)\s*-+$")
 # Updated pattern: match lines that start with '- ', end with ' -', and have something in between
 SECTION_PATTERN = re.compile(r"^- .+? -$")
 
@@ -142,7 +139,6 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
     overview = " ".join(overview_lines).strip() if overview_lines else ""
     return overview, platform_counter, platform_entries, total_port_lines
 
-   
 
 def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = None) -> dict:
     """
@@ -198,7 +194,7 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
         port["title"] = match_title.group(1).strip()
         working_line = working_line.replace(match_title.group(0), "")
 
-    # Step 4: Extract date in parentheses
+    # Step 4 and 5 combined: Extract date and any trailing publisher
     match_date = re.search(r"\((.*?)\)", working_line)
     if match_date:
         date_raw = match_date.group(1).strip()
@@ -208,16 +204,30 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             port["date"] = normalised_date
         else:
             port["residue"].append(date_raw)
-            if parsing_state is not None:
-                parsing_state["unparsable_dates"][system_name].append(date_raw)
+            parsing_state["unparsable_dates"].setdefault(system_name, []).append(date_raw)
 
-        working_line = working_line.replace(match_date.group(0), "").strip()
+        # Remove the date (including parentheses) from the line
+        post_date = working_line[match_date.end():].strip()
+        working_line = working_line[:match_date.start()].strip()
 
-    # Step 5: Extract publisher (by XYZ)
-    match_pub = re.search(r"\bby\s+(.+)", working_line)
+        # If there’s content after the date, treat it as publisher
+        if post_date:
+            if post_date.lower().startswith("by "):
+                post_date = post_date[3:].strip()
+            port["publisher"] = post_date
+
+    # Step 5 (fallback): If 'by XYZ' is still in the line, extract publisher
+    match_pub = re.search(r"\bby\s+(.+)", working_line, re.IGNORECASE)
     if match_pub:
         port["publisher"] = match_pub.group(1).strip()
         working_line = working_line[:match_pub.start()].strip()
+
+    # Final publisher cleanup: remove leading hyphen, trailing punctuation, and normalise whitespace
+    if port["publisher"]:
+        port["publisher"] = re.sub(r"^\s*-\s*", "", port["publisher"])  # Remove leading dash and space
+        port["publisher"] = port["publisher"].rstrip(".:;")             # Remove trailing punctuation
+        port["publisher"] = re.sub(r"\s+", " ", port["publisher"]).strip()  # Collapse extra spaces
+        parsing_state.setdefault("publishers_found", Counter())[port["publisher"]] += 1
 
     # Step 6: Remaining content = platform name
     platform_candidate = working_line.strip()
@@ -243,7 +253,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "unparsable_dates": defaultdict(list),
         "systems_with_residue": set(),
         "section_headings_seen": Counter(),
-        "unexpected_platform_categories": defaultdict(list)
+        "unexpected_platform_categories": defaultdict(list),
+        "publishers_found": Counter()
     }
 
     total_entries = 0
@@ -359,6 +370,12 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         log.error(f"Failed to write GH entries JSON: {e}")
 
     log.info(f"  - {residue_count} port entries contained residue after parsing")
+    
+    # Sort publishers alphabetically by name (key)
+    sorted_publishers = OrderedDict(
+        sorted(parsing_state["publishers_found"].items(), key=lambda x: x[0].lower())
+    )
+
 
     # Prepare final summary output
     summary_data = {
@@ -379,8 +396,14 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "examples": sorted(parsing_state["unique_platforms"])
         },
         "section_headings_seen": dict(parsing_state["section_headings_seen"]),
-        "unexpected_platform_categories": dict(parsing_state["unexpected_platform_categories"])
+        "unexpected_platform_categories": dict(parsing_state["unexpected_platform_categories"]),
+        
+        "publishers_found": {
+        "count": len(sorted_publishers),
+        "examples": sorted_publishers
+        }
     }
+
 
     summary_path = Path("data/history_parsing_summary.json")
     try:
