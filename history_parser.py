@@ -40,13 +40,6 @@ from date_utils import parse_date_string
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-# Global variables
-unique_platforms = set()
-unparsable_dates = {}  # {system_name: [bad date strings]}
-#systems_with_residue = []  # List of system names where residue was detected
-systems_with_residue = set()
-
-
 SECTION_PATTERN = re.compile(r"^-+\s*(.+?)\s*-+$")
 
 
@@ -83,24 +76,15 @@ def segment_text_sections(text: str) -> dict:
 
     return sections
 
-def extract_ports_section(lines: list[str], system_name: str) -> tuple[str, Counter, dict]:
+def extract_ports_section(
+    lines: list[str],
+    system_name: str,
+    parsing_state: dict
+) -> tuple[str, Counter, dict, int]:
     """
     Parses the lines from the PORTS section of a <system> entry to extract structured data.
-
-    This function identifies an optional overview paragraph, counts platform headings
-    (e.g., CONSOLES, COMPUTERS), and parses individual port entries under each platform.
-    The PORTS section is expected to be pre-isolated by segment_text_sections().
-
-    Args:
-        lines (list[str]): Lines belonging to the PORTS section, excluding headers.
-
-    Returns:
-        tuple:
-            - str: An optional overview paragraph found before the first platform heading.
-            - Counter: A tally of platform categories encountered (e.g., CONSOLES: 5).
-            - dict: A dictionary mapping platform categories to lists of parsed port entries.
+    Identifies optional overview paragraph, counts platform headings, and parses port entries.
     """
-    global systems_with_residue
 
     overview_lines = []
     platform_counter = Counter()
@@ -138,48 +122,23 @@ def extract_ports_section(lines: list[str], system_name: str) -> tuple[str, Coun
             continue
 
         if current_platform and line:
-            parsed_entry = parse_port_entry(line, system_name=system_name)
+            parsed_entry = parse_port_entry(line, system_name, parsing_state)
             platform_entries[current_platform].append(parsed_entry)
             total_port_lines += 1
-            # Track if this port had residue
             if parsed_entry["residue"]:
-                systems_with_residue.add(system_name)
+                parsing_state["systems_with_residue"].add(system_name)
 
     overview = " ".join(overview_lines).strip() if overview_lines else ""
     return overview, platform_counter, platform_entries, total_port_lines
 
    
 
-def parse_port_entry(line: str, system_name: str = "") -> dict:
+def parse_port_entry(line: str, system_name: str, parsing_state: dict) -> dict:
     """
     Parses a single port entry line into structured metadata fields.
-
-    This function extracts various components from a free-text port entry, including:
-    - Regions (e.g., [JP], [US])
-    - Platform name
-    - Model number (e.g., [Model ABC-123])
-    - Year (inside parentheses, e.g., (1998) or (June.23, 2011))
-    - Title (inside double quotes)
-    - Publisher (after 'by')
-    - Additional tags (other square bracketed values)
-    - Inline comment (after colon ':')
-    - Residue (any unmatched content after all known patterns are removed)
-
-    Args:
-        line (str): A single line representing a port entry under a platform heading.
-
-    Returns:
-        dict: A dictionary with the extracted metadata fields. Keys include:
-              - regions (list[str])
-              - platform (str)
-              - model (str)
-              - title (str)
-              - date (str)
-              - publisher (str)
-              - comment (str)
-              - additional_tags (list[str])
-              - residue (list[str])
+    Extracts regions, platform, model, title, date, publisher, comment, and residue.
     """
+
     port = {
         "regions": [],
         "platform": None,
@@ -192,14 +151,10 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
         "residue": []
     }
 
-    global unparsable_dates
     original_line = line.strip()
     working_line = original_line
-    port["residue"] = []
 
     # 1. Extract comment (everything after the first colon, unless inside quotes)
-    original_line = line.strip()
-    working_line = original_line
     comment_index = -1
     in_quotes = False
 
@@ -232,7 +187,7 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
         port["title"] = match_title.group(1).strip()
         working_line = working_line.replace(match_title.group(0), "")
 
-    # Step 4: Extract date in parentheses
+    # 4. Extract date in parentheses
     match_date = re.search(r"\((.*?)\)", working_line)
     if match_date:
         date_raw = match_date.group(1).strip()
@@ -242,11 +197,9 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
             port["date"] = normalised_date
         else:
             port["residue"].append(date_raw)
-            unparsable_dates.setdefault(system_name, []).append(date_raw)
+            parsing_state["unparsable_dates"][system_name].append(date_raw)
 
-        # Remove from working line regardless of validity
         working_line = working_line.replace(match_date.group(0), "").strip()
-
 
     # 5. Extract publisher (by XYZ)
     match_pub = re.search(r"\bby\s+(.+)", working_line)
@@ -258,12 +211,7 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
     platform_candidate = working_line.strip()
     if platform_candidate:
         port["platform"] = platform_candidate
-        global unique_platforms
-        unique_platforms.add(platform_candidate)
-        working_line = working_line.replace(platform_candidate, "", 1)
-
-    # Step 7: Always include residue field
-    #port.setdefault("residue", [])
+        parsing_state["unique_platforms"].add(platform_candidate)
 
     return port
 
@@ -271,34 +219,19 @@ def parse_port_entry(line: str, system_name: str = "") -> dict:
 def parse_history_entries(file_path: Path, encoding: str) -> dict:
     """
     Parses the Gaming-History XML file and extracts structured metadata from <entry> elements.
-
-    This function focuses on <systems> entries (arcade-relevant) and ignores <software> entries.
-    It processes each <text> field by segmenting it into named sections and extracting:
-    - The Gaming-History ID (gh_id) from the CONTRIBUTE section
-    - An optional list of aliases (from additional <system> names)
-    - A PORTS section, which is further analysed into:
-        • A free-text overview paragraph
-        • Platform category counters (e.g., CONSOLES, COMPUTERS)
-        • Structured port entries (one per line under each platform heading)
-
-    The resulting metadata is saved to output/gh_entries.json and returned as a dictionary.
-
-    Args:
-        file_path (Path): Path to the Gaming-History XML file (typically history.xml).
-        encoding (str): Detected character encoding for correct file reading.
-
-    Returns:
-        dict: A dictionary keyed by primary <system> name, with values containing:
-              - gh_id (int)
-              - aliases (list[str], optional)
-              - port_overview (str, optional)
-              - ports (dict[str, list[dict]], optional)
+    Focuses on <systems> entries (arcade-relevant) and ignores <software> entries.
+    Returns a dictionary keyed by primary system name.
     """
+
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
-    
-    global unique_platforms
-    unique_platforms.clear()
-    
+
+    # Initialise shared parsing state
+    parsing_state = {
+        "unique_platforms": set(),
+        "unparsable_dates": defaultdict(list),
+        "systems_with_residue": set()
+    }
+
     total_entries = 0
     systems_count = 0
     software_count = 0
@@ -308,7 +241,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     residue_count = 0
     systems_with_ports = 0
     systems_with_aliases = 0
-    unique_platforms = set()
     total_port_lines_all = 0
 
     try:
@@ -318,8 +250,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                     continue
 
                 total_entries += 1
-                #entry_data = {}
-                
                 entry_data = {
                     "gh_id": None,
                     "aliases": [],
@@ -363,7 +293,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                             preview = " ".join(lines).strip().replace("\n", " ")[:40]
                             debug_log(f"  Section: {section} -> {preview}...")
 
-                    # Extract GH ID from CONTRIBUTE section (if not already handled)
                     if "CONTRIBUTE" in sectioned:
                         for line in sectioned["CONTRIBUTE"]:
                             match = re.search(r"id=(\d+)", line)
@@ -373,15 +302,16 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
 
                     if "PORTS" in sectioned:
                         systems_with_ports += 1
-                        #overview, platform_counts, platform_ports = extract_ports_section(sectioned["PORTS"], primary)
-                        #overview, platform_counts, platform_ports, total_port_lines = extract_ports_section(sectioned["PORTS"], primary)
-                        overview, platform_counts, platform_ports, port_lines = extract_ports_section(sectioned["PORTS"], primary)
+                        overview, platform_counts, platform_ports, port_lines = extract_ports_section(
+                            sectioned["PORTS"], primary, parsing_state
+                        )
                         total_port_lines_all += port_lines
-                        
+
                         for entries in platform_ports.values():
                             for entry in entries:
                                 if entry.get("residue"):
                                     residue_count += 1
+
                         if overview:
                             entry_data["port_overview"] = overview
                             port_overview_count += 1
@@ -390,7 +320,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                         platform_totals.update(platform_counts)
 
                 gh_entries[primary] = entry_data
-
                 elem.clear()
 
     except ET.ParseError as e:
@@ -417,24 +346,22 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
 
     log.info(f"  - {residue_count} port entries contained residue after parsing")
 
-
-    # After all parsing is done
     parsing_summary = {
         "systems_total": systems_count,
         "systems_with_ports": systems_with_ports,
         "systems_with_aliases": systems_with_aliases,
         "port_lines_parsed": total_port_lines_all,
         "invalid_dates": {
-            "count": len(unparsable_dates),
-            "examples": unparsable_dates  # Dict[str, List[str]]
+            "count": len(parsing_state["unparsable_dates"]),
+            "examples": parsing_state["unparsable_dates"]
         },
         "systems_with_residue": {
-            "count": len(systems_with_residue),
-            "examples": sorted(list(systems_with_residue))
+            "count": len(parsing_state["systems_with_residue"]),
+            "examples": sorted(parsing_state["systems_with_residue"])
         },
         "unique_platforms": {
-            "count": len(unique_platforms),
-            "examples": sorted(unique_platforms)  # Sorted list
+            "count": len(parsing_state["unique_platforms"]),
+            "examples": sorted(parsing_state["unique_platforms"])
         }
     }
 
@@ -446,6 +373,5 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     except Exception as e:
         log.warning(f"Could not write parsing summary: {e}")
 
-
-    log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")    
+    log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")
     return gh_entries
