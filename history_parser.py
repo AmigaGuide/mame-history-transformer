@@ -40,24 +40,12 @@ from date_utils import parse_date_string
 log = setup_logger(log_level=LOG_LEVEL)
 
 # Updated pattern: match lines that start with '- ', end with ' -', and have something in between
-SECTION_PATTERN = re.compile(r"^- .+? -$")
+#SECTION_PATTERN = re.compile(r"^- .+? -$")
+SECTION_PATTERN = re.compile(r"^-+\s+([A-Z0-9 &]+)\s+-+$", re.IGNORECASE)
+CATEGORY_HEADING_PATTERN = re.compile(r"^\*\s*([A-Z0-9 &]+)\s*:\s*$", re.IGNORECASE)
+KNOWN_PLATFORMS = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
 
 def segment_text_sections(text: str, parsing_state: dict) -> dict:
-    """
-    Segments the full <text> content from a <system> entry into named sections.
-
-    Sections are identified by lines surrounded with single hyphens and spaces:
-    e.g., '- PORTS -' or '- TRIVIA -'. Matches are case-insensitive and tolerant
-    of human error, so lowercase or typo-based section headings are still flagged.
-
-    Args:
-        text (str): The raw <text> content from a Gaming-History <system> entry.
-        parsing_state (dict): Shared state dictionary for tracking parsing metrics.
-
-    Returns:
-        dict: A dictionary where keys are section names and values are
-              lists of lines belonging to each section.
-    """
     sections = defaultdict(list)
     current_section = "OVERVIEW"
 
@@ -68,85 +56,58 @@ def segment_text_sections(text: str, parsing_state: dict) -> dict:
 
         match = SECTION_PATTERN.match(line)
         if match:
-            section_name = line[2:-2].strip()  # Remove '- ' from start and ' -' from end
+            section_name = match.group(1).strip().upper()
             current_section = section_name
-            parsing_state["section_headings_seen"][section_name] += 1
+            parsing_state.setdefault("section_headings_found", Counter())[section_name] += 1
         else:
             sections[current_section].append(line)
 
     return sections
 
 def extract_ports_section(lines: list[str], system_name: str, parsing_state: dict) -> tuple[str, Counter, dict, int]:
-    """
-    Parses the lines from the PORTS section of a <system> entry to extract structured data.
-
-    Args:
-        lines (list[str]): Lines belonging to the PORTS section.
-        system_name (str): The <system> name associated with the entry (e.g., "puckman").
-        parsing_state (dict): Shared dictionary to track parsing metrics.
-
-    Returns:
-        tuple:
-            - str: Overview paragraph before the first platform heading.
-            - Counter: Tally of recognised platform categories (e.g., CONSOLES: 5).
-            - dict: Mapping of platform category → list of parsed port entries.
-            - int: Total number of port lines parsed across all categories.
-    """
     overview_lines = []
     platform_counter = Counter()
     platform_entries = {}
     current_platform = None
-    known_platforms = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
     found_first_platform = False
     total_port_lines = 0
 
     for line in lines:
         line = line.strip()
-        if not found_first_platform:
-            if re.fullmatch(r"\*[A-Z0-9 &]+:\s*", line):
-                platform = line.strip("*:").strip().upper()
-                if platform in known_platforms:
-                    platform_counter[platform] += 1
-                    platform_entries[platform] = []
-                    current_platform = platform
-                    found_first_platform = True
-                else:
-                    parsing_state["unexpected_platform_categories"][platform].append(system_name)
-                    overview_lines.append(line)
-            elif line:
-                overview_lines.append(line)
-            continue
 
-        if re.fullmatch(r"\*[A-Z0-9 &]+:\s*", line):
-            platform = line.strip("*:").strip().upper()
-            if platform in known_platforms:
-                platform_counter[platform] += 1
-                if platform not in platform_entries:
-                    platform_entries[platform] = []
-                current_platform = platform
+        match = CATEGORY_HEADING_PATTERN.match(line)
+        if match:
+            category_name = match.group(1).strip()
+            category_upper = category_name.upper()
+
+            parsing_state.setdefault("platform_categories_found", Counter())[category_name] += 1
+
+            if category_upper in KNOWN_PLATFORMS:
+                platform_counter[category_upper] += 1
+                platform_entries.setdefault(category_upper, [])
+                current_platform = category_upper
+                found_first_platform = True
             else:
-                parsing_state["unexpected_platform_categories"][platform].append(system_name)
+                parsing_state.setdefault("unexpected_platform_categories", defaultdict(list))[category_name].append(system_name)
                 current_platform = None
             continue
 
+        if not found_first_platform:
+            if line:
+                overview_lines.append(line)
+            continue
+
         if current_platform and line:
-            parsed_entry = parse_port_entry(line, system_name, parsing_state)
+            parsed_entry = parse_port_entry(line, system_name=system_name, parsing_state=parsing_state)
             platform_entries[current_platform].append(parsed_entry)
             total_port_lines += 1
             if parsed_entry["residue"]:
-                parsing_state["systems_with_residue"].add(system_name)
+                parsing_state.setdefault("systems_with_residue", set()).add(system_name)
 
     overview = " ".join(overview_lines).strip() if overview_lines else ""
     return overview, platform_counter, platform_entries, total_port_lines
 
-
 def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = None) -> dict:
-    """
-    Parses a single port entry line into structured metadata fields.
-
-    Returns:
-        dict: Extracted metadata fields.
-    """
     port = {
         "regions": [],
         "platform": None,
@@ -162,7 +123,7 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     original_line = line.strip()
     working_line = original_line
 
-    # Step 1: Extract comment (after colon, unless inside quotes)
+    # Step 1: Extract comment (everything after first colon not in quotes)
     comment_index = -1
     in_quotes = False
     for i, char in enumerate(working_line):
@@ -194,7 +155,7 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
         port["title"] = match_title.group(1).strip()
         working_line = working_line.replace(match_title.group(0), "")
 
-    # Step 4 and 5 combined: Extract date and any trailing publisher
+    # Step 4 & 5: Extract date and publisher
     match_date = re.search(r"\((.*?)\)", working_line)
     if match_date:
         date_raw = match_date.group(1).strip()
@@ -204,55 +165,44 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             port["date"] = normalised_date
         else:
             port["residue"].append(date_raw)
-            parsing_state["unparsable_dates"].setdefault(system_name, []).append(date_raw)
+            parsing_state.setdefault("unparsable_dates", defaultdict(list))[system_name].append(date_raw)
 
-        # Remove the date (including parentheses) from the line
-        post_date = working_line[match_date.end():].strip()
-        working_line = working_line[:match_date.start()].strip()
+        working_line = working_line.replace(match_date.group(0), "").strip()
 
-        # If there’s content after the date, treat it as publisher
-        if post_date:
-            if post_date.lower().startswith("by "):
-                post_date = post_date[3:].strip()
-            port["publisher"] = post_date
+        if working_line:
+            port["publisher"] = working_line
 
-    # Step 5 (fallback): If 'by XYZ' is still in the line, extract publisher
-    match_pub = re.search(r"\bby\s+(.+)", working_line, re.IGNORECASE)
-    if match_pub:
-        port["publisher"] = match_pub.group(1).strip()
-        working_line = working_line[:match_pub.start()].strip()
+    else:
+        match_pub = re.search(r"\bby\s+(.+)", working_line)
+        if match_pub:
+            port["publisher"] = match_pub.group(1).strip()
+            working_line = working_line[:match_pub.start()].strip()
 
-    # Final publisher cleanup: remove leading hyphen, trailing punctuation, and normalise whitespace
-    if port["publisher"]:
-        port["publisher"] = re.sub(r"^\s*-\s*", "", port["publisher"])  # Remove leading dash and space
-        port["publisher"] = port["publisher"].rstrip(".:;")             # Remove trailing punctuation
-        port["publisher"] = re.sub(r"\s+", " ", port["publisher"]).strip()  # Collapse extra spaces
-        parsing_state.setdefault("publishers_found", Counter())[port["publisher"]] += 1
-
-    # Step 6: Remaining content = platform name
+    # Step 6: Assign remaining as platform
     platform_candidate = working_line.strip()
     if platform_candidate:
         port["platform"] = platform_candidate
-        if parsing_state is not None:
-            parsing_state["unique_platforms"].add(platform_candidate)
+        parsing_state.setdefault("platforms_found", set()).add(platform_candidate)
+
+    # Final publisher cleanup
+    if port["publisher"]:
+        port["publisher"] = re.sub(r"^\s*-\s*", "", port["publisher"])
+        port["publisher"] = port["publisher"].rstrip(".:; ")
+        parsing_state.setdefault("publishers_found", Counter())[port["publisher"]] += 1
 
     return port
 
    
 def parse_history_entries(file_path: Path, encoding: str) -> dict:
-    """
-    Parses the Gaming-History XML file and extracts structured metadata from <entry> elements.
-    Now tracks section headings and unexpected platform categories via parsing_state.
-    """
-
+    start = time.perf_counter()
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
-    # Initialise shared parsing state
     parsing_state = {
-        "unique_platforms": set(),
+        "platforms_found": set(),
         "unparsable_dates": defaultdict(list),
         "systems_with_residue": set(),
-        "section_headings_seen": Counter(),
+        "section_headings_found": Counter(),
+        "platform_categories_found": Counter(),
         "unexpected_platform_categories": defaultdict(list),
         "publishers_found": Counter()
     }
@@ -327,16 +277,12 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
 
                     if "PORTS" in sectioned:
                         systems_with_ports += 1
-                        overview, platform_counts, platform_ports, port_lines = extract_ports_section(
-                            sectioned["PORTS"], primary, parsing_state
-                        )
+                        overview, platform_counts, platform_ports, port_lines = extract_ports_section(sectioned["PORTS"], primary, parsing_state)
                         total_port_lines_all += port_lines
-
                         for entries in platform_ports.values():
                             for entry in entries:
                                 if entry.get("residue"):
                                     residue_count += 1
-
                         if overview:
                             entry_data["port_overview"] = overview
                             port_overview_count += 1
@@ -354,9 +300,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     log.info(f"Parsed {total_entries} <entry> elements from history.xml")
     log.info(f"  - {systems_count} entries had <systems> (arcade-relevant)")
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
-    log.debug(f"Unique PORTS platform categories found: {len(platform_totals)}")
-    for platform, count in sorted(platform_totals.items(), key=lambda x: (-x[1], x[0])):
-        log.debug(f"  - {platform}: {count}")
     log.info(f"  - {port_overview_count} entries contained a port overview")
 
     output_dir = Path("output")
@@ -364,54 +307,51 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     output_file = output_dir / "gh_entries.json"
     try:
         with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(gh_entries, f, indent=2)
-        log.info(f"Saved parsed GH metadata to output/gh_entries.json")
+            json.dump(gh_entries, f, indent=2, ensure_ascii=False)
+        log.info(f"Saved parsed GH metadata to {output_file}")
     except Exception as e:
         log.error(f"Failed to write GH entries JSON: {e}")
 
-    log.info(f"  - {residue_count} port entries contained residue after parsing")
-    
-    # Sort publishers alphabetically by name (key)
-    sorted_publishers = OrderedDict(
-        sorted(parsing_state["publishers_found"].items(), key=lambda x: x[0].lower())
-    )
-
-
-    # Prepare final summary output
-    summary_data = {
-        "systems_total": systems_count,
-        "systems_with_ports": systems_with_ports,
-        "systems_with_aliases": systems_with_aliases,
-        "port_lines_parsed": total_port_lines_all,
-        "invalid_dates": {
-            "count": len(parsing_state["unparsable_dates"]),
-            "examples": dict(parsing_state["unparsable_dates"])
+    # Summary structure
+    summary = {
+        "totals": {
+            "systems_total": systems_count,
+            "systems_with_ports": systems_with_ports,
+            "systems_with_aliases": systems_with_aliases,
+            "port_lines_parsed": total_port_lines_all
         },
-        "systems_with_residue": {
-            "count": len(parsing_state["systems_with_residue"]),
-            "examples": sorted(parsing_state["systems_with_residue"])
+        "found": {
+            "section_headings_found": dict(parsing_state["section_headings_found"]),
+            "platform_categories_found": dict(parsing_state["platform_categories_found"]),
+            "platforms_found": sorted(parsing_state["platforms_found"]),
+            "publishers_found": dict(sorted(parsing_state["publishers_found"].items()))
         },
-        "unique_platforms": {
-            "count": len(parsing_state["unique_platforms"]),
-            "examples": sorted(parsing_state["unique_platforms"])
+        "anomalies": {
+            "unexpected_platform_categories": {
+                k: sorted(v) for k, v in sorted(parsing_state["unexpected_platform_categories"].items())
+            }
         },
-        "section_headings_seen": dict(parsing_state["section_headings_seen"]),
-        "unexpected_platform_categories": dict(parsing_state["unexpected_platform_categories"]),
-        
-        "publishers_found": {
-        "count": len(sorted_publishers),
-        "examples": sorted_publishers
+        "residue_flags": {
+            "unparsable_dates": {
+                "count": len(parsing_state["unparsable_dates"]),
+                "examples": parsing_state["unparsable_dates"]
+            },
+            "systems_with_residue": {
+                "count": len(parsing_state["systems_with_residue"]),
+                "examples": sorted(parsing_state["systems_with_residue"])
+            }
         }
     }
-
 
     summary_path = Path("data/history_parsing_summary.json")
     try:
         with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary_data, f, indent=2)
+            json.dump(summary, f, indent=2, ensure_ascii=False)
         debug_log(f"Wrote parsing summary to {summary_path}")
     except Exception as e:
         log.warning(f"Could not write parsing summary: {e}")
 
-    log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")
+    #log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")
+    log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
+
     return gh_entries
