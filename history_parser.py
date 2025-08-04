@@ -45,6 +45,11 @@ SECTION_PATTERN = re.compile(r"^-+\s+([A-Z0-9 &]+)\s+-+$", re.IGNORECASE)
 CATEGORY_HEADING_PATTERN = re.compile(r"^\*\s*([A-Z0-9 &]+)\s*:\s*$", re.IGNORECASE)
 KNOWN_PLATFORMS = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
 
+# Simple function to advise if a number is odd or not.
+def is_odd(n):
+    return n % 2 == 1
+
+
 def segment_text_sections(text: str, parsing_state: dict) -> dict:
     sections = defaultdict(list)
     current_section = "OVERVIEW"
@@ -106,7 +111,8 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
 
     overview = " ".join(overview_lines).strip() if overview_lines else ""
     return overview, platform_counter, platform_entries, total_port_lines
-
+    
+    
 def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = None) -> dict:
     port = {
         "regions": [],
@@ -122,6 +128,23 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
 
     original_line = line.strip()
     working_line = original_line
+    
+    # Count quote characters, ignoring valid floppy disk sizes like 3.5" and 5.25"
+    disk_quote_matches = re.findall(r'\b(?:3\.5|5\.25)"(?!\w)', working_line)
+    quote_count = working_line.count('"') - len(disk_quote_matches)
+
+    # Count all bracket types
+    bracket_count = (
+        working_line.count('(') + working_line.count(')') +
+        working_line.count('[') + working_line.count(']') +
+        working_line.count('{') + working_line.count('}')
+    )
+
+    if is_odd(quote_count):
+        parsing_state.setdefault("odd_quotes", defaultdict(list))[system_name].append(working_line)
+
+    if is_odd(bracket_count):
+        parsing_state.setdefault("odd_brackets", defaultdict(list))[system_name].append(working_line)
 
     # Step 1: Extract comment (everything after first colon not in quotes)
     comment_index = -1
@@ -167,44 +190,52 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             port["residue"].append(date_raw)
             parsing_state.setdefault("unparsable_dates", defaultdict(list))[system_name].append(date_raw)
 
-        working_line = working_line.replace(match_date.group(0), "").strip()
-
-        if working_line:
-            port["publisher"] = working_line
-
+        # Use date as delimiter: publisher is whatever comes after it
+        post_date_text = working_line[match_date.end():].strip()
+        if post_date_text:
+            cleaned_pub = re.sub(r"^\s*by\s+", "", post_date_text, flags=re.IGNORECASE).strip()
+            cleaned_pub = re.sub(r"^\s*-\s*", "", cleaned_pub)
+            cleaned_pub = cleaned_pub.rstrip(".:; ")
+            port["publisher"] = cleaned_pub
+            publisher_data = parsing_state["publishers_found"][cleaned_pub]
+            publisher_data["count"] += 1
+            publisher_data["systems"].append(system_name)
+        working_line = working_line[:match_date.start()].strip()
     else:
         match_pub = re.search(r"\bby\s+(.+)", working_line)
         if match_pub:
-            port["publisher"] = match_pub.group(1).strip()
+            cleaned_pub = match_pub.group(1).strip()
+            cleaned_pub = re.sub(r"^\s*-\s*", "", cleaned_pub)
+            cleaned_pub = cleaned_pub.rstrip(".:; ")
+            port["publisher"] = cleaned_pub
+            publisher_data = parsing_state["publishers_found"][cleaned_pub]
+            publisher_data["count"] += 1
+            publisher_data["systems"].append(system_name)
             working_line = working_line[:match_pub.start()].strip()
 
     # Step 6: Assign remaining as platform
     platform_candidate = working_line.strip()
     if platform_candidate:
         port["platform"] = platform_candidate
-        parsing_state.setdefault("platforms_found", set()).add(platform_candidate)
-
-    # Final publisher cleanup
-    if port["publisher"]:
-        port["publisher"] = re.sub(r"^\s*-\s*", "", port["publisher"])
-        port["publisher"] = port["publisher"].rstrip(".:; ")
-        parsing_state.setdefault("publishers_found", Counter())[port["publisher"]] += 1
+        parsing_state.setdefault("platforms_found", Counter())[platform_candidate] += 1
 
     return port
 
-   
+
 def parse_history_entries(file_path: Path, encoding: str) -> dict:
     start = time.perf_counter()
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
     parsing_state = {
-        "platforms_found": set(),
+        "platforms_found": Counter(),
         "unparsable_dates": defaultdict(list),
         "systems_with_residue": set(),
         "section_headings_found": Counter(),
         "platform_categories_found": Counter(),
         "unexpected_platform_categories": defaultdict(list),
-        "publishers_found": Counter()
+        "publishers_found": defaultdict(lambda: {"count": 0, "systems": []}),
+        "odd_quotes": defaultdict(list),
+        "odd_brackets": defaultdict(list)
     }
 
     total_entries = 0
@@ -323,12 +354,24 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "found": {
             "section_headings_found": dict(parsing_state["section_headings_found"]),
             "platform_categories_found": dict(parsing_state["platform_categories_found"]),
-            "platforms_found": sorted(parsing_state["platforms_found"]),
-            "publishers_found": dict(sorted(parsing_state["publishers_found"].items()))
+            "platforms_found": {
+                "count": len(parsing_state["platforms_found"]),
+                "examples": dict(sorted(parsing_state["platforms_found"].items()))
+            },
+            "publishers_found": {
+                "count": len(parsing_state["publishers_found"]),
+                "examples": dict(sorted(parsing_state["publishers_found"].items()))
+            }
         },
         "anomalies": {
             "unexpected_platform_categories": {
                 k: sorted(v) for k, v in sorted(parsing_state["unexpected_platform_categories"].items())
+            },
+            "odd_quotes": {
+                k: v for k, v in sorted(parsing_state["odd_quotes"].items())
+            },
+            "odd_brackets": {
+                k: v for k, v in sorted(parsing_state["odd_brackets"].items())
             }
         },
         "residue_flags": {
@@ -351,7 +394,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     except Exception as e:
         log.warning(f"Could not write parsing summary: {e}")
 
-    #log.info(f"History parsing completed in {time.perf_counter():.2f} seconds")
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
     return gh_entries
