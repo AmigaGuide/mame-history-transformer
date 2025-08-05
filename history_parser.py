@@ -25,6 +25,8 @@ Lost in Translation (LiT) Wiki metadata.
 This file is part of a student project and is not intended for commercial use.
 """
 
+# UPDATED history_parser.py to include extended summary tracking within existing structure
+
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import time
@@ -40,15 +42,12 @@ from date_utils import parse_date_string
 log = setup_logger(log_level=LOG_LEVEL)
 
 # Updated pattern: match lines that start with '- ', end with ' -', and have something in between
-#SECTION_PATTERN = re.compile(r"^- .+? -$")
 SECTION_PATTERN = re.compile(r"^-+\s+([A-Z0-9 &]+)\s+-+$", re.IGNORECASE)
 CATEGORY_HEADING_PATTERN = re.compile(r"^\*\s*([A-Z0-9 &]+)\s*:\s*$", re.IGNORECASE)
 KNOWN_PLATFORMS = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
 
-# Simple function to advise if a number is odd or not.
 def is_odd(n):
     return n % 2 == 1
-
 
 def segment_text_sections(text: str, parsing_state: dict) -> dict:
     sections = defaultdict(list)
@@ -111,8 +110,7 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
 
     overview = " ".join(overview_lines).strip() if overview_lines else ""
     return overview, platform_counter, platform_entries, total_port_lines
-    
-    
+
 def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = None) -> dict:
     port = {
         "regions": [],
@@ -128,12 +126,10 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
 
     original_line = line.strip()
     working_line = original_line
-    
-    # Count quote characters, ignoring valid floppy disk sizes like 3.5" and 5.25"
+
     disk_quote_matches = re.findall(r'\b(?:3\.5|5\.25)"(?!\w)', working_line)
     quote_count = working_line.count('"') - len(disk_quote_matches)
 
-    # Count all bracket types
     bracket_count = (
         working_line.count('(') + working_line.count(')') +
         working_line.count('[') + working_line.count(']') +
@@ -146,7 +142,6 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     if is_odd(bracket_count):
         parsing_state.setdefault("odd_brackets", defaultdict(list))[system_name].append(working_line)
 
-    # Step 1: Extract comment (everything after first colon not in quotes)
     comment_index = -1
     in_quotes = False
     for i, char in enumerate(working_line):
@@ -160,7 +155,6 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
         port["comment"] = working_line[comment_index + 1:].strip()
         working_line = working_line[:comment_index].strip()
 
-    # Step 2: Extract square bracketed tags
     square_brackets = re.findall(r"\[(.*?)\]", working_line)
     for tag in square_brackets:
         tag_clean = tag.strip()
@@ -172,13 +166,11 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             port["additional_tags"].append(tag_clean)
         working_line = working_line.replace(f"[{tag}]", "")
 
-    # Step 3: Extract quoted title
     match_title = re.search(r'"(.*?)"', working_line)
     if match_title:
         port["title"] = match_title.group(1).strip()
         working_line = working_line.replace(match_title.group(0), "")
 
-    # Step 4 & 5: Extract date and publisher
     match_date = re.search(r"\((.*?)\)", working_line)
     if match_date:
         date_raw = match_date.group(1).strip()
@@ -190,7 +182,6 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             port["residue"].append(date_raw)
             parsing_state.setdefault("unparsable_dates", defaultdict(list))[system_name].append(date_raw)
 
-        # Use date as delimiter: publisher is whatever comes after it
         post_date_text = working_line[match_date.end():].strip()
         if post_date_text:
             cleaned_pub = re.sub(r"^\s*by\s+", "", post_date_text, flags=re.IGNORECASE).strip()
@@ -213,14 +204,24 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             publisher_data["systems"].append(system_name)
             working_line = working_line[:match_pub.start()].strip()
 
-    # Step 6: Assign remaining as platform
     platform_candidate = working_line.strip()
     if platform_candidate:
         port["platform"] = platform_candidate
         parsing_state.setdefault("platforms_found", Counter())[platform_candidate] += 1
 
-    return port
+    # Track for additional summary
+    if port["title"]:
+        parsing_state["titles_found"].add(port["title"])
+    for region in port["regions"]:
+        parsing_state["region_codes"][region] += 1
+    if port["model"]:
+        parsing_state["models_found"][port["model"]].append(system_name)
+    if port["comment"]:
+        parsing_state["comments_found"][port["comment"]].append(system_name)
+    for tag in port["additional_tags"]:
+        parsing_state["additional_tags_found"][tag].append(system_name)
 
+    return port
 
 def parse_history_entries(file_path: Path, encoding: str) -> dict:
     start = time.perf_counter()
@@ -235,7 +236,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "unexpected_platform_categories": defaultdict(list),
         "publishers_found": defaultdict(lambda: {"count": 0, "systems": []}),
         "odd_quotes": defaultdict(list),
-        "odd_brackets": defaultdict(list)
+        "odd_brackets": defaultdict(list),
+        "titles_found": set(),
+        "region_codes": Counter(),
+        "models_found": defaultdict(list),
+        "comments_found": defaultdict(list),
+        "additional_tags_found": defaultdict(list),
+        "systems_with_port_overview": {}
     }
 
     total_entries = 0
@@ -316,6 +323,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                                     residue_count += 1
                         if overview:
                             entry_data["port_overview"] = overview
+                            parsing_state["systems_with_port_overview"][primary] = overview
                             port_overview_count += 1
                         if platform_ports:
                             entry_data["ports"] = platform_ports
@@ -343,7 +351,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     except Exception as e:
         log.error(f"Failed to write GH entries JSON: {e}")
 
-    # Summary structure
     summary = {
         "totals": {
             "systems_total": systems_count,
@@ -361,6 +368,24 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "publishers_found": {
                 "count": len(parsing_state["publishers_found"]),
                 "examples": dict(sorted(parsing_state["publishers_found"].items()))
+            },
+            "titles_found": sorted(parsing_state["titles_found"]),
+            #"region_codes": dict(parsing_state["region_codes"]),
+            "region_codes": dict(sorted(parsing_state["region_codes"].items(), key=lambda x: x[1], reverse=True)),
+            #"models_found": {k: sorted(set(v)) for k, v in parsing_state["models_found"].items()},            
+            "models_found": {
+                model: sorted(set(systems))
+                for model, systems in sorted(parsing_state["models_found"].items())
+            },
+            #"comments_found": {k: sorted(set(v)) for k, v in parsing_state["comments_found"].items()},            
+            "comments_found": {
+                comment: sorted(set(systems))
+                for comment, systems in sorted(parsing_state["comments_found"].items())
+            },
+            #"additional_tags_found": {k: sorted(set(v)) for k, v in parsing_state["additional_tags_found"].items()}           
+            "additional_tags_found": {
+                tag: sorted(set(systems))
+                for tag, systems in sorted(parsing_state["additional_tags_found"].items())
             }
         },
         "anomalies": {
@@ -383,7 +408,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                 "count": len(parsing_state["systems_with_residue"]),
                 "examples": sorted(parsing_state["systems_with_residue"])
             }
-        }
+        },
+        "port_overview_texts": parsing_state["systems_with_port_overview"]
     }
 
     summary_path = Path("data/history_parsing_summary.json")
