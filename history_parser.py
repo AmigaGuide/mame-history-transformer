@@ -207,7 +207,11 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     platform_candidate = working_line.strip()
     if platform_candidate:
         port["platform"] = platform_candidate
-        parsing_state.setdefault("platforms_found", Counter())[platform_candidate] += 1
+        #parsing_state.setdefault("platforms_found", Counter())[platform_candidate] += 1
+        platforms = parsing_state.setdefault("platforms_found", defaultdict(lambda: {"count": 0, "systems": []}))
+        platforms[platform_candidate]["count"] += 1
+        platforms[platform_candidate]["systems"].append(system_name)
+
 
     # Track for additional summary
     if port["title"]:
@@ -228,7 +232,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
     parsing_state = {
-        "platforms_found": Counter(),
+        #"platforms_found": Counter(),
+        "platforms_found": defaultdict(lambda: {"count": 0, "systems": []}),
         "unparsable_dates": defaultdict(list),
         "systems_with_residue": set(),
         "section_headings_found": Counter(),
@@ -356,18 +361,23 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "systems_total": systems_count,
             "systems_with_ports": systems_with_ports,
             "systems_with_aliases": systems_with_aliases,
-            "port_lines_parsed": total_port_lines_all
+            "port_lines_parsed": total_port_lines_all,
+            "publisher_count_unique": len(parsing_state["publishers_found"]),
+            "platform_count_unique": len(parsing_state["platforms_found"]),
         },
         "found": {
             "section_headings_found": dict(parsing_state["section_headings_found"]),
-            "platform_categories_found": dict(parsing_state["platform_categories_found"]),
+            "platform_categories_found": dict(parsing_state["platform_categories_found"]),            
             "platforms_found": {
-                "count": len(parsing_state["platforms_found"]),
-                "examples": dict(sorted(parsing_state["platforms_found"].items()))
+                platform: {
+                    "count": data["count"],
+                    "systems": sorted(set(data["systems"]))
+                }
+                for platform, data in sorted(parsing_state["platforms_found"].items())
             },
             "publishers_found": {
-                "count": len(parsing_state["publishers_found"]),
-                "examples": dict(sorted(parsing_state["publishers_found"].items()))
+                #"count": len(parsing_state["publishers_found"]),
+                "publishers": dict(sorted(parsing_state["publishers_found"].items()))
             },
             "titles_found": sorted(parsing_state["titles_found"]),
             #"region_codes": dict(parsing_state["region_codes"]),
