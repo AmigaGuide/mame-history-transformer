@@ -115,7 +115,8 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     port = {
         "regions": [],
         "platform": None,
-        "model": None,
+        #"model": None,
+        "model": [],  # Always a list from now on
         "title": None,
         "date": None,
         "publisher": None,
@@ -154,17 +155,54 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     if comment_index != -1:
         port["comment"] = working_line[comment_index + 1:].strip()
         working_line = working_line[:comment_index].strip()
+        if port["comment"]:
+            parsing_state["ports_with_comments"] += 1
+
 
     square_brackets = re.findall(r"\[(.*?)\]", working_line)
     for tag in square_brackets:
         tag_clean = tag.strip()
+
         if tag_clean.startswith("Model"):
-            port["model"] = tag_clean.replace("Model", "").strip()
+            model_raw = tag_clean.replace("Model", "").strip()
+            models = []
+
+            # Always split on "/"
+            if "/" in model_raw:
+                models = [m.strip() for m in model_raw.split("/")]
+
+            # Conditionally split bracketed models with matching prefix
+            elif "(" in model_raw and ")" in model_raw:
+                match = re.match(r"^(.*?)\s*\((.*?)\)", model_raw)
+                if match:
+                    model_main = match.group(1).strip()
+                    model_alt = match.group(2).strip()
+                    if model_main[:4] == model_alt[:4]:
+                        models = [model_main, model_alt]
+                    else:
+                        models = [model_raw]
+                else:
+                    models = [model_raw]
+
+            else:
+                models = [model_raw]
+
+            port["model"] = models
+            for model in models:
+                parsing_state["models_found"][model].append(system_name)
+
+
+
+
         elif len(tag_clean) == 2:
             port["regions"].append(tag_clean)
+
         else:
             port["additional_tags"].append(tag_clean)
+
         working_line = working_line.replace(f"[{tag}]", "")
+
+
 
     match_title = re.search(r'"(.*?)"', working_line)
     if match_title:
@@ -219,9 +257,13 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     for region in port["regions"]:
         parsing_state["region_codes"][region] += 1
     if port["model"]:
-        parsing_state["models_found"][port["model"]].append(system_name)
+        #parsing_state["models_found"][port["model"]].append(system_name)
+        for model in port["model"]:
+            parsing_state["models_found"][model].append(system_name)
+
     if port["comment"]:
-        parsing_state["comments_found"][port["comment"]].append(system_name)
+        #parsing_state["comments_found"][port["comment"]].append(system_name)
+        parsing_state.setdefault("comments_found", defaultdict(list))[port["comment"]].append(system_name)
     for tag in port["additional_tags"]:
         parsing_state["additional_tags_found"][tag].append(system_name)
 
@@ -234,6 +276,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     parsing_state = {
         #"platforms_found": Counter(),
         "platforms_found": defaultdict(lambda: {"count": 0, "systems": []}),
+        "ports_with_comments": 0,
         "unparsable_dates": defaultdict(list),
         "systems_with_residue": set(),
         "section_headings_found": Counter(),
@@ -260,6 +303,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     systems_with_ports = 0
     systems_with_aliases = 0
     total_port_lines_all = 0
+
 
     try:
         with open(file_path, encoding=encoding) as f:
@@ -364,6 +408,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "port_lines_parsed": total_port_lines_all,
             "publisher_count_unique": len(parsing_state["publishers_found"]),
             "platform_count_unique": len(parsing_state["platforms_found"]),
+            "ports_with_comments": parsing_state["ports_with_comments"]
         },
         "found": {
             "section_headings_found": dict(parsing_state["section_headings_found"]),
@@ -387,10 +432,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                 model: sorted(set(systems))
                 for model, systems in sorted(parsing_state["models_found"].items())
             },
-            #"comments_found": {k: sorted(set(v)) for k, v in parsing_state["comments_found"].items()},            
+            #"comments_found": {k: sorted(set(v)) for k, v in parsing_state["comments_found"].items()},
             "comments_found": {
-                comment: sorted(set(systems))
-                for comment, systems in sorted(parsing_state["comments_found"].items())
+                "count": len(parsing_state["comments_found"]),
+                "examples": dict(sorted(parsing_state["comments_found"].items()))
             },
             #"additional_tags_found": {k: sorted(set(v)) for k, v in parsing_state["additional_tags_found"].items()}           
             "additional_tags_found": {
