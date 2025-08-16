@@ -1,0 +1,52 @@
+[
+  {
+    "section": "Overview",
+    "content": [
+      {
+        "type": "paragraph",
+        "text": "Puckman is a seminal and hugely influential arcade game in which the player guides the legendary Puckman around a single-screen maze eating dots. Puckman is constantly pursued in his task by four coloured ghosts. Each ghost has its own unique personality and behavioural patterns and a single touch from any of the ghosts results in Puckman losing a life. When all of Puckman's lives are lost, the game is over."
+      }
+    ]
+  },
+  {
+    "section": "Trivia",
+    "content": [
+      {
+        "type": "paragraph",
+        "text": "Between certain rounds, intermissions are played featuring Puckman and the ghosts. Three intermissions are present:"
+      },
+      {
+        "type": "list",
+        "list_type": "numbered",
+        "items": [
+          "The red ghost chases Puckman across the screen and off the side. He re-appears running in the opposite direction, having turned blue, followed by a giant Puckman. Played after Round 2.",
+          "The red ghost again chases Puckman but rips his red sheet on a nail, revealing a pink body underneath. Played after Round 5.",
+          "The red ghost chases Puckman once more, this time with his sheet sewn. They exit left; the ghost returns bare, dragging his sheet. Played after Rounds 9, 13, and 17."
+        ]
+      }
+    ]
+  },
+  {
+    "section": "Updates",
+    "content": [
+      {
+        "type": "paragraph",
+        "text": "The attract mode's title sequence introduces the ghosts with name and nickname combinations shown on the upper half of the screen."
+      },
+      {
+        "type": "paragraph",
+        "text": "The default name and nickname combinations for the ghosts in the original Japanese version are:"
+      },
+      {
+        "type": "list",
+        "list_type": "bullet",
+        "items": [
+          "Oikake - \"Akabei\" (translation: Chaser - \"Red Guy\") (red ghost)",
+          "Machibuse - \"Pinky\" (translation: Ambusher - \"Pink Guy\") (pink ghost)",
+          "Kimagure - \"Aosuke\" (translation: Fickle - \"Blue Guy\") (cyan ghost)",
+          "Otoboke - \"Guzuta\" (translation: Stupid - \"Slow Guy\") (orange ghost)"
+        ]
+      }
+    ]
+  }
+]
