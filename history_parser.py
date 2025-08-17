@@ -221,7 +221,24 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             parsing_state.setdefault("unparsable_dates", defaultdict(list))[system_name].append(date_raw)
 
         post_date_text = working_line[match_date.end():].strip()
+
+        # --- NEW: indicator counting only (no adaptation change) ---
+        zone = post_date_text.strip()
+        if zone:
+            m = re.match(r'^(released\s+by|by)\b', zone, flags=re.IGNORECASE)
+            if m:
+                if m.group(1).lower().startswith("released"):
+                    parsing_state["publisher_indicators_found"]["released_by"] += 1
+                else:
+                    parsing_state["publisher_indicators_found"]["by"] += 1
+            else:
+                parsing_state["publisher_indicators_found"]["other_after_date"] += 1
+        else:
+            parsing_state["publisher_indicators_found"]["none"] += 1
+        # --- END NEW ---
+
         if post_date_text:
+            # keep your current adaptation logic exactly as-is
             cleaned_pub = re.sub(r"^\s*by\s+", "", post_date_text, flags=re.IGNORECASE).strip()
             cleaned_pub = re.sub(r"^\s*-\s*", "", cleaned_pub)
             cleaned_pub = cleaned_pub.rstrip(".:; ")
@@ -229,9 +246,21 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             publisher_data = parsing_state["publishers_found"][cleaned_pub]
             publisher_data["count"] += 1
             publisher_data["systems"].append(system_name)
+
         working_line = working_line[:match_date.start()].strip()
     else:
-        match_pub = re.search(r"\bby\s+(.+)", working_line)
+        # --- NEW: count indicators when there's no parenthetical date ---
+        # just counting; behaviour unchanged
+        if re.search(r"\breleased\s+by\b", working_line, flags=re.IGNORECASE):
+            parsing_state["publisher_indicators_found"]["released_by"] += 1
+        elif re.search(r"\bby\b", working_line, flags=re.IGNORECASE):
+            parsing_state["publisher_indicators_found"]["by"] += 1
+        else:
+            # no indicator present in the line
+            parsing_state["publisher_indicators_found"]["none"] += 1
+        # --- END NEW ---
+
+        match_pub = re.search(r"\bby\s+(.+)", working_line, flags=re.IGNORECASE)
         if match_pub:
             cleaned_pub = match_pub.group(1).strip()
             cleaned_pub = re.sub(r"^\s*-\s*", "", cleaned_pub)
@@ -241,6 +270,7 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             publisher_data["count"] += 1
             publisher_data["systems"].append(system_name)
             working_line = working_line[:match_pub.start()].strip()
+
 
     platform_candidate = working_line.strip()
     if platform_candidate:
@@ -274,7 +304,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
     parsing_state = {
-        #"platforms_found": Counter(),
         "platforms_found": defaultdict(lambda: {"count": 0, "systems": []}),
         "ports_with_comments": 0,
         "unparsable_dates": defaultdict(list),
@@ -292,6 +321,15 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "additional_tags_found": defaultdict(list),
         "systems_with_port_overview": {}
     }
+
+    # track how publisher text is *introduced* after the date
+    parsing_state.setdefault("publisher_indicators_found", {
+        "released_by": 0,
+        "by": 0,
+        "other_after_date": 0,   # text present after date but no 'by' / 'released by'
+        "none": 0                # nothing after the date
+    })
+
 
     total_entries = 0
     systems_count = 0
@@ -410,9 +448,11 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "platform_count_unique": len(parsing_state["platforms_found"]),
             "ports_with_comments": parsing_state["ports_with_comments"]
         },
+        
+        
         "found": {
             "section_headings_found": dict(parsing_state["section_headings_found"]),
-            "platform_categories_found": dict(parsing_state["platform_categories_found"]),            
+            "platform_categories_found": dict(parsing_state["platform_categories_found"]),
             "platforms_found": {
                 platform: {
                     "count": data["count"],
@@ -420,11 +460,20 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                 }
                 for platform, data in sorted(parsing_state["platforms_found"].items())
             },
+
+            # Keep all publisher-related reporting together
             "publishers_found": {
-                #"count": len(parsing_state["publishers_found"]),
+                "indicators_found": {
+                    k: parsing_state["publisher_indicators_found"].get(k, 0)
+                    for k in ("by", "released_by", "other_after_date", "none")
+                },
                 "publishers": dict(sorted(parsing_state["publishers_found"].items()))
             },
+
             "titles_found": sorted(parsing_state["titles_found"]),
+            
+            
+            
             #"region_codes": dict(parsing_state["region_codes"]),
             "region_codes": dict(sorted(parsing_state["region_codes"].items(), key=lambda x: x[1], reverse=True)),
             #"models_found": {k: sorted(set(v)) for k, v in parsing_state["models_found"].items()},            
