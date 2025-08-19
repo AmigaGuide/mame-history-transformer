@@ -32,7 +32,6 @@ from logger import setup_logger, debug_log
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-
 def _sorted_numeric_keys_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
     """Return a dict sorted by numeric key ascending, with 'unknown' last if present."""
     numeric = []
@@ -65,7 +64,7 @@ def _sorted_alpha_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
     return out
 
 
-def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> list[dict]:
+def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
     """
     Parse the entire mame.xml and write:
       - output/mame_machines.json
@@ -107,6 +106,9 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     sound_devices_per_machine_ctr = Counter()
     displays_per_machine_ctr = Counter()
     speakers_per_machine_ctr = Counter()
+    display_types_overall_ctr = Counter()  # raster/vector/lcd/svg/unknown
+    display_tags_overall_ctr = Counter()   # e.g. screen, screen0, left, right, (unspecified)
+
 
     machines_out: Dict[str, Dict[str, Any]] = {}
 
@@ -124,8 +126,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     current_machine = elem
 
                 if event == "end" and elem.tag == "machine" and current_machine is elem:
-                    name = elem.attrib.get("name")
-                    if not name:
+                    mame_name = elem.attrib.get("name")
+                    if not mame_name:
                         elem.clear()
                         current_machine = None
                         continue
@@ -137,6 +139,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     runnable = elem.attrib.get("runnable", "yes")
                     sampleof = elem.attrib.get("sampleof")
                     sourcefile = elem.attrib.get("sourcefile")
+                    romof = elem.attrib.get("romof")
 
                     # Core child fields
                     desc_el = elem.find("description")
@@ -177,15 +180,72 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     # CHIPS
                     cpu_count = 0
                     audio_count = 0
+                    chips_list = []   # NEW: collect per-chip details
                     for chip in elem.findall("chip"):
                         ctype = (chip.attrib.get("type") or "").strip().lower()
+                        chip_name  = (chip.attrib.get("name") or "").strip()
+                        tag   = chip.attrib.get("tag")  # may be None
+                        clock_attr = (chip.attrib.get("clock") or "").strip()
+                        clock_hz = int(clock_attr) if clock_attr.isdigit() else None
+
                         if ctype == "cpu":
                             cpu_count += 1
                         elif ctype == "audio":
                             audio_count += 1
 
-                    # DISPLAYS
-                    display_count = len(elem.findall("display"))
+                        chips_list.append({
+                            "type": ctype,
+                            "name": chip_name,
+                            "tag": tag,
+                            "clock_hz": clock_hz,
+                        })
+
+
+
+                    # DISPLAYS (collect raw details, and update overall tag/type counters)
+                    #display_count = len(elem.findall("display"))
+                    displays_list = []
+                    for d in elem.findall("display"):
+                        d_type = (d.attrib.get("type") or "").strip().lower() or None
+                        d_tag  = (d.attrib.get("tag") or "").strip() or None
+
+                        rot_attr = (d.attrib.get("rotate") or "").strip()
+                        d_rotate = int(rot_attr) if rot_attr.isdigit() else None
+
+                        w_attr = (d.attrib.get("width") or "").strip()
+                        h_attr = (d.attrib.get("height") or "").strip()
+                        d_width  = int(w_attr) if w_attr.isdigit() else None
+                        d_height = int(h_attr) if h_attr.isdigit() else None
+
+                        r_attr = (d.attrib.get("refresh") or "").strip()
+                        try:
+                            d_refresh_hz = float(r_attr) if r_attr else None
+                        except ValueError:
+                            d_refresh_hz = None
+
+                        displays_list.append({
+                            "tag": d_tag,
+                            "type": d_type,
+                            "rotate": d_rotate,
+                            "width": d_width,
+                            "height": d_height,
+                            "refresh_hz": d_refresh_hz,
+                        })
+
+                        # Overall counters (types/tags)
+                        if d_type:
+                            #display_types_overall_ctr[d_type] += 1
+                            display_types_overall_ctr[d_type or "unknown"] += 1
+                        else:
+                            #display_types_overall_ctr["unknown"] += 1
+                            display_types_overall_ctr[d_type or "unknown"] += 1
+
+                        #display_tags_overall_ctr[d_tag or "unspecified"] += 1
+                        display_tags_overall_ctr[d_tag or "unknown"] += 1
+
+
+                    display_count = len(displays_list)
+
 
                     # SAMPLES requirement
                     sample_children = elem.findall("sample")
@@ -213,12 +273,21 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     sound_devices_per_machine_ctr[str(audio_count)] += 1
                     displays_per_machine_ctr[str(display_count)] += 1
 
+                    # ROMS — count and total size
+                    rom_elems = elem.findall("rom")
+                    rom_count = len(rom_elems)
+                    rom_bytes_total = 0
+                    for r in rom_elems:
+                        sz = (r.attrib.get("size") or "").strip()
+                        if sz.isdigit():
+                            rom_bytes_total += int(sz)
+
                     # Per-machine canonical record (kept minimal for now)
-                    machines_out[name] = {
-                        "name": name,
+                    machines_out[mame_name] = {
                         "description": description,
                         "sourcefile": sourcefile,
                         "cloneof": cloneof,
+                        "romof": romof,
                         "isbios": isbios,
                         "isdevice": isdevice,
                         "ismechanical": ismechanical,
@@ -226,10 +295,14 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         "sampleof": sampleof,
                         "year": year_raw,
                         "manufacturer": manufacturer_raw,
+                        "rom_count": rom_count,
+                        "rom_bytes_total": rom_bytes_total if rom_count else 0,
                         "players": None if players_key == "unknown" else int(players_key),
                         "cpu_count": cpu_count,
                         "sound_chip_count": audio_count,
+                        "chips": chips_list,
                         "display_count": display_count,
+                        "displays": displays_list,
                         "speakers": speakers_count,
                     }
 
@@ -242,13 +315,19 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     except ET.ParseError as e:
         log.error(f"XML parse error while reading {file_path.name}: {e}")
-        return []
+        return false
+        #return []
 
     parse_seconds = time.perf_counter() - start
 
     # Prepare ordered distributions
     years_dist = _sorted_numeric_keys_with_unknown_last(dict(years_ctr))
     manuf_dist = _sorted_alpha_with_unknown_last(dict(manuf_ctr))
+    #display_types_overall_dist = _sorted_alpha_with_unknown_last(dict(display_types_overall_ctr), "unknown")
+    #display_tags_overall_dist  = _sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr), "unspecified")
+    display_types_overall_dist = _sorted_alpha_with_unknown_last(dict(display_types_overall_ctr))
+    display_tags_overall_dist  = _sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
+
 
     def _sort_numeric_str(counter: Dict[str, int]) -> Dict[str, int]:
         items = [(int(k), v) for k, v in counter.items() if k.isdigit()]
@@ -273,6 +352,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     sounds_sum        = sum(sounds_dist.values())
     displays_sum      = sum(displays_dist.values())
     speakers_sum      = sum(speakers_dist.values())
+    display_types_overall_sum = sum(display_types_overall_dist.values())
+    display_tags_overall_sum  = sum(display_tags_overall_dist.values())
     # --- END NEW ---
  
 
@@ -317,7 +398,14 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 "distribution": displays_dist,
                 "sum": displays_sum,  # NEW
             },
-            "speakers_per_machine": {
+            "display_types_overall": {
+                "distribution": display_types_overall_dist,
+                "sum": display_types_overall_sum
+            },
+            "display_tags_overall": {
+                "distribution": display_tags_overall_dist,
+                "sum": display_tags_overall_sum
+            },"speakers_per_machine": {
                 "distribution": speakers_dist,
                 "sum": speakers_sum,  # NEW
             },            
@@ -342,6 +430,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     log.info(f"MAME XML parsing completed in {parse_seconds:.2f} seconds")
 
     # Return a list (keeps main.py happy)
-    result_list = [machines_sorted[k] for k in machines_sorted.keys()]
-    debug_log(f"First 5 machines (canonical): {[m['name'] for m in result_list[:5]]}")
-    return result_list
+    #result_list = [machines_sorted[k] for k in machines_sorted.keys()]
+    #debug_log(f"First 5 machines (canonical): {[m['name'] for m in result_list[:5]]}")
+    #return result_list
+    return True

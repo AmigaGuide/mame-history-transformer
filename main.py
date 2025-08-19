@@ -350,15 +350,22 @@ def main():
     # Pass encodings to downstream modules (simple map: filename -> encoding string)
     encodings = {k: v["encoding"] for k, v in updated_encodings.items() if isinstance(v, dict) and "encoding" in v}
 
-    # MAME XML parsing (clone-aware filtering performed within parse_mame_xml)
-    log.info("Beginning MAME XML parsing...")
-    machines = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
-    log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
 
-    # History XML parsing
-    log.info("Beginning History XML parsing...")
-    gh_entries = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
-    debug_log(f"Parsed GH entries count: {len(gh_entries) if gh_entries else 0}")
+    log.info("Beginning MAME XML canonical parse...")
+    ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
+    if not ok_mame:
+        log.error("MAME parse failed — skipping History parser.")
+    else:
+        log.info("Beginning History XML parse...")
+        gh_entries = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
+        debug_log(f"Parsed GH entries count: {len(gh_entries) if gh_entries else 0}")
+
+    # MAME XML parsing (clone-aware filtering performed within parse_mame_xml)
+    #log.info("Beginning MAME XML parsing...")
+    #machines = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
+    #log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
+
+
 
 
 if __name__ == "__main__":
