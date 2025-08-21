@@ -109,6 +109,18 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
                 parsing_state.setdefault("systems_with_residue", set()).add(system_name)
 
     overview = " ".join(overview_lines).strip() if overview_lines else ""
+    
+    # Anomaly: PORTS section present but no Category subheadings were found
+    if not found_first_platform:
+        preview = " ".join(overview_lines).strip()
+        # ensure the bucket exists (safe even if you added it at construction)
+        (parsing_state.setdefault("anomalies", {})
+                       .setdefault("ports_missing_subheadings", []))
+        parsing_state["anomalies"]["ports_missing_subheadings"].append({
+            "system": system_name,
+            "preview": preview[:140]  # short peek for human inspection
+        })
+        
     return overview, platform_counter, platform_entries, total_port_lines
 
 def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = None) -> dict:
@@ -319,7 +331,12 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "models_found": defaultdict(list),
         "comments_found": defaultdict(list),
         "additional_tags_found": defaultdict(list),
-        "systems_with_port_overview": {}
+        "systems_with_port_overview": {},
+        
+        
+        "anomalies": {
+            "ports_missing_subheadings": []
+        },
     }
 
     # track how publisher text is *introduced* after the date
@@ -447,9 +464,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "publisher_count_unique": len(parsing_state["publishers_found"]),
             "platform_count_unique": len(parsing_state["platforms_found"]),
             "ports_with_comments": parsing_state["ports_with_comments"]
-        },
-        
-        
+        },        
         "found": {
             "section_headings_found": dict(parsing_state["section_headings_found"]),
             "platform_categories_found": dict(parsing_state["platform_categories_found"]),
@@ -460,8 +475,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                 }
                 for platform, data in sorted(parsing_state["platforms_found"].items())
             },
-
-            # Keep all publisher-related reporting together
             "publishers_found": {
                 "indicators_found": {
                     k: parsing_state["publisher_indicators_found"].get(k, 0)
@@ -469,27 +482,27 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                 },
                 "publishers": dict(sorted(parsing_state["publishers_found"].items()))
             },
-
             "titles_found": sorted(parsing_state["titles_found"]),
-            
-            
-            
-            #"region_codes": dict(parsing_state["region_codes"]),
+
             "region_codes": dict(sorted(parsing_state["region_codes"].items(), key=lambda x: x[1], reverse=True)),
-            #"models_found": {k: sorted(set(v)) for k, v in parsing_state["models_found"].items()},            
+
             "models_found": {
                 model: sorted(set(systems))
                 for model, systems in sorted(parsing_state["models_found"].items())
             },
-            #"comments_found": {k: sorted(set(v)) for k, v in parsing_state["comments_found"].items()},
+
             "comments_found": {
                 "count": len(parsing_state["comments_found"]),
                 "examples": dict(sorted(parsing_state["comments_found"].items()))
             },
-            #"additional_tags_found": {k: sorted(set(v)) for k, v in parsing_state["additional_tags_found"].items()}           
+
             "additional_tags_found": {
                 tag: sorted(set(systems))
                 for tag, systems in sorted(parsing_state["additional_tags_found"].items())
+            },
+            "port_overview_texts": {
+                "count": len(parsing_state["systems_with_port_overview"]),
+                "examples": parsing_state["systems_with_port_overview"]
             }
         },
         "anomalies": {
@@ -501,6 +514,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             },
             "odd_brackets": {
                 k: v for k, v in sorted(parsing_state["odd_brackets"].items())
+            },
+            "ports_missing_subheadings": {
+                "count": len(parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])),
+                "examples": parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])[:25]
             }
         },
         "residue_flags": {
@@ -513,7 +530,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                 "examples": sorted(parsing_state["systems_with_residue"])
             }
         },
-        "port_overview_texts": parsing_state["systems_with_port_overview"]
     }
 
     summary_path = Path("data/history_parsing_summary.json")
