@@ -19,7 +19,7 @@ For arcade entries, the script captures:
   - Platform category counters (CONSOLES, COMPUTERS, etc.)
   - A full list of parsed port entries with extracted metadata
 
-Output is saved to output/gh_entries.json and used to support ExoticA's
+Output is saved to output/gh_systems.json and used to support ExoticA's
 Lost in Translation (LiT) Wiki metadata.
 
 This file is part of a student project and is not intended for commercial use.
@@ -353,7 +353,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     software_count = 0
     port_overview_count = 0
     platform_totals = Counter()
-    gh_entries = {}
+    gh_systems = {}
     residue_count = 0
     systems_with_ports = 0
     systems_with_aliases = 0
@@ -433,13 +433,14 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                             entry_data["ports"] = platform_ports
                         platform_totals.update(platform_counts)
 
-                gh_entries[primary] = entry_data
+                gh_systems[primary] = entry_data
                 elem.clear()
 
     except ET.ParseError as e:
         log.error(f"XML parse error in {file_path.name}: {e}")
-        return {}
-
+        return False
+        
+        
     log.info(f"Parsed {total_entries} <entry> elements from history.xml")
     log.info(f"  - {systems_count} entries had <systems> (arcade-relevant)")
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
@@ -447,10 +448,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
 
     output_dir = Path("output")
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "gh_entries.json"
+    output_file = output_dir / "gh_systems.json"
     try:
         with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(gh_entries, f, indent=2, ensure_ascii=False)
+            json.dump(gh_systems, f, indent=2, ensure_ascii=False)
         log.info(f"Saved parsed GH metadata to {output_file}")
     except Exception as e:
         log.error(f"Failed to write GH entries JSON: {e}")
@@ -541,5 +542,4 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         log.warning(f"Could not write parsing summary: {e}")
 
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
-
-    return gh_entries
+    return True

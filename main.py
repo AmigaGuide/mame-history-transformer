@@ -23,22 +23,21 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
+import hashlib, datetime
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
 from encoding_utils import detect_encoding
 from mame_parser import parse_mame_xml
 from history_parser import parse_history_entries
+from history_metadata import summarise_history_inis
 
 
 log = setup_logger(log_level=LOG_LEVEL)
 
 ENCODINGS_PATH = Path("data/encodings.json")
 
-# ---------------------------------------------------------------------------
 # Version parsing helpers (suffix-tolerant: e.g., '2.79a', '0.279-rc1')
-# ---------------------------------------------------------------------------
-
 _VERSION_RX = re.compile(
     r"""
     ^\s*
@@ -49,6 +48,39 @@ _VERSION_RX = re.compile(
     """,
     re.VERBOSE,
 )
+
+
+def _history_root_attrs(p: Path, encoding: str = "utf-8") -> dict:
+    """
+    Read the root element of history.xml and return {'history_version','history_date'} if present.
+    """
+    try:
+        # This reads only as much as needed to parse the root
+        for event, elem in ET.iterparse(p, events=("start",)):
+            if elem.tag.lower() == "history":
+                return {
+                    "history_version": elem.attrib.get("version"),
+                    "history_date": elem.attrib.get("date"),
+                }
+    except Exception:
+        pass
+    return {}
+
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _file_meta(p: Path) -> dict:
+    st = p.stat()
+    return {
+        "path": str(p).replace("\\", "/"),
+        "size_bytes": st.st_size,
+        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
+        "sha256": _sha256_file(p),
+    }
 
 
 def parse_version_loose(s: str) -> Tuple[Tuple[int, ...], Optional[str]]:
@@ -351,19 +383,140 @@ def main():
     encodings = {k: v["encoding"] for k, v in updated_encodings.items() if isinstance(v, dict) and "encoding" in v}
 
 
+    log.info("Beginning History .ini parse...")
+    ini_stage = summarise_history_inis(data_dir, encodings)
+    if not ini_stage["ok"]:
+        for msg in ini_stage["errors"]:
+            log.warning(f"INI summary issue: {msg}")
+
+    stage_fragments = [ini_stage]
+
+
     log.info("Beginning MAME XML canonical parse...")
     ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
     if not ok_mame:
         log.error("MAME parse failed — skipping History parser.")
+        ok_history = False
     else:
         log.info("Beginning History XML parse...")
-        gh_entries = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
-        debug_log(f"Parsed GH entries count: {len(gh_entries) if gh_entries else 0}")
+        ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
 
-    # MAME XML parsing (clone-aware filtering performed within parse_mame_xml)
-    #log.info("Beginning MAME XML parsing...")
-    #machines = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
-    #log.info(f"Final machine count after clone-aware filtering: {len(machines)}")
+
+    # --- MAME stage fragment ---
+    mame_xml          = data_dir / "mame.xml"
+    mame_summary_path = Path("data/mame_parsing_summary.json")
+    mame_out_path     = Path("output/mame_machines.json")
+
+    mame_stage = {
+        "stage": "mame_parse",
+        "ok": bool(ok_mame),
+        "inputs": [_file_meta(mame_xml)],
+        "outputs": [],
+        "stats": {},
+    }
+    if mame_summary_path.exists() and mame_out_path.exists():
+        with open(mame_summary_path, encoding="utf-8") as f:
+            msum = json.load(f)
+
+        mver = {
+            "build":      msum.get("mame", {}).get("build"),
+            "mameconfig": msum.get("mame", {}).get("mameconfig"),
+        }
+        mame_stage["inputs"][0]["version"] = {k: v for k, v in mver.items() if v}
+        mame_stage["inputs"][0].pop("content", None)
+
+        # output meta + record count
+        mout = _file_meta(mame_out_path)
+        with open(mame_out_path, encoding="utf-8") as f:
+            m_machines = json.load(f)   # dict
+        mout["records"]     = len(m_machines)
+        mout["summary_path"] = str(mame_summary_path)
+        mame_stage["outputs"].append(mout)
+        # headline counters
+        t = msum.get("totals", {})
+        mame_stage["stats"] = {
+            "total_machines":        t.get("total_machines"),
+            "total_parents":         t.get("total_parents"),
+            "total_clones":          t.get("total_clones"),
+            "total_isbios":          t.get("total_isbios"),
+            "total_isdevice":        t.get("total_isdevice"),
+            "total_ismechanical":    t.get("total_ismechanical"),
+            "total_requires_samples": t.get("total_requires_samples"),
+        }
+
+    stage_fragments.append(mame_stage)
+
+    # --- HISTORY stage fragment ---
+    history_xml        = data_dir / "history.xml"
+    hist_summary_path  = Path("data/history_parsing_summary.json")
+    gh_out_path        = Path("output/gh_systems.json")
+
+    history_stage = {
+        "stage": "history_parse",
+        "ok": bool(ok_history),
+        "inputs": [_file_meta(history_xml)],
+        "outputs": [],
+        "stats": {},
+    }
+
+    
+
+    if hist_summary_path.exists() and gh_out_path.exists():
+        with open(hist_summary_path, encoding="utf-8") as f:
+            hsum = json.load(f)
+        totals = hsum.get("totals", {})
+        systems_total  = totals.get("systems_total")
+        software_total = totals.get("software_count") or 0
+        entries_total  = (systems_total or 0) + (software_total or 0)
+
+        # version info on the input
+        hx = _history_root_attrs(history_xml, encoding=encodings.get("history.xml", "utf-8"))
+        history_stage["inputs"][0]["version"] = {k: v for k, v in hx.items() if v}
+
+        # output meta + record count (from file)
+        hout = _file_meta(gh_out_path)
+        try:
+            with open(gh_out_path, encoding="utf-8") as f:
+                gh_data = json.load(f)         # dict
+            hout["records"] = len(gh_data)
+        except Exception:
+            hout["records"] = None
+        hout["summary_path"] = str(hist_summary_path)
+        history_stage["outputs"].append(hout)
+
+        # keep totals in stats
+        history_stage["stats"].update({
+            "systems_total":  systems_total,
+            "software_total": software_total,
+            "entries_total":  entries_total,
+            "systems_with_ports":   totals.get("systems_with_ports"),
+            "systems_with_aliases": totals.get("systems_with_aliases"),
+            "port_lines_parsed":    totals.get("port_lines_parsed"),
+            "ports_with_comments":  totals.get("ports_with_comments"),
+        })
+
+    
+    stage_fragments.append(history_stage)
+
+
+    run_started  = stage_fragments[0].get("started_utc") or datetime.datetime.utcnow().isoformat() + "Z"
+    run_finished = datetime.datetime.utcnow().isoformat() + "Z"
+
+    manifest = {
+        "schema_version": 1,
+        "run_id": datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
+        "started_utc": run_started,
+        "finished_utc": run_finished,
+        "stages": stage_fragments,
+    }
+
+    Path("data").mkdir(parents=True, exist_ok=True)
+    with open("data/run_manifest.json", "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+    log.info("Wrote data/run_manifest.json")
+
+
+
 
 
 
