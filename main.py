@@ -20,6 +20,7 @@ This file is part of a student project and is not intended for commercial use.
 import json
 import re
 import time
+import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
@@ -402,6 +403,13 @@ def main():
         ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
 
 
+
+    # --- MAME parse (timed) ---
+    mame_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
+    mame_t0 = time.perf_counter()
+    ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
+    mame_duration = round(time.perf_counter() - mame_t0, 3)
+    mame_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     # --- MAME stage fragment ---
     mame_xml          = data_dir / "mame.xml"
     mame_summary_path = Path("data/mame_parsing_summary.json")
@@ -410,10 +418,14 @@ def main():
     mame_stage = {
         "stage": "mame_parse",
         "ok": bool(ok_mame),
+        "started_utc": mame_started_utc,
+        "finished_utc": mame_finished_utc,
+        "duration_seconds": mame_duration,
         "inputs": [_file_meta(mame_xml)],
         "outputs": [],
         "stats": {},
     }
+
     if mame_summary_path.exists() and mame_out_path.exists():
         with open(mame_summary_path, encoding="utf-8") as f:
             msum = json.load(f)
@@ -427,10 +439,10 @@ def main():
 
         # output meta + record count
         mout = _file_meta(mame_out_path)
+        mout["summary_path"] = mame_summary_path.as_posix()
         with open(mame_out_path, encoding="utf-8") as f:
-            m_machines = json.load(f)   # dict
+            m_machines = json.load(f)
         mout["records"]     = len(m_machines)
-        mout["summary_path"] = str(mame_summary_path)
         mame_stage["outputs"].append(mout)
         # headline counters
         t = msum.get("totals", {})
@@ -446,19 +458,38 @@ def main():
 
     stage_fragments.append(mame_stage)
 
+
+    # --- HISTORY parse (timed) ---
+    history_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
+    hist_t0 = time.perf_counter()
     # --- HISTORY stage fragment ---
     history_xml        = data_dir / "history.xml"
     hist_summary_path  = Path("data/history_parsing_summary.json")
     gh_out_path        = Path("output/gh_systems.json")
 
+    if ok_mame:
+        ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
+        hist_errs = []
+    else:
+        ok_history = False
+        hist_errs = ["skipped: mame_parse failed"]
+        log.error("History parse skipped because MAME parse failed.")
+
+    history_duration = round(time.perf_counter() - hist_t0, 3)
+    history_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
+
     history_stage = {
         "stage": "history_parse",
         "ok": bool(ok_history),
+        "started_utc": history_started_utc,
+        "finished_utc": history_finished_utc,
+        "duration_seconds": history_duration,
         "inputs": [_file_meta(history_xml)],
         "outputs": [],
         "stats": {},
     }
-
+    if hist_errs:
+        history_stage["errors"] = hist_errs
     
 
     if hist_summary_path.exists() and gh_out_path.exists():
@@ -466,7 +497,7 @@ def main():
             hsum = json.load(f)
         totals = hsum.get("totals", {})
         systems_total  = totals.get("systems_total")
-        software_total = totals.get("software_count") or 0
+        software_total = totals.get("software_total") or 0
         entries_total  = (systems_total or 0) + (software_total or 0)
 
         # version info on the input
@@ -475,13 +506,13 @@ def main():
 
         # output meta + record count (from file)
         hout = _file_meta(gh_out_path)
+        hout["summary_path"] = hist_summary_path.as_posix()
         try:
             with open(gh_out_path, encoding="utf-8") as f:
                 gh_data = json.load(f)         # dict
             hout["records"] = len(gh_data)
         except Exception:
             hout["records"] = None
-        hout["summary_path"] = str(hist_summary_path)
         history_stage["outputs"].append(hout)
 
         # keep totals in stats
@@ -499,16 +530,30 @@ def main():
     stage_fragments.append(history_stage)
 
 
-    run_started  = stage_fragments[0].get("started_utc") or datetime.datetime.utcnow().isoformat() + "Z"
-    run_finished = datetime.datetime.utcnow().isoformat() + "Z"
+    # None-safe min/max across stage times
+    started_candidates = [ini_stage.get("started_utc"),
+                          mame_stage.get("started_utc"),
+                          history_stage.get("started_utc")]
+    finished_candidates = [ini_stage.get("finished_utc"),
+                           mame_stage.get("finished_utc"),
+                           history_stage.get("finished_utc")]
+
+    # Filter out any None
+    started_candidates  = [t for t in started_candidates  if t]
+    finished_candidates = [t for t in finished_candidates if t]
+
+    run_started  = min(started_candidates)  if started_candidates  else datetime.datetime.utcnow().isoformat() + "Z"
+    run_finished = max(finished_candidates) if finished_candidates else datetime.datetime.utcnow().isoformat() + "Z"
+
 
     manifest = {
         "schema_version": 1,
         "run_id": datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
         "started_utc": run_started,
         "finished_utc": run_finished,
-        "stages": stage_fragments,
+        "stages": [ini_stage, mame_stage, history_stage],
     }
+
 
     Path("data").mkdir(parents=True, exist_ok=True)
     with open("data/run_manifest.json", "w", encoding="utf-8") as f:

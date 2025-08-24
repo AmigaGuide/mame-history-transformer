@@ -459,6 +459,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     summary = {
         "totals": {
             "systems_total": systems_count,
+            "software_total": software_count,
+            "entries_total": systems_count + software_count,
             "systems_with_ports": systems_with_ports,
             "systems_with_aliases": systems_with_aliases,
             "port_lines_parsed": total_port_lines_all,
