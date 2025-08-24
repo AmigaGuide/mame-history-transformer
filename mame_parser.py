@@ -105,7 +105,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     cpus_per_machine_ctr = Counter()
     sound_devices_per_machine_ctr = Counter()
     displays_per_machine_ctr = Counter()
-    speakers_per_machine_ctr = Counter()
+    speakers_per_machine_ctr = Counter()        # counts <device_ref name="speaker">
+    sound_channels_per_machine_ctr = Counter()  # from <sound channels="">
     display_types_overall_ctr = Counter()  # raster/vector/lcd/svg/unknown
     display_tags_overall_ctr = Counter()   # e.g. screen, screen0, left, right, (unspecified)
 
@@ -168,14 +169,37 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         if players_attr.isdigit():
                             players_key = players_attr
 
-                    # SOUND – speakers
-                    speakers_count = 0
+                    # SOUND – channels  (correctly record audio mixer channels, not speakers)
+                    sound_channels = None
                     sound_el = elem.find("sound")
                     if sound_el is not None:
-                        channels = (sound_el.attrib.get("channels") or "").strip()
-                        if channels.isdigit():
-                            speakers_count = int(channels)
-                    speakers_per_machine_ctr[str(speakers_count)] += 1
+                        channels_attr = (sound_el.attrib.get("channels") or "").strip()
+                        if channels_attr.isdigit():
+                            sound_channels = int(channels_attr)
+
+                    # update channels distribution
+                    sound_channels_per_machine_ctr[
+                        str(sound_channels) if sound_channels is not None else "unknown"
+                    ] += 1
+
+                    # DEVICE_REF summary: samples present? how many speakers?
+                    has_samples_device_ref = False
+                    speaker_ref_count = 0
+                    for dref in elem.findall("device_ref"):
+                        name = (dref.attrib.get("name") or "").strip().lower()
+                        if name == "samples":
+                            has_samples_device_ref = True
+                        elif name == "speaker":
+                            speaker_ref_count += 1
+
+                    device_ref_summary = {
+                        "samples": "yes" if has_samples_device_ref else "no",
+                        "speaker": speaker_ref_count,
+                    }
+
+                    # speakers distribution now reflects physical speakers counted via device_ref
+                    speakers_per_machine_ctr[str(speaker_ref_count)] += 1
+
 
                     # CHIPS
                     cpu_count = 0
@@ -282,7 +306,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         if sz.isdigit():
                             rom_bytes_total += int(sz)
 
-                    # Per-machine canonical record (kept minimal for now)
                     machines_out[mame_name] = {
                         "description": description,
                         "sourcefile": sourcefile,
@@ -303,8 +326,10 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         "chips": chips_list,
                         "display_count": display_count,
                         "displays": displays_list,
-                        "speakers": speakers_count,
+                        "sound_channels": sound_channels,  # from <sound channels="">
+                        "device_ref": [device_ref_summary],
                     }
+
 
                     if max_records and total_machines >= max_records:
                         elem.clear()
@@ -315,8 +340,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     except ET.ParseError as e:
         log.error(f"XML parse error while reading {file_path.name}: {e}")
-        return false
-        #return []
+        return False
 
     parse_seconds = time.perf_counter() - start
 
@@ -334,6 +358,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         items.sort(key=lambda t: t[0])
         return {str(k): v for k, v in items}
 
+
     players_dist = _sort_numeric_str(dict(players_ctr))
     if "unknown" in players_ctr:
         players_dist["unknown"] = players_ctr["unknown"]
@@ -341,19 +366,23 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     cpus_dist = _sort_numeric_str(dict(cpus_per_machine_ctr))
     sounds_dist = _sort_numeric_str(dict(sound_devices_per_machine_ctr))
     displays_dist = _sort_numeric_str(dict(displays_per_machine_ctr))
-    speakers_dist = _sort_numeric_str(dict(speakers_per_machine_ctr))
+    #speakers_dist = _sort_numeric_str(dict(speakers_per_machine_ctr))
+    sound_channels_dist = _sort_numeric_str(dict(sound_channels_per_machine_ctr))
+    if "unknown" in sound_channels_per_machine_ctr:
+        sound_channels_dist["unknown"] = sound_channels_per_machine_ctr["unknown"]
 
-
-   # --- NEW: per-distribution sums for easy manual validation ---
+    speakers_dist     = _sort_numeric_str(dict(speakers_per_machine_ctr))
     years_sum         = sum(years_dist.values())
     manufacturers_sum = sum(manuf_dist.values())
     players_sum       = sum(players_dist.values())
     cpus_sum          = sum(cpus_dist.values())
     sounds_sum        = sum(sounds_dist.values())
+    sound_channels_sum = sum(sound_channels_dist.values())
     displays_sum      = sum(displays_dist.values())
-    speakers_sum      = sum(speakers_dist.values())
     display_types_overall_sum = sum(display_types_overall_dist.values())
     display_tags_overall_sum  = sum(display_tags_overall_dist.values())
+    sound_channels_sum = sum(sound_channels_dist.values())
+    speakers_sum       = sum(speakers_dist.values())
     # --- END NEW ---
  
 
@@ -405,10 +434,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             "display_tags_overall": {
                 "distribution": display_tags_overall_dist,
                 "sum": display_tags_overall_sum
-            },"speakers_per_machine": {
-                "distribution": speakers_dist,
-                "sum": speakers_sum,  # NEW
+            },
+            "sound_channels_per_machine": {
+                "distribution": sound_channels_dist,
+                "sum": sound_channels_sum,
             },            
+            "speakers_per_machine": {
+                "distribution": speakers_dist,
+                "sum": speakers_sum,
+            },
         }
     }
 
