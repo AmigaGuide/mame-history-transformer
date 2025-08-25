@@ -102,6 +102,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     years_ctr = Counter()
     manuf_ctr = Counter()
     players_ctr = Counter()
+    control_type_overall_ctr  = Counter()
+    control_ways_overall_ctr  = Counter()
+    control_ways2_overall_ctr = Counter()
+    control_ways3_overall_ctr = Counter()
+    control_buttons_overall_ctr     = Counter()  # histogram of buttons per control
+    control_reqbuttons_overall_ctr  = Counter()  # histogram of reqbuttons per control    
     cpus_per_machine_ctr = Counter()
     sound_devices_per_machine_ctr = Counter()
     displays_per_machine_ctr = Counter()
@@ -109,7 +115,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     sound_channels_per_machine_ctr = Counter()  # from <sound channels="">
     display_types_overall_ctr = Counter()  # raster/vector/lcd/svg/unknown
     display_tags_overall_ctr = Counter()   # e.g. screen, screen0, left, right, (unspecified)
-
+    disk_regions_overall_ctr = Counter()  # e.g. {"cdrom": 90, "laserdisc": 12, "harddisk": 15, "unknown": 3}
 
     machines_out: Dict[str, Dict[str, Any]] = {}
 
@@ -137,7 +143,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     isbios = elem.attrib.get("isbios", "no")
                     isdevice = elem.attrib.get("isdevice", "no")
                     ismechanical = elem.attrib.get("ismechanical", "no")
-                    runnable = elem.attrib.get("runnable", "yes")
+                    #runnable = elem.attrib.get("runnable", "yes")
                     sampleof = elem.attrib.get("sampleof")
                     sourcefile = elem.attrib.get("sourcefile")
                     romof = elem.attrib.get("romof")
@@ -168,6 +174,45 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         players_attr = (input_el.attrib.get("players") or "").strip()
                         if players_attr.isdigit():
                             players_key = players_attr
+                                                        
+                    # INPUT – controls (per-player/per-device)
+                    controls_list = []
+                    if input_el is not None:
+                        for ctrl in input_el.findall("control"):
+                            c_type = (ctrl.attrib.get("type") or "").strip().lower() or None
+
+                            player_attr = (ctrl.attrib.get("player") or "").strip()
+                            c_player = int(player_attr) if player_attr.isdigit() else None
+
+                            buttons_attr = (ctrl.attrib.get("buttons") or "").strip()
+                            c_buttons = int(buttons_attr) if buttons_attr.isdigit() else None
+
+                            reqbuttons_attr = (ctrl.attrib.get("reqbuttons") or "").strip()
+                            c_reqbuttons = int(reqbuttons_attr) if reqbuttons_attr.isdigit() else None
+
+                            c_ways  = (ctrl.attrib.get("ways")  or "").strip() or None
+                            c_ways2 = (ctrl.attrib.get("ways2") or "").strip() or None
+                            c_ways3 = (ctrl.attrib.get("ways3") or "").strip() or None
+
+                            # Per-control output (player first for readability)
+                            controls_list.append({
+                                "player": c_player,
+                                "type": c_type,
+                                "buttons": c_buttons,
+                                "reqbuttons": c_reqbuttons,
+                                "ways": c_ways,
+                                "ways2": c_ways2,
+                                "ways3": c_ways3,
+                            })
+
+                            # ---- Summary counters (overall, across all controls) ----
+                            control_type_overall_ctr[(c_type or "unknown")] += 1
+                            control_ways_overall_ctr[(c_ways or "unknown").lower()]   += 1
+                            control_ways2_overall_ctr[(c_ways2 or "unknown").lower()] += 1
+                            control_ways3_overall_ctr[(c_ways3 or "unknown").lower()] += 1
+                            control_buttons_overall_ctr[str(c_buttons) if c_buttons is not None else "unknown"] += 1
+                            control_reqbuttons_overall_ctr[str(c_reqbuttons) if c_reqbuttons is not None else "unknown"] += 1
+                            
 
                     # SOUND – channels  (correctly record audio mixer channels, not speakers)
                     sound_channels = None
@@ -306,6 +351,21 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         if sz.isdigit():
                             rom_bytes_total += int(sz)
 
+                    # DISK (region only) — detect presence and summarise region types
+                    disk_elems = elem.findall("disk")
+                    disk_required = "yes" if disk_elems else "no"
+
+                    disk_regions_set = set()
+                    for d in disk_elems:
+                        region_raw = (d.attrib.get("region") or "").strip()
+                        region_key = region_raw.lower() if region_raw else "unknown"
+                        disk_regions_set.add(region_key)
+                        disk_regions_overall_ctr[region_key] += 1
+
+                    # Unique, sorted list of regions per machine (e.g. ["cdrom"], ["laserdisc","ldsound"])
+                    disk_regions = sorted(disk_regions_set)
+
+
                     machines_out[mame_name] = {
                         "description": description,
                         "sourcefile": sourcefile,
@@ -314,13 +374,16 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         "isbios": isbios,
                         "isdevice": isdevice,
                         "ismechanical": ismechanical,
-                        "runnable": runnable,
+                        #"runnable": runnable,
                         "sampleof": sampleof,
                         "year": year_raw,
                         "manufacturer": manufacturer_raw,
                         "rom_count": rom_count,
-                        "rom_bytes_total": rom_bytes_total if rom_count else 0,
+                        "rom_bytes_total": rom_bytes_total if rom_count else 0,                        
+                        "disk_required": disk_required,  # "yes" | "no"
+                        "disk_regions": disk_regions,    # unique, sorted list (may be [])
                         "players": None if players_key == "unknown" else int(players_key),
+                        "controls": controls_list,
                         "cpu_count": cpu_count,
                         "sound_chip_count": audio_count,
                         "chips": chips_list,
@@ -370,11 +433,33 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     sound_channels_dist = _sort_numeric_str(dict(sound_channels_per_machine_ctr))
     if "unknown" in sound_channels_per_machine_ctr:
         sound_channels_dist["unknown"] = sound_channels_per_machine_ctr["unknown"]
-
+    #
     speakers_dist     = _sort_numeric_str(dict(speakers_per_machine_ctr))
     years_sum         = sum(years_dist.values())
     manufacturers_sum = sum(manuf_dist.values())
     players_sum       = sum(players_dist.values())
+    # Controls distributions
+    control_type_overall_dist  = _sorted_alpha_with_unknown_last(dict(control_type_overall_ctr))
+    control_ways_overall_dist  = _sorted_alpha_with_unknown_last(dict(control_ways_overall_ctr))
+    control_ways2_overall_dist = _sorted_alpha_with_unknown_last(dict(control_ways2_overall_ctr))
+    control_ways3_overall_dist = _sorted_alpha_with_unknown_last(dict(control_ways3_overall_ctr))
+
+    control_buttons_overall_dist = _sort_numeric_str(dict(control_buttons_overall_ctr))
+    if "unknown" in control_buttons_overall_ctr:
+        control_buttons_overall_dist["unknown"] = control_buttons_overall_ctr["unknown"]
+
+    control_reqbuttons_overall_dist = _sort_numeric_str(dict(control_reqbuttons_overall_ctr))
+    if "unknown" in control_reqbuttons_overall_ctr:
+        control_reqbuttons_overall_dist["unknown"] = control_reqbuttons_overall_ctr["unknown"]
+
+    # Sums for quick sanity checks
+    control_type_overall_sum  = sum(control_type_overall_dist.values())
+    control_ways_overall_sum  = sum(control_ways_overall_dist.values())
+    control_ways2_overall_sum = sum(control_ways2_overall_dist.values())
+    control_ways3_overall_sum = sum(control_ways3_overall_dist.values())
+    control_buttons_overall_sum    = sum(control_buttons_overall_dist.values())
+    control_reqbuttons_overall_sum = sum(control_reqbuttons_overall_dist.values())
+    #    
     cpus_sum          = sum(cpus_dist.values())
     sounds_sum        = sum(sounds_dist.values())
     sound_channels_sum = sum(sound_channels_dist.values())
@@ -383,7 +468,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     display_tags_overall_sum  = sum(display_tags_overall_dist.values())
     sound_channels_sum = sum(sound_channels_dist.values())
     speakers_sum       = sum(speakers_dist.values())
-    # --- END NEW ---
+    disk_regions_overall_dist = _sorted_alpha_with_unknown_last(dict(disk_regions_overall_ctr))
+    disk_regions_overall_sum  = sum(disk_regions_overall_dist.values())
  
 
     # Build totals summary
@@ -404,28 +490,54 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             "years": {
                 "unique": len([k for k in years_dist.keys() if k != "unknown"]),
                 "distribution": years_dist,
-                "sum": years_sum,  # NEW
+                "sum": years_sum,
             },
             "manufacturers": {
                 "unique": len([k for k in manuf_dist.keys() if k != "unknown"]),
                 "distribution": manuf_dist,
-                "sum": manufacturers_sum,  # NEW
+                "sum": manufacturers_sum,
             },
             "players": {
                 "distribution": players_dist,
-                "sum": players_sum,  # NEW
+                "sum": players_sum,
             },
+            "controls": {
+                "types_overall": {
+                    "distribution": control_type_overall_dist,
+                    "sum": control_type_overall_sum
+                },
+                "ways_overall": {
+                    "distribution": control_ways_overall_dist,
+                    "sum": control_ways_overall_sum
+                },
+                "ways2_overall": {
+                    "distribution": control_ways2_overall_dist,
+                    "sum": control_ways2_overall_sum
+                },
+                "ways3_overall": {
+                    "distribution": control_ways3_overall_dist,
+                    "sum": control_ways3_overall_sum
+                },
+                "buttons_overall": {
+                    "distribution": control_buttons_overall_dist,
+                    "sum": control_buttons_overall_sum
+                },
+                "reqbuttons_overall": {
+                    "distribution": control_reqbuttons_overall_dist,
+                    "sum": control_reqbuttons_overall_sum
+                }
+            },            
             "cpus_per_machine": {
                 "distribution": cpus_dist,
-                "sum": cpus_sum,  # NEW
+                "sum": cpus_sum,
             },
             "sound_devices_per_machine": {
                 "distribution": sounds_dist,
-                "sum": sounds_sum,  # NEW
+                "sum": sounds_sum,
             },
             "displays_per_machine": {
                 "distribution": displays_dist,
-                "sum": displays_sum,  # NEW
+                "sum": displays_sum,
             },
             "display_types_overall": {
                 "distribution": display_types_overall_dist,
@@ -442,6 +554,10 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             "speakers_per_machine": {
                 "distribution": speakers_dist,
                 "sum": speakers_sum,
+            },            
+            "disk_regions_overall": {
+                "distribution": disk_regions_overall_dist,
+                "sum": disk_regions_overall_sum
             },
         }
     }
