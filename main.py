@@ -24,7 +24,7 @@ import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
-import hashlib, datetime
+import hashlib
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
@@ -35,8 +35,10 @@ from history_metadata import summarise_history_inis
 
 
 log = setup_logger(log_level=LOG_LEVEL)
-
 ENCODINGS_PATH = Path("data/encodings.json")
+ok_mame = False
+ok_history = False
+
 
 # Version parsing helpers (suffix-tolerant: e.g., '2.79a', '0.279-rc1')
 _VERSION_RX = re.compile(
@@ -393,18 +395,19 @@ def main():
     stage_fragments = [ini_stage]
 
 
-    log.info("Beginning MAME XML canonical parse...")
-    ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
-    if not ok_mame:
-        log.error("MAME parse failed — skipping History parser.")
-        ok_history = False
-    else:
-        log.info("Beginning History XML parse...")
-        ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
+    #log.info("Beginning MAME XML canonical parse...")
+    #ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
+    #if not ok_mame:
+    #    log.error("MAME parse failed — skipping History parser.")
+    #    ok_history = False
+    #else:
+    #    log.info("Beginning History XML parse...")
+    #    ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
 
 
 
     # --- MAME parse (timed) ---
+    log.info("Beginning MAME XML canonical parse...")
     mame_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     mame_t0 = time.perf_counter()
     ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
@@ -460,6 +463,7 @@ def main():
 
 
     # --- HISTORY parse (timed) ---
+    log.info("Beginning History XML parse...")
     history_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     hist_t0 = time.perf_counter()
     # --- HISTORY stage fragment ---
@@ -559,11 +563,6 @@ def main():
     with open("data/run_manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     log.info("Wrote data/run_manifest.json")
-
-
-
-
-
 
 
 if __name__ == "__main__":
