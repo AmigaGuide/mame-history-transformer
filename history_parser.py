@@ -295,13 +295,12 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
     # Overview text + anomaly if no recognised category headings were found
     overview = " ".join(overview_lines).strip() if overview_lines else ""
     if not found_first_category:
-        preview = " ".join(overview_lines).strip()
-        (parsing_state.setdefault("anomalies", {})
-                      .setdefault("ports_missing_subheadings", []))
-        parsing_state["anomalies"]["ports_missing_subheadings"].append({
-            "system": system_name,
-            "preview": preview[:140]
-        })
+        text = " ".join(overview_lines).strip()
+        excerpt = text[:140]  # fixed 140 characters
+        (parsing_state
+            .setdefault("anomalies", {})
+            .setdefault("ports_missing_subheadings", [])
+            .append({"system": system_name, "excerpt": excerpt}))
 
     return overview, platform_counter, platform_entries, total_port_lines
 
@@ -326,6 +325,10 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
 
     original_line = (line or "").strip()
     working_line = original_line
+
+
+    def _mark_residue():
+        parsing_state.setdefault("systems_with_residue", set()).add(system_name)
 
     # --- helpers (local; order-matched) ---------------------------------------
     def _split_comment_outside_quotes(s: str) -> tuple[str, str | None]:
@@ -458,6 +461,7 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
         else:
             port["residue"].append(date_raw)
             parsing_state.setdefault("unparsable_dates", defaultdict(list))[system_name].append(date_raw)
+            _mark_residue()
 
         # indicator counting only (unchanged)
         zone = (post_date_text or "").strip()
@@ -557,6 +561,18 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     start = time.perf_counter()
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
+    # Read <history> root attributes for the summary header
+    history_version, history_date = None, None
+    try:
+        for event, elem in ET.iterparse(file_path, events=("start",)):
+            if elem.tag.lower() == "history":
+                history_version = elem.attrib.get("version")
+                history_date = elem.attrib.get("date")
+                break
+    except ET.ParseError:
+        log.warning("Could not read history root attributes for summary header")
+
+
     # ----------------------------
     # Parsing state (counters/maps)
     # ----------------------------
@@ -624,6 +640,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                     continue
 
                 total_entries += 1
+                
+                if (total_entries % 10000) == 0:
+                    log.info(f"[history_parser::parse_history_entries] Parsed {total_entries:,} entries so far...")                
+                
                 entry_data = {
                     "gh_id": None,
                     "aliases": [],
@@ -731,7 +751,181 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "systems": systems_unique,
         }
 
+    # --- section_headings_found: unique + distribution (A–Z) ---
+    _section_heads = dict(parsing_state["section_headings_found"])
+    section_headings_block = {
+        "unique": len(_section_heads),
+        "distribution": dict(sorted(_section_heads.items(), key=lambda kv: kv[0].upper())),
+    }
+
+    # --- platform_categories_found: unique + distribution (A–Z) ---
+    _cats = dict(parsing_state["platform_categories_found"])
+    platform_categories_block = {
+        "unique": len(_cats),
+        "distribution": dict(sorted(_cats.items(), key=lambda kv: kv[0].upper())),
+    }
+
+    # --- platforms_found: unique + distribution (A–Z) + systems ---
+    summary_platforms_block = {
+        "unique": len(platforms_found_summary),
+        "by_platform": dict(
+            sorted(platforms_found_summary.items(), key=lambda kv: kv[0].lower())
+        ),
+    }
+
+    # --- publishers_found: unique + by_publisher (systems view, A–Z) ---
+    _publishers_map = parsing_state["publishers_found"]  # {name: {"count": N, "systems": [...]}}
+    _by_publisher = {}
+    for name, data in _publishers_map.items():
+        systems_unique = sorted(set(data["systems"]))
+        _by_publisher[name] = {
+            "systems_count": len(systems_unique),
+            "systems": systems_unique,
+        }
+
+    publishers_block = {
+        "unique": len(_by_publisher),
+        "indicators_found": {
+            k: parsing_state["publisher_indicators_found"].get(k, 0)
+            for k in ("by", "released_by", "other_after_date", "none")
+        },
+        "by_publisher": dict(sorted(_by_publisher.items(), key=lambda kv: kv[0].lower())),
+    }
+
+    # --- titles_found: unique + full items list (A–Z) ---
+    titles_items = sorted(parsing_state["titles_found"])
+    titles_block = {
+        "unique": len(titles_items),
+        "items": titles_items,
+    }
+
+    # --- region_codes: unique + distribution (by count desc, then A–Z) ---
+    _region = parsing_state["region_codes"]  # Counter
+    region_codes_block = {
+        "unique": len(_region),
+        "distribution": dict(sorted(_region.items(), key=lambda kv: (-kv[1], kv[0]))),
+    }
+
+    # --- models_found: unique + full items list (A–Z) ---
+    models_items = sorted(parsing_state["models_found"].keys())
+    models_block = {
+        "unique": len(models_items),
+        "items": models_items,
+    }
+
+    # --- comments_found: unique + by_comment (full, A–Z by comment text) ---
+    _comments_map = parsing_state["comments_found"]  # {comment: [systems]}
+    comments_block = {
+        "unique": len(_comments_map),
+        "by_comment": {
+            comment: sorted(set(systems))
+            for comment, systems in sorted(_comments_map.items(), key=lambda kv: kv[0].lower())
+        },
+    }
+
+    # --- additional_tags_found: unique + by_tag (full, A–Z) ---
+    _tags_map = parsing_state["additional_tags_found"]  # {tag: [systems]}
+    additional_tags_block = {
+        "unique": len(_tags_map),
+        "by_tag": {
+            tag: {
+                "systems_count": len(set(systems)),
+                "systems": sorted(set(systems)),
+            }
+            for tag, systems in sorted(_tags_map.items(), key=lambda kv: kv[0].lower())
+        },
+    }
+
+    # --- port_overview_texts: count + full by_system map (A–Z) ---
+    overviews_map = parsing_state["systems_with_port_overview"]  # {system: overview_text}
+    port_overview_block = {
+        "count": len(overviews_map),
+        "by_system": dict(sorted(overviews_map.items(), key=lambda kv: kv[0].lower())),
+    }
+
+    # --- anomalies.unexpected_platform_categories: unique + by_category (full, A–Z) ---
+    _upc_map = parsing_state["unexpected_platform_categories"]  # {category: [systems]}
+    _by_category = {}
+    systems_affected_set = set()
+
+    for cat, systems in _upc_map.items():
+        uniq_systems = sorted(set(systems))
+        systems_affected_set.update(uniq_systems)
+        _by_category[cat] = {
+            "systems_count": len(uniq_systems),
+            "systems": uniq_systems,
+        }
+
+    unexpected_platform_categories_block = {
+        "unique": len(_by_category),
+        "systems_affected": len(systems_affected_set),
+        "by_category": dict(sorted(_by_category.items(), key=lambda kv: kv[0].lower())),
+    }
+
+    # --- anomalies.odd_number_of_quotes: count + by_system (full, A–Z) ---
+    _oddq_map = parsing_state["odd_quotes"]  # {system: [offending lines]}
+    odd_number_of_quotes_block = {
+        "count": sum(len(lines) for lines in _oddq_map.values()),
+        "systems_affected": len(_oddq_map),
+        "by_system": {
+            system: lines  # keep full lines verbatim; preserve parser order
+            for system, lines in sorted(_oddq_map.items(), key=lambda kv: kv[0].lower())
+        },
+    }
+
+    # --- anomalies.odd_number_of_brackets: count + by_system (full, A–Z) ---
+    _oddb_map = parsing_state["odd_brackets"]  # {system: [offending lines]}
+    odd_number_of_brackets_block = {
+        "count": sum(len(lines) for lines in _oddb_map.values()),
+        "systems_affected": len(_oddb_map),
+        "by_system": {
+            system: lines  # exhaustive, verbatim
+            for system, lines in sorted(_oddb_map.items(), key=lambda kv: kv[0].lower())
+        },
+    }
+
+    # --- anomalies.ports_missing_subheadings: count + by_system (excerpt, full set) ---
+    _pms_list = parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])
+    _pms_map = {}
+    for rec in _pms_list:
+        sys = rec.get("system")
+        exc = rec.get("excerpt", "")
+        if sys:
+            _pms_map[sys] = exc
+
+    ports_missing_subheadings_block = {
+        "count": len(_pms_map),
+        "by_system": dict(sorted(_pms_map.items(), key=lambda kv: kv[0].lower())),
+    }
+
+
+    # --- residue_flags.unparsable_dates: count + systems_affected + by_system (exhaustive) ---
+    _ud_map = parsing_state["unparsable_dates"]  # {system: [bad_date_str, ...]}
+    unparsable_dates_block = {
+        "count": sum(len(v) for v in _ud_map.values()),
+        "systems_affected": len(_ud_map),
+        "by_system": {
+            system: dates  # keep full lists verbatim
+            for system, dates in sorted(_ud_map.items(), key=lambda kv: kv[0].lower())
+        },
+    }
+
+    # --- residue_flags.systems_with_residue: count + items (full, A–Z) ---
+    _swr_items = sorted(parsing_state["systems_with_residue"])
+    systems_with_residue_block = {
+        "count": len(_swr_items),
+        "items": _swr_items,
+    }
+
+
+
     summary = {
+        "history": {
+        "history_parser_schema": HISTORY_PARSER_SCHEMA,  # already defined = "1.0"
+        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "version": history_version,
+        "date": history_date,
+        },
         "totals": {
             "systems_total": systems_count,
             "software_total": software_count,
@@ -741,54 +935,82 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "port_lines_parsed": total_port_lines_all,
             "publisher_count_unique": len(parsing_state["publishers_found"]),
             "platform_count_unique": len(platforms_found_summary),
+            "model_count_unique": len(models_items),
+            "additional_tag_count_unique": additional_tags_block["unique"],
             "ports_with_comments": parsing_state["ports_with_comments"],
+            "systems_with_port_overview": port_overview_block["count"],
         },
         "found": {
-            "section_headings_found": dict(parsing_state["section_headings_found"]),
-            "platform_categories_found": dict(parsing_state["platform_categories_found"]),           
-            "platforms_found": dict(
-                sorted(platforms_found_summary.items(), key=lambda kv: kv[0].lower())
-            ),
-            "publishers_found": {
-                "indicators_found": {
-                    k: parsing_state["publisher_indicators_found"].get(k, 0)
-                    for k in ("by", "released_by", "other_after_date", "none")
-                },
-                "publishers": dict(sorted(parsing_state["publishers_found"].items()))
-            },
-            "titles_found": sorted(parsing_state["titles_found"]),
-            "region_codes": dict(sorted(parsing_state["region_codes"].items(), key=lambda x: x[1], reverse=True)),
-            "models_found": {
-                model: sorted(set(systems))
-                for model, systems in sorted(parsing_state["models_found"].items())
-            },
-            "comments_found": {
-                "count": len(parsing_state["comments_found"]),
-                "examples": dict(sorted(parsing_state["comments_found"].items()))
-            },
-            "additional_tags_found": {
-                tag: sorted(set(systems))
-                for tag, systems in sorted(parsing_state["additional_tags_found"].items())
-            },
-            "port_overview_texts": {
-                "count": len(parsing_state["systems_with_port_overview"]),
-                "examples": parsing_state["systems_with_port_overview"]
-            },
+            "section_headings_found": section_headings_block,
+            #"section_headings_found": dict(parsing_state["section_headings_found"]),
+            #"platform_categories_found": dict(parsing_state["platform_categories_found"]),
+            "platform_categories_found": platform_categories_block,
+
+            #"platforms_found": dict(
+            #    sorted(platforms_found_summary.items(), key=lambda kv: kv[0].lower())
+            #),
+            "platforms_found": summary_platforms_block,
+
+            #"publishers_found": {
+            #    "indicators_found": {
+            #        k: parsing_state["publisher_indicators_found"].get(k, 0)
+            #        for k in ("by", "released_by", "other_after_date", "none")
+            #    },
+            #    "publishers": dict(sorted(parsing_state["publishers_found"].items()))
+            #},
+            "publishers_found": publishers_block,
+
+            #"titles_found": sorted(parsing_state["titles_found"]),
+            "titles_found": titles_block,
+
+            #"region_codes": dict(sorted(parsing_state["region_codes"].items(), key=lambda x: x[1], reverse=True)),
+            "region_codes": region_codes_block,
+
+            #"models_found": {
+            #    model: sorted(set(systems))
+            #    for model, systems in sorted(parsing_state["models_found"].items())
+            #},
+            "models_found": models_block,
+
+
+            #"comments_found": {
+            #    "count": len(parsing_state["comments_found"]),
+            #    "examples": dict(sorted(parsing_state["comments_found"].items()))
+            #},
+            "comments_found": comments_block,
+            
+            #"additional_tags_found": {
+            #    tag: sorted(set(systems))
+            #    for tag, systems in sorted(parsing_state["additional_tags_found"].items())
+            #},
+            "additional_tags_found": additional_tags_block,
+            
+            #"port_overview_texts": {
+            #    "count": len(parsing_state["systems_with_port_overview"]),
+            #    "examples": parsing_state["systems_with_port_overview"]
+            #},
+            "port_overview_texts": port_overview_block,
         },
         "anomalies": {
             # Unexpected category headings under PORTS
-            "unexpected_platform_categories": {
-                k: sorted(v) for k, v in sorted(parsing_state["unexpected_platform_categories"].items())
-            },
+            #"unexpected_platform_categories": {
+            #    k: sorted(v) for k, v in sorted(parsing_state["unexpected_platform_categories"].items())
+            #},
+            "unexpected_platform_categories": unexpected_platform_categories_block,
+            
             # Non-matching quotes/brackets (shape issues)
-            "odd_quotes": {k: v for k, v in sorted(parsing_state["odd_quotes"].items())},
-            "odd_brackets": {k: v for k, v in sorted(parsing_state["odd_brackets"].items())},
+            #"odd_quotes": {k: v for k, v in sorted(parsing_state["odd_quotes"].items())},
+            "odd_number_of_quotes": odd_number_of_quotes_block,
+            #"odd_brackets": {k: v for k, v in sorted(parsing_state["odd_brackets"].items())},
+            "odd_number_of_brackets": odd_number_of_brackets_block,
 
             # PORTS present but no recognised subheadings
-            "ports_missing_subheadings": {
-                "count": len(parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])),
-                "examples": parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])[:25]
-            },
+            #"ports_missing_subheadings": {
+            #    "count": len(parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])),
+            #    "examples": parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])[:25]
+            #},
+            "ports_missing_subheadings": ports_missing_subheadings_block,
+
 
             # Banner lines (audit trail)
             "platform_banners": {
@@ -811,18 +1033,22 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                     parsing_state["null_platform_ports_by_system"].items(),
                     key=lambda kv: (-kv[1], kv[0])
                 )),
-                "examples": {k: v for k, v in parsing_state["null_platform_examples"].items()}
+                "by_system_lines": {k: v for k, v in parsing_state["null_platform_examples"].items()}
             }
         },
         "residue_flags": {
-            "unparsable_dates": {
-                "count": len(parsing_state["unparsable_dates"]),
-                "examples": parsing_state["unparsable_dates"]
-            },
-            "systems_with_residue": {
-                "count": len(parsing_state["systems_with_residue"]),
-                "examples": sorted(parsing_state["systems_with_residue"])
-            }
+        
+            #"unparsable_dates": {
+            #    "count": len(parsing_state["unparsable_dates"]),
+            #    "examples": parsing_state["unparsable_dates"]
+            #},
+            #"systems_with_residue": {
+            #    "count": len(parsing_state["systems_with_residue"]),
+            #    "examples": sorted(parsing_state["systems_with_residue"])
+            #}            
+            "unparsable_dates": unparsable_dates_block,
+            "systems_with_residue": systems_with_residue_block,            
+            
         },
     }
 
@@ -896,6 +1122,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                     if k.upper() not in KNOWN_PLATFORMS]
     if unknown_cats:
         log.info("[history_parser] unexpected PORTS categories encountered: %s", ", ".join(sorted(set(unknown_cats))))
+
+    # 8) Residue values are correct
+    _warn_ok(
+        len(parsing_state.get("systems_with_residue", set())) >= len(parsing_state.get("unparsable_dates", {})),
+        "[history_parser] systems_with_residue fewer than unparsable_dates keys"
+    )
+
 
     if issues == 0:
         log.info("[history_parser] invariants passed")
