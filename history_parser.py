@@ -727,17 +727,23 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     log.info(f"  - {port_overview_count} entries contained a port overview")
 
     # ----------------------------
-    # Write parsed per-system output
+    # Write parsed per-system output (sorted)
     # ----------------------------
     output_dir = Path("output")
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "gh_systems.json"
+    output_file = output_dir / "gh_system_ports.json"  # renamed
+
+    # Deterministic, case-insensitive key order
+    systems_sorted = {k: gh_systems[k] for k in sorted(gh_systems.keys(), key=str.lower)}
+
     try:
         with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(gh_systems, f, indent=2, ensure_ascii=False)
-        log.info(f"Saved parsed GH metadata to {output_file}")
+            json.dump(systems_sorted, f, indent=2, ensure_ascii=False)
+        log.info(f"Saved parsed GH metadata (sorted) to {output_file} "
+                 f"({len(systems_sorted)} systems)")
     except Exception as e:
-        log.error(f"Failed to write GH entries JSON: {e}")
+        log.error(f"Failed to write GH systems JSON: {e}")
+
 
     # ----------------------------
     # Build summary JSON
@@ -942,76 +948,21 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         },
         "found": {
             "section_headings_found": section_headings_block,
-            #"section_headings_found": dict(parsing_state["section_headings_found"]),
-            #"platform_categories_found": dict(parsing_state["platform_categories_found"]),
             "platform_categories_found": platform_categories_block,
-
-            #"platforms_found": dict(
-            #    sorted(platforms_found_summary.items(), key=lambda kv: kv[0].lower())
-            #),
             "platforms_found": summary_platforms_block,
-
-            #"publishers_found": {
-            #    "indicators_found": {
-            #        k: parsing_state["publisher_indicators_found"].get(k, 0)
-            #        for k in ("by", "released_by", "other_after_date", "none")
-            #    },
-            #    "publishers": dict(sorted(parsing_state["publishers_found"].items()))
-            #},
             "publishers_found": publishers_block,
-
-            #"titles_found": sorted(parsing_state["titles_found"]),
             "titles_found": titles_block,
-
-            #"region_codes": dict(sorted(parsing_state["region_codes"].items(), key=lambda x: x[1], reverse=True)),
             "region_codes": region_codes_block,
-
-            #"models_found": {
-            #    model: sorted(set(systems))
-            #    for model, systems in sorted(parsing_state["models_found"].items())
-            #},
             "models_found": models_block,
-
-
-            #"comments_found": {
-            #    "count": len(parsing_state["comments_found"]),
-            #    "examples": dict(sorted(parsing_state["comments_found"].items()))
-            #},
             "comments_found": comments_block,
-            
-            #"additional_tags_found": {
-            #    tag: sorted(set(systems))
-            #    for tag, systems in sorted(parsing_state["additional_tags_found"].items())
-            #},
             "additional_tags_found": additional_tags_block,
-            
-            #"port_overview_texts": {
-            #    "count": len(parsing_state["systems_with_port_overview"]),
-            #    "examples": parsing_state["systems_with_port_overview"]
-            #},
             "port_overview_texts": port_overview_block,
         },
         "anomalies": {
-            # Unexpected category headings under PORTS
-            #"unexpected_platform_categories": {
-            #    k: sorted(v) for k, v in sorted(parsing_state["unexpected_platform_categories"].items())
-            #},
             "unexpected_platform_categories": unexpected_platform_categories_block,
-            
-            # Non-matching quotes/brackets (shape issues)
-            #"odd_quotes": {k: v for k, v in sorted(parsing_state["odd_quotes"].items())},
             "odd_number_of_quotes": odd_number_of_quotes_block,
-            #"odd_brackets": {k: v for k, v in sorted(parsing_state["odd_brackets"].items())},
             "odd_number_of_brackets": odd_number_of_brackets_block,
-
-            # PORTS present but no recognised subheadings
-            #"ports_missing_subheadings": {
-            #    "count": len(parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])),
-            #    "examples": parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])[:25]
-            #},
             "ports_missing_subheadings": ports_missing_subheadings_block,
-
-
             # Banner lines (audit trail)
             "platform_banners": {
                 "count": parsing_state["platform_banner_total"],
@@ -1024,7 +975,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                     for sys, counter in sorted(parsing_state["platform_banners_by_system"].items())
                 }
             },
-
             # Ports that still had null platform after inheritance (ideally 0)
             "null_platform_ports": {
                 "count": parsing_state["null_platform_ports_total"],
@@ -1037,15 +987,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             }
         },
         "residue_flags": {
-        
-            #"unparsable_dates": {
-            #    "count": len(parsing_state["unparsable_dates"]),
-            #    "examples": parsing_state["unparsable_dates"]
-            #},
-            #"systems_with_residue": {
-            #    "count": len(parsing_state["systems_with_residue"]),
-            #    "examples": sorted(parsing_state["systems_with_residue"])
-            #}            
             "unparsable_dates": unparsable_dates_block,
             "systems_with_residue": systems_with_residue_block,            
             

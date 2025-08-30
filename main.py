@@ -31,7 +31,7 @@ from logger import setup_logger, debug_log
 from encoding_utils import detect_encoding
 from mame_parser import parse_mame_xml
 from history_parser import parse_history_entries
-from history_metadata import summarise_history_inis
+from history_metadata import parse_history_inis
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -380,30 +380,74 @@ def main():
         else:
             debug_log("All sources share the same numeric core and no suffixes were detected.")
 
-    log.info("Proceeding to XML parsing...")
+    log.info("Proceeding to source file parsing...")
 
     # Pass encodings to downstream modules (simple map: filename -> encoding string)
     encodings = {k: v["encoding"] for k, v in updated_encodings.items() if isinstance(v, dict) and "encoding" in v}
 
-
     log.info("Beginning History .ini parse...")
-    ini_stage = summarise_history_inis(data_dir, encodings)
-    if not ini_stage["ok"]:
-        for msg in ini_stage["errors"]:
-            log.warning(f"INI summary issue: {msg}")
+    ini_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
+    ini_t0 = time.perf_counter()
 
+    ok_ini = parse_history_inis(data_dir, encodings)
+
+    ini_duration = round(time.perf_counter() - ini_t0, 3)
+    ini_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
+
+    # Build manifest stage (index + pointers; no duplication of detailed stats)
+    ini_summary_path = Path("data/ini_parsing_summary.json")
+    ini_output_path  = Path("output/gh_ini_classifications.json")
+
+    ini_inputs = []
+    for fname in (
+        "[GAMING HISTORY] Game Or No Game.ini",
+        "[GAMING HISTORY] Machine Category.ini",
+        "[GAMING HISTORY] Machine Type.ini",
+    ):
+        p = data_dir / fname
+        if p.exists():
+            ini_inputs.append(_file_meta(p))
+        else:
+            log.warning(f"INI missing: {fname}")
+
+    ini_outputs = []
+    ini_stats = {}
+    # Attach output metadata if present
+    if ini_summary_path.exists():
+        meta = _file_meta(ini_summary_path)
+        ini_outputs.append(meta)
+        # Pull a small headline stat from the summary (optional, not duplicative)
+        try:
+            with open(ini_summary_path, encoding="utf-8") as f:
+                _ini_sum = json.load(f)
+            umi = (_ini_sum.get("stats") or {}).get("unique_machine_names_indexed")
+            if isinstance(umi, int):
+                ini_stats["unique_machine_names_indexed"] = umi
+        except Exception as e:
+            log.debug(f"Could not read INI summary for stats: {e}")
+
+    if ini_output_path.exists():
+        meta = _file_meta(ini_output_path)
+        # Add record count = number of machines in the classification map
+        try:
+            with open(ini_output_path, encoding="utf-8") as f:
+                _map = json.load(f)
+            meta["records"] = len(_map) if isinstance(_map, dict) else None
+        except Exception:
+            meta["records"] = None
+        ini_outputs.append(meta)
+
+    ini_stage = {
+        "stage": "history_metadata",
+        "ok": bool(ok_ini),
+        "started_utc": ini_started_utc,
+        "finished_utc": ini_finished_utc,
+        "duration_seconds": ini_duration,
+        "inputs": ini_inputs,
+        "outputs": ini_outputs,
+        "stats": ini_stats,
+    }
     stage_fragments = [ini_stage]
-
-
-    #log.info("Beginning MAME XML canonical parse...")
-    #ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
-    #if not ok_mame:
-    #    log.error("MAME parse failed — skipping History parser.")
-    #    ok_history = False
-    #else:
-    #    log.info("Beginning History XML parse...")
-    #    ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
-
 
 
     # --- MAME parse (timed) ---
@@ -469,7 +513,7 @@ def main():
     # --- HISTORY stage fragment ---
     history_xml        = data_dir / "history.xml"
     hist_summary_path  = Path("data/history_parsing_summary.json")
-    gh_out_path        = Path("output/gh_systems.json")
+    gh_out_path        = Path("output/gh_system_ports.json")
 
     if ok_mame:
         ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
