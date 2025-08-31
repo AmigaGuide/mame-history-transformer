@@ -1,0 +1,7 @@
+{
+  "mainline": {
+    "description": "Mainline Double Joker Poker / Jacks Plus",
+    "apply_if_unbalanced": true,
+    "note": "Fix stray closing parenthesis in MAME title."
+  }
+}

@@ -32,6 +32,7 @@ from encoding_utils import detect_encoding
 from mame_parser import parse_mame_xml
 from history_parser import parse_history_entries
 from history_metadata import parse_history_inis
+from transformer import run_transformer
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -491,6 +492,20 @@ def main():
             m_machines = json.load(f)
         mout["records"]     = len(m_machines)
         mame_stage["outputs"].append(mout)
+
+        # ALSO include parent/clone index if present
+        mame_parent_idx_path = Path("output/mame_parent_index.json")
+        if mame_parent_idx_path.exists():
+            mp = _file_meta(mame_parent_idx_path)
+            try:
+                with open(mame_parent_idx_path, encoding="utf-8") as f:
+                    idx = json.load(f)
+                # records: number of parents-with-clones
+                mp["records"] = len(idx.get("parents", {})) if isinstance(idx, dict) else None
+            except Exception:
+                mp["records"] = None
+            mame_stage["outputs"].append(mp)
+
         # headline counters
         t = msum.get("totals", {})
         mame_stage["stats"] = {
@@ -578,13 +593,103 @@ def main():
     stage_fragments.append(history_stage)
 
 
-    # None-safe min/max across stage times
+
+    # --- TRANSFORM (timed) ---
+    log.info("Beginning transform (no Ports yet)...")
+    transform_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
+    tr_t0 = time.perf_counter()
+
+    # prerequisites: INI + MAME must have succeeded, and required files must exist
+    need_files = [
+        Path("output/mame_machines.json"),
+        Path("output/gh_ini_classifications.json"),
+        Path("output/mame_parent_index.json"),
+    ]
+    missing_files = [p.as_posix() for p in need_files if not p.exists()]
+
+    if ok_mame and ok_ini and not missing_files:
+        ok_transform = run_transformer(Path("data"))
+        transform_errs = []
+    else:
+        ok_transform = False
+        transform_errs = []
+        if not ok_ini:
+            transform_errs.append("skipped: INI parsing failed")
+        if not ok_mame:
+            transform_errs.append("skipped: MAME parsing failed")
+        for mf in missing_files:
+            transform_errs.append(f"skipped: missing prerequisite file {mf}")
+
+    transform_duration = round(time.perf_counter() - tr_t0, 3)
+    transform_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
+
+    transform_stage = {
+        "stage": "transform",
+        "ok": bool(ok_transform),
+        "started_utc": transform_started_utc,
+        "finished_utc": transform_finished_utc,
+        "duration_seconds": transform_duration,
+        "inputs": [],
+        "outputs": [],
+        "stats": {},
+    }
+    if transform_errs:
+        transform_stage["errors"] = transform_errs
+
+    # attach input file meta (for traceability) if present
+    for p in need_files:
+        if p.exists():
+            transform_stage["inputs"].append(_file_meta(p))
+
+    # Optionally record the title overrides file as an input (not a prerequisite)
+    ov_path = Path("data/title_overrides.json")
+    if ov_path.exists():
+        transform_stage["inputs"].append(_file_meta(ov_path))
+
+    # attach outputs + light stats if transform ran
+    wiki_out_path = Path("output/exotica_lit_wiki.json")
+    tr_summary_path = Path("data/transform_summary.json")
+
+    if ok_transform:
+        if wiki_out_path.exists():
+            w = _file_meta(wiki_out_path)
+            try:
+                with open(wiki_out_path, encoding="utf-8") as f:
+                    wiki_map = json.load(f)
+                w["records"] = len(wiki_map) if isinstance(wiki_map, dict) else None
+            except Exception:
+                w["records"] = None
+            transform_stage["outputs"].append(w)
+
+        if tr_summary_path.exists():
+            s = _file_meta(tr_summary_path)
+            transform_stage["outputs"].append(s)
+            # Pull a couple of headline stats (optional, compact)
+            try:
+                with open(tr_summary_path, encoding="utf-8") as f:
+                    ts = json.load(f)
+                c = ts.get("counts", {})
+                transform_stage["stats"].update({
+                    "eligible_parents": c.get("eligible_parents"),
+                    "final_included": c.get("final_included"),
+                    "clones_included_unknown_classification": c.get("clones_included_unknown_classification"),
+                })
+            except Exception:
+                pass
+
+    stage_fragments.append(transform_stage)
+
+
     started_candidates = [ini_stage.get("started_utc"),
                           mame_stage.get("started_utc"),
-                          history_stage.get("started_utc")]
+                          history_stage.get("started_utc"),
+                          transform_stage.get("started_utc")]
+
     finished_candidates = [ini_stage.get("finished_utc"),
                            mame_stage.get("finished_utc"),
-                           history_stage.get("finished_utc")]
+                           history_stage.get("finished_utc"),
+                           transform_stage.get("finished_utc")]
+
 
     # Filter out any None
     started_candidates  = [t for t in started_candidates  if t]
