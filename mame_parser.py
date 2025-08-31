@@ -33,6 +33,42 @@ from logger import setup_logger, debug_log
 log = setup_logger(log_level=LOG_LEVEL)
 MAME_PARSER_SCHEMA = "1.0"
 
+def _build_parent_index(machines: dict[str, dict]) -> dict:
+    """
+    Build a minimal parent/clone index from the parsed MAME machines.
+
+    Output shape:
+    {
+      "parents": { parent: [sorted, unique clones], ... },
+      "child_to_parent": { clone: parent, ... }
+    }
+
+    Only parents that actually have >= 1 clone are included.
+    """
+    parents: dict[str, list[str]] = {}
+    child_to_parent: dict[str, str] = {}
+
+    for mname, info in machines.items():
+        parent = info.get("cloneof")
+        if not parent:
+            continue
+        # Record reverse map
+        child_to_parent[mname] = parent
+        # Record forward map
+        lst = parents.setdefault(parent, [])
+        lst.append(mname)
+
+    # Deduplicate + sort clone lists; sort parent keys
+    parents_sorted: dict[str, list[str]] = {
+        p: sorted(set(clones)) for p, clones in parents.items() if clones
+    }
+    parents_sorted = {p: parents_sorted[p] for p in sorted(parents_sorted.keys())}
+
+    # Sort reverse map by clone name for deterministic diffs
+    child_to_parent_sorted = {c: child_to_parent[c] for c in sorted(child_to_parent.keys())}
+
+    return {"parents": parents_sorted, "child_to_parent": child_to_parent_sorted}
+
 def _txt(el):
     """Return stripped element text or ''."""
     return (el.text or "").strip() if el is not None else ""
@@ -681,12 +717,27 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     with open(machines_path, "w", encoding="utf-8") as f:
         json.dump(machines_sorted, f, ensure_ascii=False, indent=2)
+    log.info(f"Wrote canonical machines: {machines_path}")
 
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
-
-    log.info(f"Wrote canonical machines: {machines_path}")
     log.info(f"Wrote MAME totals summary: {summary_path}")
+
+
+    # ----------------------------
+    # Also write parent/clone index
+    # ----------------------------
+    parent_index = _build_parent_index(machines_out)  # or machines_sorted; content identical
+    parent_index_path = (data_dir.parent / "output" / "mame_parent_index.json")
+    parent_index_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(parent_index_path, "w", encoding="utf-8") as f:
+        json.dump(parent_index, f, ensure_ascii=False, indent=2)
+
+    log.info(f"Wrote {parent_index_path} "
+             f"({len(parent_index['parents'])} parents-with-clones, "
+             f"{len(parent_index['child_to_parent'])} clones)")
+
     log.info(f"MAME XML parsing completed in {parse_seconds:.2f} seconds")
 
     return True
