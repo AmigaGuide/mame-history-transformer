@@ -41,7 +41,11 @@ from logger import setup_logger, debug_log
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-DATA_DIR = Path("data")
+# --- Schemas (bump only when shapes change) ---
+TRANSFORMER_SCHEMA = "0.4"   # used in data/transform_summary.json
+WIKI_SCHEMA        = "1.0"   # used in exotica_lit_wiki.json header
+
+DATA_DIR   = Path("data")
 OUTPUT_DIR = Path("output")
 
 MAME_MACHINES_PATH = OUTPUT_DIR / "mame_machines.json"
@@ -50,6 +54,16 @@ PARENT_INDEX_PATH  = OUTPUT_DIR / "mame_parent_index.json"
 
 WIKI_OUT_PATH      = OUTPUT_DIR / "exotica_lit_wiki.json"
 TRANS_SUMMARY_PATH = DATA_DIR / "transform_summary.json"
+
+_VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
+
+
+def _core(s: str | None) -> str | None:
+    """Extract numeric core like '0.279' or '2.79' from a version string."""
+    if not s:
+        return None
+    m = _VERSION_CORE_RX.search(s)
+    return m.group(0) if m else None
 
 
 # ----------------------------
@@ -63,6 +77,7 @@ def _read_json(path: Path):
     except Exception as e:
         log.error(f"Failed to read {path}: {e}")
         return None
+
 
 def _write_json(path: Path, obj: Any) -> bool:
     try:
@@ -81,6 +96,10 @@ def _write_json(path: Path, obj: Any) -> bool:
 # ----------------------------
 
 def _classify(machine: str, ini_map: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Return normalised classification for a machine using the INI aggregation map.
+    Missing/empty fields become 'unknown' (category becomes ['unknown']).
+    """
     row = ini_map.get(machine)
     if not row:
         return {"game_status": "unknown", "category": ["unknown"], "type": "unknown"}
@@ -91,41 +110,45 @@ def _classify(machine: str, ini_map: Dict[str, Dict[str, Any]]) -> Dict[str, Any
     typ = row.get("type", "unknown") or "unknown"
     return {"game_status": gs, "category": cat, "type": typ}
 
+
 def _is_eligible_parent(machine: str,
                         mame: Dict[str, Any],
                         ini_map: Dict[str, Dict[str, Any]]) -> bool:
+    """
+    Eligibility predicate for parent machines:
+      - must not be a clone,
+      - INI says game_status == 'game',
+      - INI category includes 'Arcade'.
+    """
     info = mame.get(machine, {})
     if info.get("cloneof"):
         return False
     c = _classify(machine, ini_map)
     return (c["game_status"] == "game") and ("Arcade" in c["category"])
 
+
 def _build_final_set(eligible_parents: Set[str],
                      parent_index: Dict[str, Any]) -> Set[str]:
+    """
+    Expand the eligible parent set with ALL their clones using mame_parent_index.json.
+    """
     final: Set[str] = set(eligible_parents)
     parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})
     for p in sorted(eligible_parents):
         final.update(parents_map.get(p, []))
     return final
 
+
 def _machine_title(m: Dict[str, Any], fallback: str) -> str:
+    """Get a display title for a MAME record with sensible fallbacks."""
     return m.get("description") or m.get("title") or m.get("fullname") or fallback
 
-def _bool(v: Any) -> bool:
-    return bool(v) if isinstance(v, (bool, int, str)) else False
-
-def _load_title_overrides(path: Path) -> dict:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except FileNotFoundError:
-        return {}
-    except Exception as e:
-        log.warning(f"Failed to read title overrides {path}: {e}")
-        return {}
 
 def _truthy_flag(v) -> bool:
+    """
+    Normalise a variety of MAME booleanish forms to True/False.
+    Accepts booleans, numbers, and strings like 'yes'/'no', '1'/'0', etc.
+    """
     if isinstance(v, bool):
         return v
     if v is None:
@@ -140,7 +163,35 @@ def _truthy_flag(v) -> bool:
             return False
     return False
 
+
+def _load_title_overrides(path: Path) -> dict:
+    """
+    Load optional title overrides:
+      {
+        "machine_name": {
+          "description": "<replacement text>",
+          "apply_if_unbalanced": true|false,
+          "note": "why"
+        },
+        ...
+      }
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        log.warning(f"Failed to read title overrides {path}: {e}")
+        return {}
+
+
 def _dedupe_anomalies_preferring_pre_override(anoms: dict) -> dict:
+    """
+    De-duplicate anomaly examples by (machine, example),
+    preferring entries tagged pre_override=True when both exist.
+    """
     out = {}
     for cat, items in anoms.items():
         seen = {}
@@ -150,7 +201,6 @@ def _dedupe_anomalies_preferring_pre_override(anoms: dict) -> dict:
             if prev is None:
                 seen[key] = it
             else:
-                # prefer items marked pre_override
                 if it.get("pre_override") and not prev.get("pre_override"):
                     seen[key] = it
         out[cat] = list(seen.values())
@@ -163,6 +213,7 @@ def _dedupe_anomalies_preferring_pre_override(anoms: dict) -> dict:
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
 _INFIX_RE = re.compile(r"[A-Za-z0-9]\([^()\[\]]+\)[A-Za-z0-9]")
+
 
 def _normalise_inside_group(s: str) -> Tuple[str, bool]:
     """Inside a bracket group, replace top-level ' - ' and ' / ' with ', '."""
@@ -183,6 +234,7 @@ def _normalise_inside_group(s: str) -> Tuple[str, bool]:
         elif ch == "]": dS = max(0, dS - 1)
         out.append(ch); i += 1
     return ("".join(out), changed)
+
 
 def _top_level_groups(unit: str) -> List[Tuple[int, int, str, str]]:
     """
@@ -218,6 +270,7 @@ def _top_level_groups(unit: str) -> List[Tuple[int, int, str, str]]:
         i += 1
     return groups
 
+
 def _first_trailing_start(unit: str, groups: List[Tuple[int,int,str,str]]) -> Optional[int]:
     """
     Find the start index of the FIRST top-level group that is a 'trailing' group:
@@ -231,49 +284,47 @@ def _first_trailing_start(unit: str, groups: List[Tuple[int,int,str,str]]) -> Op
             return start
     return None
 
+
 def _split_outside_tokens_after(unit: str, groups: List[Tuple[int,int,str,str]], from_index: int) -> List[str]:
     """
     Collect outside (non-bracket) token fragments AFTER from_index,
     skipping over bracket groups. Clean leading/trailing punctuation.
     """
     tokens: List[str] = []
-    # Build an ordered list of group spans AFTER from_index
     spans = [(s, e) for (s, e, _, _) in groups if s >= from_index]
     spans.sort()
     cursor = from_index
     for (s, e) in spans:
-        # outside before this group
         if s > cursor:
             frag = unit[cursor:s].strip()
             if frag:
                 tokens.append(_clean_token(frag))
         cursor = e + 1
-    # tail after last group
     if cursor < len(unit):
         frag = unit[cursor:].strip()
         if frag:
             tokens.append(_clean_token(frag))
-    # drop empties
     return [t for t in tokens if t]
+
 
 def _clean_token(t: str) -> str:
     """Trim and drop leading/trailing punctuation commonly used as separators."""
     t = t.strip()
-    # strip leading separators
     while t and t[0] in "-:,/;()[]":
         t = t[1:].lstrip()
-    # strip trailing separators
     while t and t[-1] in "-:,/;()[]":
         t = t[:-1].rstrip()
-    # collapse inner whitespace
     t = " ".join(t.split())
     return t
+
 
 def _find_infix_brackets_no_spaces(s: str) -> bool:
     """Heuristic: bracket group immediately between alnum on both sides."""
     return _INFIX_RE.search(s) is not None
 
+
 def _find_unbalanced(full: str) -> Tuple[bool, bool]:
+    """Return (unbalanced_round, unbalanced_square) for a full string."""
     dR = dS = 0
     for ch in full:
         if ch == "(": dR += 1
@@ -281,6 +332,7 @@ def _find_unbalanced(full: str) -> Tuple[bool, bool]:
         elif ch == "[": dS += 1
         elif ch == "]": dS -= 1
     return (dR != 0, dS != 0)
+
 
 def _parse_unit(unit_text: str) -> Tuple[str, str, List[str], List[str], Dict[str, bool]]:
     """
@@ -290,14 +342,14 @@ def _parse_unit(unit_text: str) -> Tuple[str, str, List[str], List[str], Dict[st
       - 'outside_tokens_after_first_group' are non-bracket text fragments after the first group.
     """
     warn = {"odd_separator_usage": False}
-    # Collect top-level groups (content already normalised)
     groups = _top_level_groups(unit_text)
-    # Decide subtitle split space
     first_tr_start = _first_trailing_start(unit_text, groups)
     cut = first_tr_start if first_tr_start is not None else len(unit_text)
     head = unit_text[:cut]
-    # Subtitle split on first ' - ' or ':' outside brackets (head has no trailing groups)
+
+    # Subtitle split on first ' - ' or ':' outside brackets
     sub_pos = None
+    chosen = None
     for sep in (" - ", ":"):
         idx = head.find(sep)
         if idx != -1 and (sub_pos is None or idx < sub_pos):
@@ -312,22 +364,18 @@ def _parse_unit(unit_text: str) -> Tuple[str, str, List[str], List[str], Dict[st
 
     # Determine if we normalised anything in groups (for warnings)
     for (_, _, _, content_raw) in groups:
-        # _normalise_inside_group already applied inside _top_level_groups; to detect change,
-        # run it again and compare (cheap, deterministic)
         _, changed = _normalise_inside_group(content_raw)
         if changed:
             warn["odd_separator_usage"] = True
             break
 
-    # Outside tokens after first group (if any), without duplicating groups
     outside_tokens: List[str] = []
     if first_tr_start is not None:
         outside_tokens = _split_outside_tokens_after(unit_text, groups, from_index=groups[0][1] + 1)
 
-    # Extract ordered group contents only
     group_contents = [g[3].strip() for g in groups]
-
     return base, subtitle, group_contents, outside_tokens, warn
+
 
 def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[Dict[str, str]]]]:
     """
@@ -349,7 +397,7 @@ def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[D
     if _find_infix_brackets_no_spaces(full_desc):
         anomalies["infix_brackets_no_spaces"].append({"example": full_desc})
 
-    # Split into title units
+    # Split into title units outside brackets
     def split_top_level(text: str, delim: str) -> List[str]:
         out, buf = [], []
         dR = dS = 0
@@ -379,7 +427,7 @@ def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[D
         if outside_tokens:
             anomalies["ambiguous_trailing_tokens"].append({"example": full_desc})
 
-    # Build numbered fields
+    # Build numbered fields placeholders
     desc: Dict[str, str] = {}
     for idx in range(len(unit_info)):
         desc[f"title{idx+1}"] = ""
@@ -390,18 +438,16 @@ def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[D
         desc[f"title{idx}"] = base
         desc[f"subtitle{idx}"] = sub
 
-    # Per spec: if exactly one (top-level) group in the WHOLE string → it's global_version
+    # Decide global_version vs per-title versionN
     global_parts: List[str] = []
     if total_top_groups == 1:
         for (_, _, groups, outs, _) in unit_info:
             if groups:
                 global_parts.append(groups[0])
-                # any outside tokens after that group also go to global
                 for t in outs:
                     global_parts.append(t)
                 break
     else:
-        # First group after each unit → version; remaining groups + outside tokens → global
         for idx, (_, _, groups, outs, _) in enumerate(unit_info, start=1):
             if groups:
                 desc[f"version{idx}"] = groups[0]
@@ -410,9 +456,7 @@ def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[D
             for t in outs:
                 global_parts.append(t)
 
-    # Join global parts into one string (keep order, drop empties)
     desc["global_version"] = ", ".join(p for p in global_parts if p)
-
     return desc, anomalies
 
 
@@ -424,20 +468,26 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     t0 = time.perf_counter()
 
-    overrides = _load_title_overrides(DATA_DIR / "title_overrides.json")
-
-    # Track usage for the summary
-    overrides_applied: list[dict[str, str]] = []
-    overrides_stats = {
-        "configured": len(overrides),  # total entries in title_overrides.json
-        "eligible": 0,                 # overrides where condition was met (see below)
-        "applied": 0                   # overrides we actually used (description replaced)
+    # Safe default for header; will be populated from summaries below
+    wiki_header_versions = {
+        "mame_xml_version": "Unknown",
+        "gaming_history_xml_version": "Unknown",
+        "ini_versions": {}
     }
 
-    # Remember path and whether we actually loaded any overrides
+    # Optional overrides
     overrides_path = DATA_DIR / "title_overrides.json"
+    overrides = _load_title_overrides(overrides_path)
     have_overrides = isinstance(overrides, dict) and bool(overrides)
 
+    overrides_applied: list[dict[str, str]] = []
+    overrides_stats = {
+        "configured": len(overrides),
+        "eligible": 0,
+        "applied": 0
+    }
+
+    # Load required inputs
     mame = _read_json(MAME_MACHINES_PATH)
     ini_map = _read_json(INI_CLASS_PATH)
     parent_index = _read_json(PARENT_INDEX_PATH)
@@ -445,6 +495,69 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         log.error("Missing or invalid inputs; aborting transform.")
         return False
 
+    # --- Read stage summaries (sources of truth for versions) ---
+    mame_sum = _read_json(DATA_DIR / "mame_parsing_summary.json") or {}
+    hist_sum = _read_json(DATA_DIR / "history_parsing_summary.json") or {}
+    ini_sum  = _read_json(DATA_DIR / "ini_parsing_summary.json") or {}
+
+    # Raw versions for the transform summary (audit only)
+    versions = {
+        "mame_build":       (mame_sum.get("mame")    or {}).get("build"),
+        "history_version":  (hist_sum.get("history") or {}).get("version"),
+        "history_date":     (hist_sum.get("history") or {}).get("date"),
+        "ini_generated_at": (ini_sum.get("ini")      or {}).get("generated_at"),
+    }
+
+    # --- Build wiki header versions using creators' schemes (no mismatch reporting here) ---
+    mame_build_raw   = (mame_sum.get("mame")    or {}).get("build")    # e.g. "0.279 (mame0279)"
+    mame_core        = _core(mame_build_raw)                           # -> "0.279" or None
+    hist_version_raw = (hist_sum.get("history") or {}).get("version")  # e.g. "2.79" / "2.79a"
+
+    # Per-INI versions: tolerate current and older shapes
+    ini_versions_raw: dict[str, str] = {}
+
+    # Your current shape: { "ini": { "files": { "game_status": {...}, "category": {...}, "type": {...} } } }
+    ini_root = (ini_sum.get("ini") or {}) if isinstance(ini_sum, dict) else {}
+    files_node = ini_root.get("files")
+
+    if isinstance(files_node, dict):
+        for item in files_node.values():
+            fn = (item.get("filename") or item.get("path") or "").strip()
+            v  = item.get("version") or {}
+            ver = v.get("mame_version") or v.get("raw") or "Unknown"
+            if fn:
+                ini_versions_raw[fn] = ver
+
+    # Fallbacks for older/alternative shapes
+    if not ini_versions_raw:
+        # shape: { "files": [ {...}, {...} ] }
+        files_list = ini_sum.get("files")
+        if isinstance(files_list, list):
+            for item in files_list:
+                fn = (item.get("filename") or item.get("path") or "").strip()
+                v  = item.get("version") or {}
+                ver = v.get("mame_version") or v.get("raw") or "Unknown"
+                if fn:
+                    ini_versions_raw[fn] = ver
+
+    if not ini_versions_raw:
+        # stage-style: { "inputs": [ {...}, ... ] }
+        for item in (ini_root.get("inputs") or ini_sum.get("inputs") or []):
+            fn = (item.get("filename") or item.get("path") or "").strip()
+            v  = item.get("version") or {}
+            ver = v.get("mame_version") or v.get("raw") or "Unknown"
+            if fn:
+                ini_versions_raw[fn] = ver
+
+    # Now build the header block
+    wiki_header_versions = {
+        "mame_xml_version":            mame_core or "Unknown",
+        "gaming_history_xml_version":  hist_version_raw or "Unknown",  # keep GH style (e.g. "2.79a")
+        "ini_versions":                {fn: (ini_versions_raw.get(fn) or "Unknown") for fn in ini_versions_raw}
+    }
+
+
+    # ---------------- Selection + Title parsing ----------------
     all_names = sorted(mame.keys())
     eligible_parents: Set[str] = {n for n in all_names if _is_eligible_parent(n, mame, ini_map)}
     final_names: Set[str] = _build_final_set(eligible_parents, parent_index)
@@ -464,7 +577,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "odd_separator_usage": [],
     }
 
-    # Parent exclusion reasons (for info)
+    # Parent exclusion reasons (informational)
     for name in all_names:
         if mame[name].get("cloneof"):
             continue
@@ -476,29 +589,28 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         elif c["game_status"] == "unknown" or c["category"] == ["unknown"]:
             excluded_reasons["unknown_classification"] += 1
 
+    # Main loop
     for name in sorted(final_names):
         minfo = mame.get(name)
         if not minfo:
-            missing_in_mame.append(name); continue
+            missing_in_mame.append(name)
+            continue
 
         cls = _classify(name, ini_map)
 
-        #if _bool(minfo.get("isbios")):       included_flags["isbios"] += 1
-        #if _bool(minfo.get("isdevice")):     included_flags["isdevice"] += 1
-        #if _bool(minfo.get("ismechanical")): included_flags["ismechanical"] += 1        
+        # Report-only flags (count how many included entries have these set)
         if _truthy_flag(minfo.get("isbios")):       included_flags["isbios"] += 1
         if _truthy_flag(minfo.get("isdevice")):     included_flags["isdevice"] += 1
         if _truthy_flag(minfo.get("ismechanical")): included_flags["ismechanical"] += 1
-        
+
+        # Count clones included with unknown classification (useful QA number)
         if name in (parent_index.get("child_to_parent") or {}) and (
             cls["game_status"] == "unknown" or cls.get("category") == ["unknown"]
         ):
             clones_included_unknown_class += 1
 
-
+        # Original description and pre-override anomalies
         raw_desc_original = _machine_title(minfo, name)
-
-        # 2a) collect anomalies on the ORIGINAL string
         _, pre_anoms = _parse_description(raw_desc_original)
         for k, lst in pre_anoms.items():
             for item in lst:
@@ -506,7 +618,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                 item["pre_override"] = True
             title_anomalies[k].extend(lst)
 
-        # 2b) decide/apply override (and count eligible/applied)
+        # Apply override (conditional)
         orig_unbalanced_round, orig_unbalanced_square = _find_unbalanced(raw_desc_original)
         ov = overrides.get(name)
         raw_desc = raw_desc_original
@@ -526,21 +638,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                     })
                     overrides_stats["applied"] += 1
 
-        # 2c) parse the (possibly overridden) title BUT ignore anomalies now
+        # Parse (possibly overridden) title FOR FIELDS ONLY; ignore anomalies now
         desc_fields, _ = _parse_description(raw_desc)
 
-
-        #raw_desc = _machine_title(minfo, name)
-        desc_fields, anomalies = _parse_description(raw_desc)
-        for k, lst in anomalies.items():
-            if lst:
-                for item in lst:
-                    item["machine"] = name
-                title_anomalies[k].extend(lst)
-
-
         record = {
-            "machine": name,
             # Parsed description only (no raw MAME title in wiki output)
             "description": desc_fields,
             "year": minfo.get("year") if minfo.get("year") not in ("", None) else None,
@@ -555,47 +656,42 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "isbios": _truthy_flag(minfo.get("isbios")),
             "isdevice": _truthy_flag(minfo.get("isdevice")),
             "ismechanical": _truthy_flag(minfo.get("ismechanical")),
-            "requires_samples": _truthy_flag(minfo.get("requires_samples")),            
-            #"isbios": _bool(minfo.get("isbios")),
-            #"isdevice": _bool(minfo.get("isdevice")),
-            #"ismechanical": _bool(minfo.get("ismechanical")),
-            #"requires_samples": _bool(minfo.get("requires_samples")),
+            "requires_samples": _truthy_flag(minfo.get("requires_samples")),
         }
         out_map[name] = record
 
-    ok_out = _write_json(WIKI_OUT_PATH, out_map)
-
-    parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
-    clones_total = sum(1 for v in mame.values() if v.get("cloneof"))
-
-    mame_sum = _read_json(DATA_DIR / "mame_parsing_summary.json") or {}
-    hist_sum = _read_json(DATA_DIR / "history_parsing_summary.json") or {}
-    ini_sum  = _read_json(DATA_DIR / "ini_parsing_summary.json") or {}
-    versions = {
-        "mame_build": (mame_sum.get("mame") or {}).get("build"),
-        "history_version": (hist_sum.get("history") or {}).get("version"),
-        "history_date": (hist_sum.get("history") or {}).get("date"),
-        "ini_generated_at": (ini_sum.get("ini") or {}).get("generated_at"),
+    # --- Write wiki output (header + games) ---
+    wiki_doc = {
+        "header": {
+            "versions": wiki_header_versions,
+            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "wiki_schema": WIKI_SCHEMA,
+        },
+        "games": out_map
     }
+    ok_out = _write_json(WIKI_OUT_PATH, wiki_doc)
+
+    # --- Build and write transform summary ---
+    parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
+    clones_total  = sum(1 for v in mame.values() if v.get("cloneof"))
 
     finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     duration = round(time.perf_counter() - t0, 3)
 
     inputs_map = {
-        "mame_machines": str(MAME_MACHINES_PATH).replace("\\", "/"),
+        "mame_machines":       str(MAME_MACHINES_PATH).replace("\\", "/"),
         "ini_classifications": str(INI_CLASS_PATH).replace("\\", "/"),
-        "mame_parent_index": str(PARENT_INDEX_PATH).replace("\\", "/"),
+        "mame_parent_index":   str(PARENT_INDEX_PATH).replace("\\", "/"),
     }
     if have_overrides:
         inputs_map["title_overrides"] = str(overrides_path).replace("\\", "/")
 
+    # De-dupe anomalies (prefer pre_override entries) and count
     title_anomalies = _dedupe_anomalies_preferring_pre_override(title_anomalies)
-
-    # Count anomalies for quick scanning (after any de-dupe)
     title_anomaly_counts = {k: len(v) for k, v in title_anomalies.items()}
 
     summary = {
-        "transformer_schema": "0.3",
+        "transformer_schema": TRANSFORMER_SCHEMA,
         "started_utc": started_utc,
         "finished_utc": finished_utc,
         "duration_seconds": duration,
