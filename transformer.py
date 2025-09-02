@@ -58,6 +58,72 @@ TRANS_SUMMARY_PATH = DATA_DIR / "transform_summary.json"
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
 
 
+def _raw_mame_title(minfo: dict, fallback: str) -> str:
+    """Return the raw MAME title for a machine (no transformer overrides)."""
+    return (minfo.get("description")
+            or minfo.get("title")
+            or minfo.get("fullname")
+            or fallback)
+
+def _mame_titles_for_parent(parent_name: str,
+                            mame: Dict[str, Any],
+                            parent_index: Dict[str, Any]) -> list[dict]:
+    """
+    Build the MAME titles list for a parent:
+      [{"role": "parent"/"clone", "machine": shortname, "title": raw MAME title, "year": <as-is>}, ...]
+    Parent row always comes first, followed by clones sorted by machine.
+    """
+    out: list[dict] = []
+
+    # Parent row
+    pinfo = mame.get(parent_name, {})
+    out.append({
+        "role": "parent",
+        "machine": parent_name,
+        "title": _raw_mame_title(pinfo, parent_name),
+        "year": pinfo.get("year"),  # keep as-is, e.g. "198?" or "1980"
+    })
+
+    # Clone rows
+    clones = sorted((parent_index.get("parents") or {}).get(parent_name, []) or [])
+    for c in clones:
+        cinfo = mame.get(c, {})
+        out.append({
+            "role": "clone",
+            "machine": c,
+            "title": _raw_mame_title(cinfo, c),
+            "year": cinfo.get("year"),
+        })
+
+    return out
+
+def _wiki_page_name_from_desc(desc_fields: dict) -> str:
+    """Build the wiki page name as 'Title: Subtitle' (or just 'Title' if no subtitle)."""
+    title = (desc_fields.get("title1") or "").strip()
+    subtitle = (desc_fields.get("subtitle1") or "").strip()
+    return f"{title}: {subtitle}" if subtitle else title
+
+
+def _clone_entries_for_parent(parent_name: str,
+                              mame: Dict[str, Any],
+                              parent_index: Dict[str, Any]) -> list[dict]:
+    """
+    Build the clone list for a given parent:
+      [{"machine": <shortname>, "title": <raw MAME title>, "year": <as-is>}, ...]
+    Always returns a list (possibly empty).
+    """
+    clones = (parent_index.get("parents") or {}).get(parent_name, []) or []
+    out: list[dict] = []
+    for c in sorted(clones):  # stable order
+        minfo = mame.get(c, {})
+        out.append({
+            "machine": c,
+            "title": _raw_mame_title(minfo, c),   # raw MAME title, no overrides
+            "year": minfo.get("year"),            # as-is, e.g. "198?" or "1980"
+        })
+    return out
+
+
 def _core(s: str | None) -> str | None:
     """Extract numeric core like '0.279' or '2.79' from a version string."""
     if not s:
@@ -502,7 +568,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     # Raw versions for the transform summary (audit only)
     versions = {
-        "mame_build":       (mame_sum.get("mame")    or {}).get("build"),
+        "mame_build":      (mame_sum.get("mame")    or {}).get("build"),
         "history_version":  (hist_sum.get("history") or {}).get("version"),
         "history_date":     (hist_sum.get("history") or {}).get("date"),
         "ini_generated_at": (ini_sum.get("ini")      or {}).get("generated_at"),
@@ -560,15 +626,20 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     # ---------------- Selection + Title parsing ----------------
     all_names = sorted(mame.keys())
     eligible_parents: Set[str] = {n for n in all_names if _is_eligible_parent(n, mame, ini_map)}
-    final_names: Set[str] = _build_final_set(eligible_parents, parent_index)
+    included_parents: Set[str] = eligible_parents     # parents-only export
 
     out_map: Dict[str, Dict[str, Any]] = {}
 
+    # Parent exclusion reasons (for info)
     excluded_reasons = {"not_game": 0, "not_arcade": 0, "unknown_classification": 0}
+
+    # Flag tallies (now count PARENTS only)
     included_flags = {"isbios": 0, "isdevice": 0, "ismechanical": 0}
-    clones_included_unknown_class = 0
+
+    # Track oddities while building records (e.g. parent listed in index but missing in mame map)
     missing_in_mame: List[str] = []
 
+    # Title anomaly buckets (parents only, uncapped examples)
     title_anomalies: Dict[str, List[Dict[str, str]]] = {
         "unbalanced_round_brackets": [],
         "unbalanced_square_brackets": [],
@@ -577,39 +648,15 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "odd_separator_usage": [],
     }
 
-    # Parent exclusion reasons (informational)
-    for name in all_names:
-        if mame[name].get("cloneof"):
-            continue
-        c = _classify(name, ini_map)
-        if c["game_status"] != "game":
-            excluded_reasons["not_game"] += 1
-        elif "Arcade" not in c["category"]:
-            excluded_reasons["not_arcade"] += 1
-        elif c["game_status"] == "unknown" or c["category"] == ["unknown"]:
-            excluded_reasons["unknown_classification"] += 1
 
-    # Main loop
-    for name in sorted(final_names):
+    for name in sorted(included_parents):
         minfo = mame.get(name)
         if not minfo:
-            missing_in_mame.append(name)
-            continue
+            continue  # defensive
 
         cls = _classify(name, ini_map)
 
-        # Report-only flags (count how many included entries have these set)
-        if _truthy_flag(minfo.get("isbios")):       included_flags["isbios"] += 1
-        if _truthy_flag(minfo.get("isdevice")):     included_flags["isdevice"] += 1
-        if _truthy_flag(minfo.get("ismechanical")): included_flags["ismechanical"] += 1
-
-        # Count clones included with unknown classification (useful QA number)
-        if name in (parent_index.get("child_to_parent") or {}) and (
-            cls["game_status"] == "unknown" or cls.get("category") == ["unknown"]
-        ):
-            clones_included_unknown_class += 1
-
-        # Original description and pre-override anomalies
+        # Pre-override anomaly capture on ORIGINAL raw MAME title
         raw_desc_original = _machine_title(minfo, name)
         _, pre_anoms = _parse_description(raw_desc_original)
         for k, lst in pre_anoms.items():
@@ -618,7 +665,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                 item["pre_override"] = True
             title_anomalies[k].extend(lst)
 
-        # Apply override (conditional)
+        # Optional override for parents only
         orig_unbalanced_round, orig_unbalanced_square = _find_unbalanced(raw_desc_original)
         ov = overrides.get(name)
         raw_desc = raw_desc_original
@@ -638,26 +685,36 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                     })
                     overrides_stats["applied"] += 1
 
-        # Parse (possibly overridden) title FOR FIELDS ONLY; ignore anomalies now
+        # Parse (possibly overridden) title for wiki_page_name + keep parsed fields for reference
         desc_fields, _ = _parse_description(raw_desc)
+        wiki_page_name = _wiki_page_name_from_desc(desc_fields)
 
         record = {
-            # Parsed description only (no raw MAME title in wiki output)
-            "description": desc_fields,
+            "wiki_page_name": wiki_page_name,
+            "description": desc_fields,  # retained for QA/reference
             "year": minfo.get("year") if minfo.get("year") not in ("", None) else None,
             "manufacturer": minfo.get("manufacturer") if minfo.get("manufacturer") not in ("", None) else None,
-            "is_parent": False if minfo.get("cloneof") else True,
-            "clone_of": minfo.get("cloneof") or None,
-            # Classifications
+
+            # Classifications (from INI)
             "game_status": cls["game_status"],
             "category": cls["category"],
             "type": cls["type"],
+
             # MAME flags (report-only)
             "isbios": _truthy_flag(minfo.get("isbios")),
             "isdevice": _truthy_flag(minfo.get("isdevice")),
             "ismechanical": _truthy_flag(minfo.get("ismechanical")),
             "requires_samples": _truthy_flag(minfo.get("requires_samples")),
+
+            # NEW: preformatted titles table rows for wiki (parent first, then clones by machine)
+            "mame_titles": _mame_titles_for_parent(name, mame, parent_index),
         }
+
+        # If you still tally flags, this now counts parents only
+        if _truthy_flag(minfo.get("isbios")):       included_flags["isbios"] += 1
+        if _truthy_flag(minfo.get("isdevice")):     included_flags["isdevice"] += 1
+        if _truthy_flag(minfo.get("ismechanical")): included_flags["ismechanical"] += 1
+
         out_map[name] = record
 
     # --- Write wiki output (header + games) ---
@@ -686,6 +743,19 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     if have_overrides:
         inputs_map["title_overrides"] = str(overrides_path).replace("\\", "/")
 
+    #parents_with_clones = sum(1 for r in out_map.values() if r["clones"])
+    parents_with_clones = sum(
+        1 for r in out_map.values()
+        if any(t.get("role") == "clone" for t in r.get("mame_titles", []))
+    )
+    
+    #total_clones_linked = sum(len(r["clones"]) for r in out_map.values())
+    total_clones_linked = sum(
+        sum(1 for t in r.get("mame_titles", []) if t.get("role") == "clone")
+        for r in out_map.values()
+    )
+        
+
     # De-dupe anomalies (prefer pre_override entries) and count
     title_anomalies = _dedupe_anomalies_preferring_pre_override(title_anomalies)
     title_anomaly_counts = {k: len(v) for k, v in title_anomalies.items()}
@@ -703,7 +773,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "clones_total": clones_total,
             "eligible_parents": len(eligible_parents),
             "final_included": len(out_map),
-            "clones_included_unknown_classification": clones_included_unknown_class,
+            "parents_with_clones": parents_with_clones,
+            "total_clones_linked": total_clones_linked,
+            "parents_without_clones": len(eligible_parents)-parents_with_clones,
+            #"clones_included_unknown_classification": clones_included_unknown_class,
         },
         "excluded_parents_by_reason": excluded_reasons,
         "included_flags": included_flags,
@@ -727,12 +800,17 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                 "global_version_is_single_string": True,
                 "only_top_level_groups": True,
                 "nested_preserved_inside": True
-            }
+            },
+            "clones_list_title_source": "raw MAME 'description' (no overrides)",
         },
         "errors": [] if ok_out and not missing_in_mame else (
             [{"missing_in_mame": missing_in_mame}] if missing_in_mame else []
         ),
     }
+
+    orphans = [k for k, v in out_map.items() if "mame_titles" not in v]
+    if orphans:
+        log.warning(f"{len(orphans)} parents missing mame_titles (first few: {orphans[:5]})")
 
     ok_sum = _write_json(TRANS_SUMMARY_PATH, summary)
     log.info(f"Transformer completed in {duration:.2f}s "
