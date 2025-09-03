@@ -42,7 +42,7 @@ from logger import setup_logger, debug_log
 log = setup_logger(log_level=LOG_LEVEL)
 
 # --- Schemas (bump only when shapes change) ---
-TRANSFORMER_SCHEMA = "0.4"   # used in data/transform_summary.json
+TRANSFORMER_SCHEMA = "0.5"   # used in data/transform_summary.json
 WIKI_SCHEMA        = "1.0"   # used in exotica_lit_wiki.json header
 
 DATA_DIR   = Path("data")
@@ -52,10 +52,71 @@ MAME_MACHINES_PATH = OUTPUT_DIR / "mame_machines.json"
 INI_CLASS_PATH     = OUTPUT_DIR / "gh_ini_classifications.json"
 PARENT_INDEX_PATH  = OUTPUT_DIR / "mame_parent_index.json"
 
+WIKI_PREFIX = "Lost In Translation/"
+WIKI_PAGES_REDIRECTS_PATH = OUTPUT_DIR / "exotica_wiki_pages_and_redirects.json"
+
 WIKI_OUT_PATH      = OUTPUT_DIR / "exotica_lit_wiki.json"
 TRANS_SUMMARY_PATH = DATA_DIR / "transform_summary.json"
 
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
+
+def _collapse_ws(s: str) -> str:
+    """Collapse internal whitespace to single spaces; trim ends."""
+    return " ".join((s or "").split())
+
+def _pref(name: str, prefix: str = WIKI_PREFIX) -> str:
+    """Prefix a page/redirect name with the LiT namespace."""
+    return f"{prefix}{name}"
+
+def _unit_count_from_desc(desc_fields: dict) -> int:
+    """Return how many title units exist (based on titleN fields present)."""
+    nums = []
+    for k in desc_fields.keys():
+        if k.startswith("title") and k[5:].isdigit():
+            nums.append(int(k[5:]))
+    return max(nums) if nums else 1
+
+def _build_redirect_sources(desc_fields: dict, wiki_page_name: str) -> list[str]:
+    """
+    From parsed description, build redirect source names (UNPREFIXED).
+    Rules:
+      - For each unit i>=2: add Titlei; and Titlei: Subtitlei (if subtitle exists)
+      - If unit1 has a subtitle: add 'Title1' (lazy search)
+      - Drop anything equal (case-insensitive) to the final wiki_page_name
+      - Collapse whitespace; preserve punctuation/diacritics
+      - Case-insensitive de-duplication; preserve first-seen casing
+    """
+    sources: list[str] = []
+    seen_ci: set[str] = set()
+
+    def add(name: str):
+        n = _collapse_ws(name)
+        if not n:
+            return
+        if n.casefold() == (wiki_page_name or "").casefold():
+            return
+        ci = n.casefold()
+        if ci not in seen_ci:
+            seen_ci.add(ci)
+            sources.append(n)
+
+    n_units = _unit_count_from_desc(desc_fields)
+    # Alt units
+    for i in range(2, n_units + 1):
+        ti = (desc_fields.get(f"title{i}") or "").strip()
+        si = (desc_fields.get(f"subtitle{i}") or "").strip()
+        if ti:
+            add(ti)
+            if si:
+                add(f"{ti}: {si}")
+
+    # Lazy form for unit1 if it has a subtitle
+    t1 = (desc_fields.get("title1") or "").strip()
+    s1 = (desc_fields.get("subtitle1") or "").strip()
+    if t1 and s1:
+        add(t1)
+
+    return sources
 
 
 def _raw_mame_title(minfo: dict, fallback: str) -> str:
@@ -732,9 +793,89 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
     clones_total  = sum(1 for v in mame.values() if v.get("cloneof"))
 
+
+    # ---------------- Wiki pages & redirects (parents only) ----------------
+    # Build (page_name, machine) pairs first so we can sort by page title
+    pairs: list[tuple[str, str]] = [(_pref(rec.get("wiki_page_name") or ""), machine)
+                                    for machine, rec in out_map.items()]
+
+    # Sort by page title (case-insensitive)
+    pairs.sort(key=lambda t: t[0].casefold())
+
+    # Reconstruct pages_map in sorted order (machine -> prefixed page)
+    pages_map: dict[str, str] = {machine: page for page, machine in pairs}
+
+    # Group by page to build page_names list and detect collisions (do this ONCE)
+    page_to_machines: dict[str, list[str]] = {}
+    for page, machine in pairs:
+        page_to_machines.setdefault(page, []).append(machine)
+
+    # Already sorted by page via 'pairs'; preserve that order
+    page_names_list: list[str] = list(page_to_machines.keys())
+
+    # Collisions: same page name claimed by >1 parent
+    page_name_collisions: list[dict] = [
+        {"page": page, "machines": sorted(machines)}
+        for page, machines in page_to_machines.items()
+        if len(machines) > 1
+    ]
+
+    # Build redirects (from parent parsed titles only; no clones)
+    # Case-insensitive de-duplication on sources; record conflicts if the same source maps to different targets
+    redirects_map: dict[str, str] = {}
+    redirect_conflicts: list[dict] = []
+    sources_seen: dict[str, str] = {}  # lower(source) -> target
+
+    for machine, rec in out_map.items():
+        target = pages_map[machine]  # prefixed page name
+        desc   = rec.get("description") or {}
+        wiki_name = rec.get("wiki_page_name") or ""
+        for src in _build_redirect_sources(desc, wiki_name):
+            psrc = _pref(src)
+            key = psrc.casefold()
+            prev = sources_seen.get(key)
+            if prev is None:
+                sources_seen[key] = target
+                redirects_map[psrc] = target
+            elif prev != target:
+                owners = [m for m, p in pages_map.items() if p in {prev, target}]
+                redirect_conflicts.append({
+                    "source": psrc,
+                    "targets": sorted({prev, target}),
+                    "machines": sorted(set(owners)),
+                })
+
+    # Optional: sort redirects for stability BEFORE embedding
+    redirects_map = dict(sorted(redirects_map.items(), key=lambda kv: kv[0].casefold()))
+
+    # Assemble and write file (stats near the top)
+    wiki_pages_redirects = {
+        "schema_version": 1,
+        "prefix": WIKI_PREFIX,
+        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "stats": {
+            "parents_total": len(out_map),
+            "page_names_total": len(page_names_list),
+            "redirects_total": len(redirects_map),
+            "page_name_collisions": len(page_name_collisions),
+            "redirect_conflicts": len(redirect_conflicts),
+        },
+        "pages": pages_map,              # machine -> page (sorted by page)
+        "page_names": page_names_list,   # sorted list of pages
+        "redirects": redirects_map,      # source -> target (both prefixed)
+        "conflicts": {
+            "page_name_collisions": page_name_collisions,
+            "redirect_conflicts": redirect_conflicts,
+        },
+    }
+
+    _write_json(WIKI_PAGES_REDIRECTS_PATH, wiki_pages_redirects)
+
+
     finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     duration = round(time.perf_counter() - t0, 3)
 
+    # Inputs (artefacts the transformer READ)
     inputs_map = {
         "mame_machines":       str(MAME_MACHINES_PATH).replace("\\", "/"),
         "ini_classifications": str(INI_CLASS_PATH).replace("\\", "/"),
@@ -742,6 +883,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     }
     if have_overrides:
         inputs_map["title_overrides"] = str(overrides_path).replace("\\", "/")
+
+    # Outputs (artefacts the transformer WROTE)
+    outputs_map = {
+        "exotica_lit_wiki":            str(WIKI_OUT_PATH).replace("\\", "/"),
+        "wiki_pages_and_redirects":    str(WIKI_PAGES_REDIRECTS_PATH).replace("\\", "/"),
+    }
 
     #parents_with_clones = sum(1 for r in out_map.values() if r["clones"])
     parents_with_clones = sum(
@@ -766,6 +913,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "finished_utc": finished_utc,
         "duration_seconds": duration,
         "inputs": inputs_map,
+        "outputs": outputs_map,
         "versions": versions,
         "counts": {
             "mame_total": len(mame),
@@ -776,7 +924,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "parents_with_clones": parents_with_clones,
             "total_clones_linked": total_clones_linked,
             "parents_without_clones": len(eligible_parents)-parents_with_clones,
-            #"clones_included_unknown_classification": clones_included_unknown_class,
         },
         "excluded_parents_by_reason": excluded_reasons,
         "included_flags": included_flags,
