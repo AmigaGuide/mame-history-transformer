@@ -30,7 +30,7 @@ Returns:
 """
 
 from pathlib import Path
-from typing import Dict, Any, Optional, Set, List, Tuple
+from typing import Dict, Any, Optional, Set, List, Tuple, Sequence, Iterable
 import json
 import datetime
 import time
@@ -58,7 +58,170 @@ WIKI_PAGES_REDIRECTS_PATH = OUTPUT_DIR / "exotica_wiki_pages_and_redirects.json"
 WIKI_OUT_PATH      = OUTPUT_DIR / "exotica_lit_wiki.json"
 TRANS_SUMMARY_PATH = DATA_DIR / "transform_summary.json"
 
+_ALNUM = re.compile(r"[A-Za-z0-9]")
+_INFIX_RE = re.compile(r"[A-Za-z0-9]\([^()\[\]]+\)[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
+
+
+def _normalise_device_to_media(raw: str) -> str | None:
+    """
+    Map one MAME device token/path to a friendly media label.
+    Returns None for non-media / maintenance / bus identifiers.
+    """
+    s = (raw or "").lower()
+
+    # Tokenise for exact hits (cd, dvd, cf, etc.)
+    tokens = set(re.findall(r"[a-z0-9_]+", s))
+
+    # LaserDisc: explicit names or known player models (incl. ld_* prefixes)
+    if (
+        "laserdisc" in tokens
+        or re.search(r"\b(ld_)?(ldv1000|pr7820|pr8210a?|22vp932)\b", s)
+    ):
+        return "LaserDisc"
+
+    # Capacitance Electronic Disc
+    if "ced_videodisc" in tokens:
+        return "Capacitance Electronic Disc (CED)"
+
+    # GD-ROM (Sega)
+    if "gdrom" in tokens:
+        return "GD-ROM"
+
+    # DVD family
+    if {"dvdrom", "dvd"} & tokens:
+        return "DVD-ROM"
+
+    # Compact Disc family (incl. audio CD, CD-XA, known ATAPI drive ids)
+    if {"cdrom", "cd", "audiocd", "cdxa", "xm3301", "cr589", "stvcd"} & tokens:
+        return "CD-ROM"
+
+    # Hard disks (IDE/SCSI)
+    if {"hdd", "harddisk", "scsi_hdd_image"} & tokens or ":hdd" in s:
+        return "Hard disk"
+
+    # CompactFlash (via PC Card/ATA bridges too)
+    if {"cf", "cfcard", "cflash", "ataflash", "taitocf", "taitopccard1", "taitopccard2", "pccard"} & tokens:
+        return "CompactFlash card"
+
+    # Secure Digital
+    if {"sdcard", "internalsd"} & tokens:
+        return "Secure Digital card"
+
+    # NAND flash
+    if "nand" in tokens:
+        return "NAND flash"
+
+    # USB storage
+    if "usb" in tokens:
+        return "USB storage"
+
+    # VHS tape
+    if "vhs" in tokens:
+        return "VHS tape"
+
+    # Everything else (runtime, install, recovery, disks, cycraft, buses, etc.) -> ignore
+    return None
+
+
+def _normalise_device_list_to_media(devs: Iterable[str] | str | None) -> list[str]:
+    """Return de-duplicated friendly labels, preserving original order; ignore unknowns."""
+    if devs is None:
+        return []
+    seq = devs if isinstance(devs, (list, tuple)) else [devs]
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in seq:
+        label = _normalise_device_to_media(str(raw))
+        if not label:
+            continue  # drop unknown/non-media entries
+        key = label.casefold()
+        if key not in seen:
+            seen.add(key)
+            out.append(label)
+    return out
+
+
+
+def join_with_ampersand(items: Sequence[str]) -> str:
+    """Join items as: A; A & B; A, B & C (no trimming; upstream cleaned)."""
+    n = len(items)
+    if n == 0:
+        return ""
+    if n == 1:
+        return items[0]
+    if n == 2:
+        return f"{items[0]} & {items[1]}"
+    return f"{', '.join(items[:-1])} & {items[-1]}"
+
+def _split_outside_parens(s: str) -> list[str]:
+    """Split on '/' only when outside (...) groups. Leave content inside parens untouched."""
+    parts, buf, depth = [], [], 0
+    for ch in s or "":
+        if ch == "(":
+            depth += 1
+            buf.append(ch)
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch == "/" and depth == 0:
+            part = "".join(buf).strip()
+            if part:
+                parts.append(part)
+            buf = []
+        else:
+            buf.append(ch)
+    last = "".join(buf).strip()
+    if last:
+        parts.append(last)
+    # Do not strip—inputs already cleaned upstream
+    return parts
+
+def _format_rom_block(rom_count: int, rom_bytes_total: int,
+                      disk_required: str | None, disk_regions) -> str:
+    # Line 1
+    line1 = f"{rom_count:,} ROM" + ("" if rom_count == 1 else "s")
+
+    # Line 2
+    total_bytes = int(rom_bytes_total or 0)
+    human = _bytes_to_binary_human(total_bytes)
+    line2 = f"{total_bytes:,} bytes" + (f" ({human[0]:.2f} {human[1]})" if human else "")
+
+    # Line 3 — only if disk_required == "yes"; devices come from disk_regions[]
+    line3 = None
+    if (disk_required or "").lower() == "yes":
+        labels = _normalise_device_list_to_media(disk_regions)  # handles list or str
+        if labels:
+            line3 = f"Plus: {join_with_ampersand(labels)}"
+        
+    return "\n".join([line1, line2] + ([line3] if line3 else []))
+
+
+def _bytes_to_binary_human(n: int) -> tuple[float, str] | None:
+    """Return (value, unit) in KiB/MiB/GiB to 2dp, or None if < 1024 bytes."""
+    if n is None:
+        return None
+    KB = 1024
+    MB = 1024 ** 2
+    GB = 1024 ** 3
+    if n >= GB:
+        return (n / GB, "GiB")
+    if n >= MB:
+        return (n / MB, "MiB")
+    if n >= KB:
+        return (n / KB, "KiB")
+    return None
+
+def format_manufacturers_for_wiki(raw: str | None) -> str:
+    parts = [p.strip() for p in _split_outside_parens(raw or "") if p.strip()]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} & {parts[1]}"
+    return f"{', '.join(parts[:-1])} & {parts[-1]}"
 
 def _collapse_ws(s: str) -> str:
     """Collapse internal whitespace to single spaces; trim ends."""
@@ -337,10 +500,6 @@ def _dedupe_anomalies_preferring_pre_override(anoms: dict) -> dict:
 # ----------------------------
 # TITLE PARSING (fixed)
 # ----------------------------
-
-_ALNUM = re.compile(r"[A-Za-z0-9]")
-_INFIX_RE = re.compile(r"[A-Za-z0-9]\([^()\[\]]+\)[A-Za-z0-9]")
-
 
 def _normalise_inside_group(s: str) -> Tuple[str, bool]:
     """Inside a bracket group, replace top-level ' - ' and ' / ' with ', '."""
@@ -710,6 +869,15 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     }
 
 
+    # --- Media label counters (parents only) ---
+    media_label_counts: dict[str, int] = {}
+    parents_with_any_media = 0
+
+    # --- Audit: raw device strings we ignored (no known media mapping) ---
+    ignored_device_counts: dict[str, int] = {}
+    _IGNORED_TOP_N = 25  # change if you want more/less in the summary
+
+
     for name in sorted(included_parents):
         minfo = mame.get(name)
         if not minfo:
@@ -750,11 +918,46 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         desc_fields, _ = _parse_description(raw_desc)
         wiki_page_name = _wiki_page_name_from_desc(desc_fields)
 
+        #raw_man = minfo.get("manufacturer")
+        #manufacturer_display = format_manufacturers_for_wiki(raw_man)
+        raw_man = minfo.get("manufacturer") or ""
+        manufacturer_display = join_with_ampersand(_split_outside_parens(raw_man))
+
+        # ROM summary (data already parsed upstream)
+        rom_count       = int(minfo.get("rom_count") or 0)
+        rom_bytes_total = int(minfo.get("rom_bytes_total") or 0)
+        disk_required = minfo.get("disk_required")  # "yes" / "no"
+        disk_regions  = minfo.get("disk_regions")   # list (per your schema)
+
+        # Media label counting (parents only)
+        if (str(disk_required or "").lower() == "yes"):
+            labels_for_counts = _normalise_device_list_to_media(disk_regions)
+            if labels_for_counts:
+                parents_with_any_media += 1
+                for lab in dict.fromkeys(labels_for_counts):  # de-dupe per parent
+                    media_label_counts[lab] = media_label_counts.get(lab, 0) + 1
+            else:
+                log.debug(f"[transformer::run_transformer] No media mapped for {name}; disk_regions={disk_regions!r}")
+
+
+            # Audit: record any raw entries that didn't map to a known medium
+            seq = disk_regions if isinstance(disk_regions, (list, tuple)) else ([disk_regions] if disk_regions else [])
+            for raw in seq:
+                if _normalise_device_to_media(str(raw)) is None:
+                    ignored_device_counts[str(raw)] = ignored_device_counts.get(str(raw), 0) + 1
+                                      
+                  
+                    
+
+        # Normalise raw device names to display media labels
+        roms_display = _format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
+
         record = {
             "wiki_page_name": wiki_page_name,
             "description": desc_fields,  # retained for QA/reference
             "year": minfo.get("year") if minfo.get("year") not in ("", None) else None,
-            "manufacturer": minfo.get("manufacturer") if minfo.get("manufacturer") not in ("", None) else None,
+            "manufacturer": manufacturer_display if manufacturer_display else None,
+            "roms_display": roms_display,  # e.g. "10 ROMs\n25,376 bytes (24.78 KiB)\nPlus: laserdisc"
 
             # Classifications (from INI)
             "game_status": cls["game_status"],
@@ -902,10 +1105,18 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         for r in out_map.values()
     )
         
-
     # De-dupe anomalies (prefer pre_override entries) and count
     title_anomalies = _dedupe_anomalies_preferring_pre_override(title_anomalies)
     title_anomaly_counts = {k: len(v) for k, v in title_anomalies.items()}
+
+    # Sort media labels for stability (already present)
+    media_label_counts_sorted = dict(sorted(media_label_counts.items(), key=lambda kv: kv[0].casefold()))
+
+    # Top-N ignored raw device strings by frequency (desc), then name (asc)
+    ignored_sorted = sorted(ignored_device_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ignored_top = [{"device": k, "count": v} for k, v in ignored_sorted[:_IGNORED_TOP_N]]
+    ignored_total = sum(ignored_device_counts.values())
+
 
     summary = {
         "transformer_schema": TRANSFORMER_SCHEMA,
@@ -924,6 +1135,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "parents_with_clones": parents_with_clones,
             "total_clones_linked": total_clones_linked,
             "parents_without_clones": len(eligible_parents)-parents_with_clones,
+            "parents_with_any_media": parents_with_any_media,
+            #"media_label_counts": dict(sorted(media_label_counts.items(), key=lambda kv: kv[0].casefold())),
+            #"media_label_counts": dict(
+            #    sorted(media_label_counts.items(), key=lambda kv: kv[0].casefold())
+            #),            
+            "media_label_counts": media_label_counts_sorted,
+
         },
         "excluded_parents_by_reason": excluded_reasons,
         "included_flags": included_flags,
@@ -949,6 +1167,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                 "nested_preserved_inside": True
             },
             "clones_list_title_source": "raw MAME 'description' (no overrides)",
+            "ignored_media_devices": {
+                "total_ignored_entries": ignored_total,          # sum of all unmapped raw entries
+                "unique_ignored": len(ignored_device_counts),    # how many distinct raw strings
+                "top_ignored": ignored_top,                      # top N offenders
+            },                        
         },
         "errors": [] if ok_out and not missing_in_mame else (
             [{"missing_in_mame": missing_in_mame}] if missing_in_mame else []
@@ -958,6 +1181,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     orphans = [k for k, v in out_map.items() if "mame_titles" not in v]
     if orphans:
         log.warning(f"{len(orphans)} parents missing mame_titles (first few: {orphans[:5]})")
+
+    if ignored_top:
+        log.info(f"Top ignored media devices: {ignored_top[:5]}")
 
     ok_sum = _write_json(TRANS_SUMMARY_PATH, summary)
     log.info(f"Transformer completed in {duration:.2f}s "
