@@ -78,6 +78,86 @@ _MEDIA_ORDER = {
     "VHS tape": 0,
 }
 
+_CONTROL_TYPE_LABELS = {
+    "joy": "Joystick",
+    "doublejoy": "Dual Joystick",
+    "triplejoy": "Triple Joystick",
+    "stick": "Analogue Joystick",
+    "only_buttons": "Buttons Only",
+    "paddle": "Paddle",
+    "dial": "Dial",
+    "trackball": "Trackball",
+    "mouse": "Mouse",
+    "positional": "Positional",
+    "lightgun": "Light Gun",
+    "pedal": "Pedal",
+    "keyboard": "Keyboard",
+    "keypad": "Keypad",
+    "mahjong": "Mahjong Panel",
+    "hanafuda": "Hanafuda Panel",
+    "gambling": "Gambling Panel",
+    # fallback → title-case of raw type
+}
+
+
+def _control_type_label(raw_type: str | None) -> str:
+    t = (raw_type or "").strip().lower()
+    return _CONTROL_TYPE_LABELS.get(t, t.title() if t else "Unknown Control")
+
+def _ways_pretty(raw: str | None) -> str:
+    """
+    Turn ways/ways2/ways3 into user-friendly tokens.
+    Examples:
+      '8'            -> '8-way'
+      '3 (half4)'    -> '3-of-4-way'
+      '5 (half8)'    -> '5-of-8-way'
+      'vertical2'    -> '2-way'
+      'strange2'     -> '2-way'
+    Fallbacks:
+      - int-like strings -> '<N>-way'
+      - otherwise return as-is.
+    """
+    s = (raw or "").strip().lower()
+    if not s:
+        return ""
+    if s in {"vertical2", "strange2"}:
+        return "2-way"
+    # half patterns
+    m = re.match(r"^(\d+)\s*\(half(\d+)\)$", s)
+    if m:
+        return f"{m.group(1)}-of-{m.group(2)}-way"
+    # plain integer?
+    if s.isdigit():
+        return f"{int(s)}-way"
+    return raw.strip()
+
+def _ways_label(ways: str | None, ways2: str | None, ways3: str | None) -> str:
+    parts = [p for p in map(_ways_pretty, (ways, ways2, ways3)) if p]
+    return ", ".join(parts)
+
+def _control_line_from_row(row: dict) -> str:
+    """
+    Line describing the controller itself (without buttons), e.g.:
+      '4-way Joystick'
+      '2-way, 8-way Dual Joystick'
+      'Trackball'
+    """
+    typ = _control_type_label(row.get("type"))
+    ways = _ways_label(row.get("ways"), row.get("ways2"), row.get("ways3"))
+    return f"{ways} {typ}".strip() if ways else typ
+
+def _buttons_count_from_rows(rows: list[dict]) -> int:
+    """Sum 'buttons' across a player's rows; ignore reqbuttons per your call."""
+    total = 0
+    for r in rows:
+        try:
+            n = int(r.get("buttons")) if r.get("buttons") is not None else 0
+        except Exception:
+            n = 0
+        total += max(0, n)
+    return total
+
+
 
 def _pluralise(singular: str, n: int, plural: str | None = None) -> str:
     return singular if n == 1 else (plural or f"{singular}s")
@@ -109,6 +189,77 @@ def _format_hz_3dp(hz) -> str | None:
     if v <= 0:
         return None
     return f"{v:.3f} Hz"
+
+
+def _build_controls_section(players: int | None, controls: list[dict] | None) -> dict:
+    """
+    Returns:
+    {
+      "players": <int>,
+      "per_player": [
+        {"player": 1, "control_lines": ["4-way Joystick"], "buttons": 1},
+        ...
+      ]
+    }
+    """
+    try:
+        pcount = int(players) if players is not None else 0
+    except Exception:
+        pcount = 0
+
+    bucket: dict[int, list[dict]] = {}
+    for row in (controls or []):
+        try:
+            p = int(row.get("player"))
+        except Exception:
+            p = 1
+        bucket.setdefault(p, []).append(row)
+
+    per_player = []
+    for p in sorted(bucket.keys()):
+        rows = bucket[p]
+
+        # Build control lines and collapse duplicates with (Nx)
+        raw_lines = [_control_line_from_row(r) for r in rows]
+        counts = Counter(l.casefold() for l in raw_lines)
+        order = list(dict.fromkeys(raw_lines))  # preserve first-seen casing/order
+        control_lines = [(f"({counts[l.casefold()]}x) {l}" if counts[l.casefold()] > 1 else l)
+                         for l in order]
+
+        # Buttons: sum across rows; show 'No Buttons' if zero
+        btn_total = _buttons_count_from_rows(rows)
+
+        per_player.append({
+            "player": p,
+            "control_lines": control_lines,
+            "buttons": btn_total
+        })
+
+    return {"players": pcount, "per_player": per_player}
+
+
+def _controls_section_to_display(section: dict) -> str:
+    """
+    Format:
+      Players: N
+      Player 1
+      <each control line>
+      <Buttons line>
+      Player 2
+      ...
+    """
+    lines: list[str] = []
+    lines.append(f"Players: {section.get('players', 0)}")
+
+    for pp in section.get("per_player", []):
+        lines.append(f"Player {pp.get('player')}")
+        for l in (pp.get("control_lines") or []):
+            lines.append(l)
+        btns = int(pp.get("buttons") or 0)
+        lines.append("No Buttons" if btns <= 0 else f"{btns} {_pluralise('Button', btns)}")
+
+    return "\n".join(lines)
+
 
 
 
@@ -1388,6 +1539,14 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         displays_display = _displays_section_to_display(displays_section)
 
 
+        controls_section = _build_controls_section(
+            minfo.get("players"),
+            minfo.get("controls"),
+        )
+        controls_display = _controls_section_to_display(controls_section)
+
+
+
         reported_channels = minfo.get("sound_channels")
         speaker_sum = _sum_device_speakers(minfo.get("device_ref"))
 
@@ -1424,6 +1583,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "chips": chips_section,
             "displays": displays_section,        # NEW: machine-readable
             "displays_display": displays_display, # NEW: human block you asked for
+            "controls": controls_section,          # machine-readable
+            "controls_display": controls_display,  # human-readable now
 
             # Classifications (from INI)
             "game_status": cls["game_status"],
