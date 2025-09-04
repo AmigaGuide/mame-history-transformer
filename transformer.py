@@ -78,6 +78,370 @@ _MEDIA_ORDER = {
     "VHS tape": 0,
 }
 
+
+def _pluralise(singular: str, n: int, plural: str | None = None) -> str:
+    return singular if n == 1 else (plural or f"{singular}s")
+
+def _orientation_from_rotate(rot) -> str | None:
+    try:
+        r = int(rot)
+    except Exception:
+        return None
+    if r in (0, 180):
+        return "Horizontal"
+    if r in (90, 270):
+        return "Vertical"
+    return None  # unknown/odd but harmless
+
+def _type_title(s: str | None) -> str:
+    s = (s or "").strip().lower()
+    if s == "raster": return "Raster"
+    if s == "vector": return "Vector"
+    if s == "svg":    return "SVG"
+    if s == "lcd":    return "LCD"
+    return s.title() if s else ""
+
+def _format_hz_3dp(hz) -> str | None:
+    try:
+        v = float(hz)
+    except Exception:
+        return None
+    if v <= 0:
+        return None
+    return f"{v:.3f} Hz"
+
+
+
+def _build_displays_section(displays: list[dict] | None, display_count: int | None):
+    """
+    Group identical screens by (type, orientation, width, height, refresh_3dp).
+    Width/height are ignored for Vector/SVG (set to None in the grouping key).
+
+    Returns:
+    {
+      "heading": "Screen"|"Screens",
+      "count": <total_screens>,
+      "groups": [
+        {
+          "count": n,
+          "type": "Raster"|"Vector"|"SVG"|"LCD",
+          "orientation": "Horizontal"|"Vertical"|"",
+          "width": 320|None,
+          "height": 224|None,
+          "refresh": "59.640 Hz"|None
+        },
+        ...
+      ]
+    }
+    """
+    disp_list = displays or []
+    groups: dict[tuple, int] = {}
+
+    for d in disp_list:
+        typ = _type_title(d.get("type"))
+        ori = _orientation_from_rotate(d.get("rotate")) or ""
+
+        hz_str = _format_hz_3dp(d.get("refresh_hz"))
+
+        # Width/height only meaningful for Raster/LCD
+        w = h = None
+        if typ in {"Raster", "LCD"}:
+            try:
+                w = int(d.get("width"))
+                h = int(d.get("height"))
+                if not (w > 0 and h > 0):
+                    w = h = None
+            except Exception:
+                w = h = None
+
+        key = (typ, ori, w, h, hz_str)
+        groups[key] = groups.get(key, 0) + 1
+
+    # total count: take MAME's display_count if sensible, otherwise sum of groups
+    try:
+        cnt = int(display_count) if display_count is not None else 0
+    except Exception:
+        cnt = 0
+    if cnt <= 0:
+        cnt = sum(groups.values())
+
+    # stable order: by type, orientation, width, height, refresh string
+    def _ord_key(kv):
+        (typ, ori, w, h, hz) = kv[0]
+        return (typ or "", ori or "", w or 0, h or 0, hz or "")
+
+    grouped_list = []
+    for (typ, ori, w, h, hz), c in sorted(groups.items(), key=_ord_key):
+        grouped_list.append({
+            "count": c,
+            "type": typ or "",
+            "orientation": ori,
+            "width": w,
+            "height": h,
+            "refresh": hz,
+        })
+
+    return {
+        "heading": _pluralise("Screen", cnt),
+        "count": cnt,
+        "groups": grouped_list,
+    }
+
+
+def _displays_section_to_display(section: dict) -> str:
+    lines: list[str] = []
+    heading = section.get("heading") or "Screen"
+    count = section.get("count") or 0
+    lines.append(f"{heading}: {count}")
+
+    for g in section.get("groups", []):
+        c   = g.get("count", 1)
+        typ = g.get("type", "")
+        ori = g.get("orientation", "")
+        w   = g.get("width")
+        h   = g.get("height")
+        hz  = g.get("refresh")
+
+        # Type + orientation (prefix multiplicity only if this *whole group* is duplicated)
+        type_label = typ + (f" ({ori})" if ori else "")
+        if c > 1:
+            lines.append(f"({c}x) {type_label}")
+        else:
+            lines.append(type_label)
+
+        # Resolution only for Raster/LCD (width/height present)
+        if w is not None and h is not None:
+            lines.append(f"{w} x {h} pixels")
+
+        # Refresh if available
+        if hz:
+            lines.append(hz)
+
+    return "\n".join(lines)
+
+
+def _build_chips_section(chips: list[dict] | None,
+                         sound_channels: int | None,
+                         device_ref):
+    """
+    Return a structured 'chips' dict ready for JSON:
+
+    {
+      "cpus": {
+        "heading": "CPU" | "CPUs",
+        "count": <int>,
+        "items": ["(2x) Motorola 68000 @ 12.000 MHz", ...]
+      },
+      "audio_chips": {
+        "heading": "Audio Chip" | "Audio Chips",
+        "count": <int>,
+        "items": ["(2x) Yamaha YM2151 @ 3.580 MHz", "OKI MSM6295", ...]
+      },
+      "requires_samples": true|false,
+      "audio_channels": <int or 0>,
+      "speakers": <int or 0>
+    }
+
+    Rules:
+    - Exclude 'Speaker' and 'Samples'/'Sample' from audio_chips list.
+    - Count speakers separately in 'speakers'.
+    - '(Nx)' multiplicity applied to identical labels.
+    """
+    cpu_labels_raw: list[str] = []
+    audio_chip_labels_raw: list[str] = []
+    speaker_count = 0
+
+    for ch in (chips or []):
+        typ = (ch.get("type") or "").strip().lower()
+        name_raw = (ch.get("name") or "").strip()
+        clk = ch.get("clock_hz")
+        name_ci = name_raw.casefold()
+
+        if typ == "cpu":
+            cpu_labels_raw.append(_chip_label(name_raw, clk))
+            continue
+
+        if typ == "audio":
+            if name_ci == "speaker":
+                speaker_count += 1
+                continue
+            if name_ci in {"samples", "sample"}:
+                # confirmation comes via requires_samples below
+                continue
+            audio_chip_labels_raw.append(_chip_label(name_raw, clk))
+            continue
+
+        # Unknown types ignored
+
+    cpu_items = _prefix_multiples(cpu_labels_raw)
+    audio_items = _prefix_multiples(audio_chip_labels_raw)
+
+    # Headings use the pre-collapse counts for natural language
+    cpu_heading = _pluralise("CPU", len(cpu_labels_raw))
+    audio_heading = _pluralise("Audio Chip", len(audio_chip_labels_raw), "Audio Chips")
+
+    # Channels/samples
+    try:
+        chn = int(sound_channels) if sound_channels is not None else 0
+    except Exception:
+        chn = 0
+    requires_samples = _has_samples_flag(device_ref)
+
+    return {
+        "cpus": {
+            "heading": cpu_heading,
+            "count": len(cpu_labels_raw),
+            "items": cpu_items,
+        },
+        "audio_chips": {
+            "heading": audio_heading,
+            "count": len(audio_chip_labels_raw),
+            "items": audio_items,
+        },
+        "requires_samples": bool(requires_samples),
+        "audio_channels": chn,
+        "speakers": int(speaker_count),
+    }
+
+
+
+def _hz_to_human(n: int | float | None) -> tuple[float, str] | None:
+    """1000-based Hz units. Returns (value, unit) or None; formatted later to 3dp."""
+    if not n:
+        return None
+    try:
+        v = float(n)
+    except (TypeError, ValueError):
+        return None
+    if v < 1.0:
+        return None
+    GHz = 1_000_000_000.0
+    MHz = 1_000_000.0
+    kHz = 1_000.0
+    if v >= GHz: return (v / GHz, "GHz")
+    if v >= MHz: return (v / MHz, "MHz")
+    if v >= kHz: return (v / kHz, "kHz")
+    return (v, "Hz")
+
+
+def _chip_label(name: str | None, clock_hz) -> str:
+    """e.g. 'Zilog Z80 @ 3.870 MHz' or 'Yamaha YM2151' if no clock."""
+    nm = (name or "").strip()
+    h = _hz_to_human(clock_hz)
+    return f"{nm} @ {h[0]:.3f} {h[1]}" if h else nm
+
+
+def _prefix_multiples(labels: list[str]) -> list[str]:
+    """
+    Collapse duplicates with '(Nx)' per project style.
+    - Case-insensitive counting
+    - Preserve first-seen order/casing
+    """
+    labels = [l for l in labels if l]
+    counts = Counter(l.casefold() for l in labels)
+    first_seen_unique = list(dict.fromkeys(labels))
+    out = []
+    for lab in first_seen_unique:
+        n = counts[lab.casefold()]
+        out.append(f"({n}x) {lab}" if n > 1 else lab)
+    return out
+
+
+def _sum_device_speakers(device_ref) -> int:
+    """Sum 'speaker' across device_ref entries. Non-int/missing treated as 0."""
+    if not isinstance(device_ref, (list, tuple)):
+        return 0
+    total = 0
+    for d in device_ref:
+        try:
+            total += int(d.get("speaker", 0))
+        except Exception:
+            continue
+    return total
+
+
+def _has_samples_flag(device_ref) -> bool:
+    """True if any device_ref entry has samples == 'yes' (case-insensitive)."""
+    if not isinstance(device_ref, (list, tuple)):
+        return False
+    for d in device_ref:
+        s = (d.get("samples") or "").strip().lower()
+        if s in {"yes", "true", "1", "y"}:
+            return True
+    return False
+
+
+def _format_chips_and_audio_block(chips: list[dict] | None,
+                                  sound_channels: int | None,
+                                  device_ref) -> str:
+    """
+    Order and rules:
+      CPU: ...
+      Audio: ...                (exclude 'Speaker' and 'Samples'/'Sample')
+      Requires additional samples   (if any device_ref[].samples == 'yes')
+      Audio channels: N             (if N > 0)
+      (Nx) Speaker                  (if any counted)
+
+    - Multiplicity '(Nx)' applied to identical rendered labels (case-insensitive).
+    - 'tag' is ignored entirely.
+    """
+    cpu_labels: list[str] = []
+    audio_chip_labels: list[str] = []
+    speaker_count = 0
+
+    for ch in (chips or []):
+        typ = (ch.get("type") or "").strip().lower()
+        name_raw = (ch.get("name") or "").strip()
+        clk = ch.get("clock_hz")
+
+        # Normalise name for rules but preserve original casing in labels
+        name_ci = name_raw.casefold()
+
+        if typ == "cpu":
+            cpu_labels.append(_chip_label(name_raw, clk))
+            continue
+
+        if typ == "audio":
+            if name_ci == "speaker":
+                # Count speakers; do not list as an audio chip
+                speaker_count += 1
+                continue
+            if name_ci in {"samples", "sample"}:
+                # Do not list as an audio chip; samples requirement is handled below
+                continue
+            # Regular audio chip/device
+            audio_chip_labels.append(_chip_label(name_raw, clk))
+            continue
+
+        # Unknown types: ignore for now
+
+    lines: list[str] = []
+
+    if cpu_labels:
+        lines.append("CPU: " + ", ".join(_prefix_multiples(cpu_labels)))
+
+    if audio_chip_labels:
+        lines.append("Audio: " + ", ".join(_prefix_multiples(audio_chip_labels)))
+
+    # Samples requirement (from device_ref)
+    if _has_samples_flag(device_ref):
+        lines.append("Requires additional samples")
+
+    # Report channel count if present
+    try:
+        chn = int(sound_channels) if sound_channels is not None else 0
+    except Exception:
+        chn = 0
+    if chn > 0:
+        lines.append(f"Audio channels: {chn}")
+
+    # Speaker line at the very end
+    if speaker_count > 0:
+        lines.append(f"({speaker_count}x) Speaker")
+
+    return "\n".join(lines)
+
+
 def _order_media_labels(labels: list[str]) -> list[str]:
     """Sort labels by precedence, then A→Z as a stable tiebreaker."""
     # De-dupe while preserving first occurrence (defensive)
@@ -931,6 +1295,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     ignored_device_counts: dict[str, int] = {}
     _IGNORED_TOP_N = 25  # change if you want more/less in the summary
 
+    # --- Audio QA tallies (parents only) ---
+    audio_total_with_channels = 0
+    audio_channel_speaker_mismatch = 0
+    audio_mismatch_examples: list[dict] = []   # keep small sample for summary
+    audio_samples_required_count = 0
+
 
     for name in sorted(included_parents):
         minfo = mame.get(name)
@@ -1003,6 +1373,47 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         # Normalise raw device names to display media labels
         roms_display = _format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
 
+        # --- Chips / Audio block + QA tallies ---
+        chips_section = _build_chips_section(
+            minfo.get("chips"),
+            minfo.get("sound_channels"),
+            minfo.get("device_ref"),
+        )
+
+
+        displays_section = _build_displays_section(
+            minfo.get("displays"),
+            minfo.get("display_count")
+        )
+        displays_display = _displays_section_to_display(displays_section)
+
+
+        reported_channels = minfo.get("sound_channels")
+        speaker_sum = _sum_device_speakers(minfo.get("device_ref"))
+
+        # Count machines where a channel count is reported (>0)
+        try:
+            chn = int(reported_channels) if reported_channels is not None else 0
+        except Exception:
+            chn = 0
+
+        if chn > 0:
+            audio_total_with_channels += 1
+            if speaker_sum != chn:
+                audio_channel_speaker_mismatch += 1
+                if len(audio_mismatch_examples) < 10:  # cap examples in summary
+                    audio_mismatch_examples.append({
+                        "machine": name,
+                        "sound_channels": chn,
+                        "speaker_sum": speaker_sum
+                    })
+
+        # Samples required?
+        if _has_samples_flag(minfo.get("device_ref")):
+            audio_samples_required_count += 1
+
+
+
 
         record = {
             "wiki_page_name": wiki_page_name,
@@ -1010,6 +1421,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "year": minfo.get("year") if minfo.get("year") not in ("", None) else None,
             "manufacturer": manufacturer_display if manufacturer_display else None,
             "roms_display": roms_display,  # e.g. "10 ROMs\n25,376 bytes (24.78 KiB)\nPlus: laserdisc"
+            "chips": chips_section,
+            "displays": displays_section,        # NEW: machine-readable
+            "displays_display": displays_display, # NEW: human block you asked for
 
             # Classifications (from INI)
             "game_status": cls["game_status"],
@@ -1169,7 +1583,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     ignored_top = [{"device": k, "count": v} for k, v in ignored_sorted[:_IGNORED_TOP_N]]
     ignored_total = sum(ignored_device_counts.values())
 
-
     summary = {
         "transformer_schema": TRANSFORMER_SCHEMA,
         "started_utc": started_utc,
@@ -1188,12 +1601,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "total_clones_linked": total_clones_linked,
             "parents_without_clones": len(eligible_parents)-parents_with_clones,
             "parents_with_any_media": parents_with_any_media,
-            #"media_label_counts": dict(sorted(media_label_counts.items(), key=lambda kv: kv[0].casefold())),
-            #"media_label_counts": dict(
-            #    sorted(media_label_counts.items(), key=lambda kv: kv[0].casefold())
-            #),            
             "media_label_counts": media_label_counts_sorted,
-
+            "audio": {
+                "machines_reporting_channels": audio_total_with_channels,
+                "channel_speaker_mismatches": audio_channel_speaker_mismatch,
+                "mismatch_examples": audio_mismatch_examples,   # up to 10
+                "machines_requiring_samples": audio_samples_required_count
+            },
         },
         "excluded_parents_by_reason": excluded_reasons,
         "included_flags": included_flags,
