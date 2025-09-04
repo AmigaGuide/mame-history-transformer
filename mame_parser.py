@@ -186,6 +186,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     display_types_overall_ctr = Counter()  # raster/vector/lcd/svg/unknown
     display_tags_overall_ctr = Counter()   # e.g. screen, screen0, left, right, (unspecified)
     disk_regions_overall_ctr = Counter()  # e.g. {"cdrom": 90, "laserdisc": 12, "harddisk": 15, "unknown": 3}
+    disk_media_platforms_per_machine_ctr = Counter()  # histogram of len(unique disk regions) per machine
 
     machines_out: Dict[str, Dict[str, Any]] = {}
 
@@ -402,6 +403,13 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
                     # Unique, sorted list of regions per machine (e.g. ["cdrom"], ["laserdisc","ldsound"])
                     disk_regions = sorted(disk_regions_set)
+                    disk_media_platforms_count = len(disk_regions)  # 0 for ROM-only machines
+                    disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
+
+                    disk_media_examples = locals().setdefault("disk_media_examples", {})  # create once in function scope
+                    examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
+                    if len(examples) < 5:
+                        examples.append(mame_name)
 
 
                     # Totals and distributions
@@ -447,6 +455,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         "rom_bytes_total": rom_bytes_total if rom_count else 0,
                         "disk_required": disk_required,         # "yes" | "no"
                         "disk_regions": disk_regions,           # list (can be [])
+                        "disk_media_platforms_count": disk_media_platforms_count,
 
                         # Chips
                         "cpu_count": cpu_count,
@@ -506,6 +515,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
         # Disks (regions only)
         disk_regions_overall_dist = _sorted_alpha_with_unknown_last(dict(disk_regions_overall_ctr))
+        disk_media_platforms_dist = _numdist(disk_media_platforms_per_machine_ctr)
+        disk_media_platforms_sum  = sum(disk_media_platforms_dist.values())
 
         # Controls
         control_type_overall_dist  = _sorted_alpha_with_unknown_last(dict(control_type_overall_ctr))
@@ -621,6 +632,11 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 "disk_regions_overall": {
                     "distribution": disk_regions_overall_dist,
                     "sum": disk_regions_overall_sum,
+                },               
+                "disk_media_platforms_per_machine": {
+                    "distribution": _numdist(disk_media_platforms_per_machine_ctr),
+                    "sum": sum(disk_media_platforms_per_machine_ctr.values()),
+                    "examples": disk_media_examples  # keys "0", "1", ... each with up to 5 names
                 },                
             }
         }
@@ -642,6 +658,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         ("displays_per_machine_ctr", _sum(displays_per_machine_ctr)),
         ("speakers_per_machine_ctr", _sum(speakers_per_machine_ctr)),
         ("sound_channels_per_machine_ctr", _sum(sound_channels_per_machine_ctr)),
+        ("disk_media_platforms_per_machine_ctr", _sum(disk_media_platforms_per_machine_ctr)),
     ]
     for name, val in checks_equal_total:
         if val != total_machines:

@@ -35,6 +35,7 @@ import json
 import datetime
 import time
 import re
+from collections import Counter
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
@@ -62,6 +63,29 @@ _ALNUM = re.compile(r"[A-Za-z0-9]")
 _INFIX_RE = re.compile(r"[A-Za-z0-9]\([^()\[\]]+\)[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
 
+# Display precedence for the “Plus:” line (higher = earlier).
+_MEDIA_ORDER = {
+    "GD-ROM": 100,
+    "DVD-ROM": 90,
+    "CD-ROM": 80,
+    "LaserDisc": 70,
+    "Capacitance Electronic Disc (CED)": 60,
+    "Hard disk": 50,
+    "CompactFlash card": 40,
+    "Secure Digital card": 30,
+    "NAND flash": 20,
+    "USB storage": 10,
+    "VHS tape": 0,
+}
+
+def _order_media_labels(labels: list[str]) -> list[str]:
+    """Sort labels by precedence, then A→Z as a stable tiebreaker."""
+    # De-dupe while preserving first occurrence (defensive)
+    labels = list(dict.fromkeys(labels))
+    return sorted(
+        labels,
+        key=lambda s: ( -_MEDIA_ORDER.get(s, -1), s.casefold() )
+    )
 
 def _normalise_device_to_media(raw: str) -> str | None:
     """
@@ -73,9 +97,10 @@ def _normalise_device_to_media(raw: str) -> str | None:
     # Tokenise for exact hits (cd, dvd, cf, etc.)
     tokens = set(re.findall(r"[a-z0-9_]+", s))
 
-    # LaserDisc: explicit names or known player models (incl. ld_* prefixes)
+    # LaserDisc: explicit names, numeric-suffixed tokens, or known player models
     if (
         "laserdisc" in tokens
+        or any(t.startswith("laserdisc") for t in tokens)   # <- handles 'laserdisc1', 'laserdisc2', etc.
         or re.search(r"\b(ld_)?(ldv1000|pr7820|pr8210a?|22vp932)\b", s)
     ):
         return "LaserDisc"
@@ -87,13 +112,19 @@ def _normalise_device_to_media(raw: str) -> str | None:
     # GD-ROM (Sega)
     if "gdrom" in tokens:
         return "GD-ROM"
-
-    # DVD family
-    if {"dvdrom", "dvd"} & tokens:
+    
+    # DVD family (e.g., 'dvdrom', 'dvdrom1', 'dvd', etc.)
+    if {"dvdrom", "dvd"} & tokens or any(t.startswith("dvdrom") for t in tokens):
         return "DVD-ROM"
 
-    # Compact Disc family (incl. audio CD, CD-XA, known ATAPI drive ids)
-    if {"cdrom", "cd", "audiocd", "cdxa", "xm3301", "cr589", "stvcd"} & tokens:
+    # Compact Disc family:
+    #  - exact tokens like 'cdrom', 'cd', 'audiocd', 'cdxa'
+    #  - drive identifiers like 'cdrom1', 'cdrom2', ...
+    #  - known ATAPI/SCSI model IDs already in your list
+    if (
+        {"cdrom", "cd", "audiocd", "cdxa", "xm3301", "cr589", "stvcd"} & tokens
+        or any(t.startswith("cdrom") for t in tokens)
+    ):
         return "CD-ROM"
 
     # Hard disks (IDE/SCSI)
@@ -180,6 +211,7 @@ def _split_outside_parens(s: str) -> list[str]:
 
 def _format_rom_block(rom_count: int, rom_bytes_total: int,
                       disk_required: str | None, disk_regions) -> str:
+                          
     # Line 1
     line1 = f"{rom_count:,} ROM" + ("" if rom_count == 1 else "s")
 
@@ -191,10 +223,32 @@ def _format_rom_block(rom_count: int, rom_bytes_total: int,
     # Line 3 — only if disk_required == "yes"; devices come from disk_regions[]
     line3 = None
     if (disk_required or "").lower() == "yes":
-        labels = _normalise_device_list_to_media(disk_regions)  # handles list or str
-        if labels:
-            line3 = f"Plus: {join_with_ampersand(labels)}"
-        
+        # Build the full list (including duplicates) by normalising each raw entry
+        seq = disk_regions if isinstance(disk_regions, (list, tuple)) else ([disk_regions] if disk_regions else [])
+        all_labels: list[str] = []
+        for raw in seq:
+            lab = _normalise_device_to_media(str(raw))
+            if lab:
+                all_labels.append(lab)
+
+        if all_labels:
+            # Count case-insensitively, but preserve original label text
+            counts = Counter(l.casefold() for l in all_labels)
+
+            # Preserve first-seen identity for later stable precedence sorting
+            first_seen_unique = list(dict.fromkeys(all_labels))
+
+            # Apply your precedence sort
+            ordered_unique = _order_media_labels(first_seen_unique)
+
+            # Render with “(Nx)” prefix when N>1, per your style “(2x) CD-ROM”
+            display_labels = []
+            for lab in ordered_unique:
+                n = counts[lab.casefold()]
+                display_labels.append(f"({n}x) {lab}" if n > 1 else lab)
+
+            line3 = f"Plus: {join_with_ampersand(display_labels)}"
+
     return "\n".join([line1, line2] + ([line3] if line3 else []))
 
 
@@ -945,12 +999,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             for raw in seq:
                 if _normalise_device_to_media(str(raw)) is None:
                     ignored_device_counts[str(raw)] = ignored_device_counts.get(str(raw), 0) + 1
-                                      
-                  
                     
-
         # Normalise raw device names to display media labels
         roms_display = _format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
+
 
         record = {
             "wiki_page_name": wiki_page_name,
