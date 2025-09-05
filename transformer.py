@@ -48,17 +48,19 @@ WIKI_SCHEMA        = "1.0"   # used in exotica_lit_wiki.json header
 
 DATA_DIR   = Path("data")
 OUTPUT_DIR = Path("output")
-
-MAME_MACHINES_PATH = OUTPUT_DIR / "mame_machines.json"
-INI_CLASS_PATH     = OUTPUT_DIR / "gh_ini_classifications.json"
-PARENT_INDEX_PATH  = OUTPUT_DIR / "mame_parent_index.json"
-
 WIKI_PREFIX = "Lost In Translation/"
-WIKI_PAGES_REDIRECTS_PATH = OUTPUT_DIR / "exotica_wiki_pages_and_redirects.json"
 
-WIKI_OUT_PATH      = OUTPUT_DIR / "exotica_lit_wiki.json"
-RAW_OUT_PATH       = OUTPUT_DIR / "exotica_lit_raw_data.json"
-TRANS_SUMMARY_PATH = DATA_DIR / "transform_summary.json"
+#--- Input ---
+MAME_MACHINES_PATH   = OUTPUT_DIR / "mame_machines.json"
+INI_CLASS_PATH       = OUTPUT_DIR / "gh_ini_classifications.json"
+PARENT_INDEX_PATH    = OUTPUT_DIR / "mame_parent_index.json"
+GH_SYSTEM_PORTS_PATH = OUTPUT_DIR / "gh_system_ports.json"
+
+#--- Output ---
+WIKI_OUT_PATH             = OUTPUT_DIR / "exotica_lit_wiki.json"
+RAW_OUT_PATH              = OUTPUT_DIR / "exotica_lit_raw_data.json"
+TRANS_SUMMARY_PATH        = DATA_DIR / "transform_summary.json"
+WIKI_PAGES_REDIRECTS_PATH = OUTPUT_DIR / "exotica_wiki_pages_and_redirects.json"
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
 _INFIX_RE = re.compile(r"[A-Za-z0-9]\([^()\[\]]+\)[A-Za-z0-9]")
@@ -99,6 +101,120 @@ _CONTROL_TYPE_LABELS = {
     "gambling": "Gambling Panel",
     # fallback → title-case of raw type
 }
+
+def _read_gh_ports(path: Path) -> dict:
+    data = _read_json(path)
+    return data if isinstance(data, dict) else {}
+
+def _is_valid_port_row(row: dict) -> bool:
+    # Gatekeeper: platform must be a non-empty string
+    plat = (row or {}).get("platform")
+    return isinstance(plat, str) and plat.strip() != ""
+
+def _norm_regions(regs) -> list[str]:
+    # Empty -> ["??"]; otherwise keep as-is (GH already uses 2-char codes)
+    if not regs:
+        return ["??"]
+    out = []
+    for r in regs:
+        if isinstance(r, str) and r.strip():
+            out.append(r.strip())
+    return out or ["??"]
+
+def _norm_tags(tags) -> list[str]:
+    # additional_tags: keep non-empty strings only
+    out = []
+    for t in (tags or []):
+        if isinstance(t, str) and t.strip():
+            out.append(t.strip())
+    return out
+
+def _collect_valid_ports_by_category(gh_entry: dict, source_machine: str) -> dict[str, list[dict]]:
+    """
+    Returns { category: [ normalised rows... ] }.
+    Each row carries 'machine' provenance.
+    """
+    cats = {}
+    ports = (gh_entry or {}).get("ports") or {}
+    if not isinstance(ports, dict):
+        return cats
+    for cat, rows in ports.items():
+        if not isinstance(rows, list):
+            continue
+        out_rows = []
+        for r in rows:
+            if not isinstance(r, dict) or not _is_valid_port_row(r):
+                continue
+            out_rows.append({
+                "machine": source_machine,                     # provenance
+                "platform": r.get("platform"),
+                "regions": _norm_regions(r.get("regions")),
+                "model": r.get("model") or [],
+                "title": r.get("title"),
+                "date": r.get("date"),
+                "publisher": r.get("publisher"),
+                "comment": r.get("comment"),
+                "additional_tags": _norm_tags(r.get("additional_tags")),
+            })
+        if out_rows:
+            cats[cat] = out_rows
+    return cats
+
+def _gh_keys_with_any_valid_ports(gh_ports: dict) -> set[str]:
+    """All GH shortnames that have at least one valid row in any category."""
+    out = set()
+    for key, entry in gh_ports.items():
+        cats = _collect_valid_ports_by_category(entry, key)
+        if any(cats.values()):
+            out.add(key)
+    return out
+
+
+def _build_ports_for_parent(parent: str,
+                            parents_map: dict[str, list],
+                            gh_ports: dict) -> tuple[dict | None, set[str], bool]:
+    """
+    Returns (ports_obj_or_None, clones_with_ports_set, parent_has_ports_bool).
+    ports_obj = {
+      "parent_source": { "machine": parent, "gh_id": <int or None>, "categories": {...} }   # only if any rows
+      "clone_sources": [ { "machine": clone, "gh_id": <int or None>, "categories": {...} }, ... ]
+    }
+    """
+    ports_obj: dict = {"clone_sources": []}
+    clones_with_ports: set[str] = set()
+    parent_has_ports = False
+
+    # Parent source
+    p_entry = gh_ports.get(parent)
+    if isinstance(p_entry, dict):
+        p_cats = _collect_valid_ports_by_category(p_entry, parent)
+        if any(p_cats.values()):
+            ports_obj["parent_source"] = {
+                "machine": parent,
+                "gh_id": p_entry.get("gh_id"),
+                "categories": p_cats
+            }
+            parent_has_ports = True
+
+    # Clone sources
+    for clone in (parents_map.get(parent) or []):
+        c_entry = gh_ports.get(clone)
+        if not isinstance(c_entry, dict):
+            continue
+        c_cats = _collect_valid_ports_by_category(c_entry, clone)
+        if any(c_cats.values()):
+            ports_obj["clone_sources"].append({
+                "machine": clone,
+                "gh_id": c_entry.get("gh_id"),
+                "categories": c_cats
+            })
+            clones_with_ports.add(clone)
+
+    if not parent_has_ports and not ports_obj["clone_sources"]:
+        return None, clones_with_ports, False
+
+    return ports_obj, clones_with_ports, parent_has_ports
+
 
 
 def _control_type_label(raw_type: str | None) -> str:
@@ -1409,9 +1525,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     mame = _read_json(MAME_MACHINES_PATH)
     ini_map = _read_json(INI_CLASS_PATH)
     parent_index = _read_json(PARENT_INDEX_PATH)
+    gh_ports = _read_gh_ports(GH_SYSTEM_PORTS_PATH)
+    gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
     if not isinstance(mame, dict) or not isinstance(ini_map, dict) or not isinstance(parent_index, dict):
         log.error("Missing or invalid inputs; aborting transform.")
         return False
+
 
     # --- Read stage summaries (sources of truth for versions) ---
     mame_sum = _read_json(DATA_DIR / "mame_parsing_summary.json") or {}
@@ -1515,6 +1634,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     audio_mismatch_examples: list[dict] = []   # keep small sample for summary
     audio_samples_required_count = 0
 
+    # --- GH port tallies 
+    parents_with_ports_count = 0
+    clones_with_ports_set: set[str] = set()
+
 
     for name in sorted(included_parents):
         minfo = mame.get(name)
@@ -1567,6 +1690,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         disk_required = minfo.get("disk_required")  # "yes" / "no"
         disk_regions  = minfo.get("disk_regions")   # list (per your schema)
 
+        # Normalise raw device names to display media labels
+        roms_display = _format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
+
         # Media label counting (parents only)
         if (str(disk_required or "").lower() == "yes"):
             labels_for_counts = _normalise_device_list_to_media(disk_regions)
@@ -1584,8 +1710,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                 if _normalise_device_to_media(str(raw)) is None:
                     ignored_device_counts[str(raw)] = ignored_device_counts.get(str(raw), 0) + 1
                     
-        # Normalise raw device names to display media labels
-        roms_display = _format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
 
         # --- Chips / Audio block + QA tallies ---
         chips_section = _build_chips_section(
@@ -1635,6 +1759,19 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             audio_samples_required_count += 1
 
 
+        parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})  # you already build this earlier
+
+        ports_obj, clones_with_ports_local, parent_has_ports = _build_ports_for_parent(name, parents_map, gh_ports)
+
+        # Final inclusion gate: keep this parent only if parent or any clone has ports
+        if ports_obj is None:
+            continue
+
+        # Accumulate summary tallies
+        clones_with_ports_set.update(clones_with_ports_local)
+        if parent_has_ports:
+            parents_with_ports_count += 1
+
 
 
         record = {
@@ -1642,7 +1779,14 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "description": desc_fields,  # retained for QA/reference
             "year": minfo.get("year") if minfo.get("year") not in ("", None) else None,
             "manufacturer": manufacturer_display if manufacturer_display else None,
-            "roms_display": roms_display,  # e.g. "10 ROMs\n25,376 bytes (24.78 KiB)\nPlus: laserdisc"
+            # Preformatted
+            "roms_display": roms_display, # e.g. "10 ROMs\n25,376 bytes (24.78 KiB)\nPlus: laserdisc"
+            # Raw ROM/media stats
+            "rom_count": rom_count,
+            "rom_bytes_total": rom_bytes_total,
+            "disk_required": disk_required,
+            "disk_regions": disk_regions,
+            
             "chips": chips_section,
             "displays": displays_section,        # NEW: machine-readable
             "displays_display": displays_display, # NEW: human block you asked for
@@ -1662,6 +1806,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
             # NEW: preformatted titles table rows for wiki (parent first, then clones by machine)
             "mame_titles": _mame_titles_for_parent(name, mame, parent_index),
+            
+            "ports": ports_obj,
         }
 
         # If you still tally flags, this now counts parents only
@@ -1822,6 +1968,86 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     ignored_top = [{"device": k, "count": v} for k, v in ignored_sorted[:_IGNORED_TOP_N]]
     ignored_total = sum(ignored_device_counts.values())
 
+    # Build the set of machines included in the export (parents + their clones)
+    included_parents_set = set(out_map.keys())
+    included_clones_set: set[str] = set()
+    for p in included_parents_set:
+        for c in (parents_map.get(p) or []):
+            included_clones_set.add(c)
+
+    included_all = included_parents_set | included_clones_set
+
+    # GH arcade entries with ports that are NOT in our Arcade/Game export
+    # (i.e., excluded by INI scope or by our ports gate)
+    gh_not_in_arcade_scope = sorted(gh_keys_with_ports - included_all)
+
+
+    # Build the clarified 'ports' block for the summary
+    summary_ports = {
+        # Universe from GH History XML (arcade side)
+        "gh_arcade_entries_total": len(gh_ports),
+        "gh_arcade_entries_with_ports_total": len(gh_keys_with_ports),
+
+        # Our final export after INI scope + ports gate
+        "included_parents_after_ports_gate": len(out_map),
+
+        # Of the included parents, how many have ports on their own GH key
+        "included_parents_with_own_ports": {
+            "count": parents_with_ports_count,
+            "note": "Included parents whose own GH shortname has ≥1 valid port row.",
+        },
+
+        # Distinct clones (under included parents) that have ports; full list for traceability
+        "included_clones_with_ports": {
+            "count": len(clones_with_ports_set),
+            "list": sorted(clones_with_ports_set),
+            "note": "Clone shortnames (children of included parents) with ≥1 valid GH port row.",
+        },
+
+        # GH arcade entries that have ports but are absent from our export (INI scope/filter)
+        "gh_arcade_entries_with_ports_excluded_by_ini": {
+            "count": len(gh_not_in_arcade_scope),
+            "list": gh_not_in_arcade_scope,
+            "note": "GH/MAME shortnames with ≥1 valid port row that are not in our Arcade/Game export.",
+        },
+    }
+
+    # Derived figures (informational)
+    parents_included_due_to_clones_only = (
+        len(out_map) - parents_with_ports_count
+    )
+
+
+    # --- Parents included due to clone ports only: full list ---
+    # A parent is in this bucket if it is included,
+    # AND it has NO parent_source in its ports object (i.e., only clones had ports).
+    parents_included_due_to_clones_only_list = sorted(
+        m for m, rec in out_map.items()
+        if not ((rec.get("ports") or {}).get("parent_source"))
+    )
+
+    # Optional soft check: length should match the derived count you computed earlier
+    if len(parents_included_due_to_clones_only_list) != (
+        len(out_map) - parents_with_ports_count
+    ):
+        log.warning(
+            "[ports] parents_included_due_to_clones_only length mismatch: "
+            f"list={len(parents_included_due_to_clones_only_list)} "
+            f"vs derived={len(out_map) - parents_with_ports_count}"
+        )
+
+
+    summary_ports.setdefault("derived", {})
+    summary_ports["derived"].update({
+        "parents_included_due_to_clones_only": len(parents_included_due_to_clones_only_list),
+        "parents_included_due_to_clones_only_list": parents_included_due_to_clones_only_list,
+        "note_parents_included_due_to_clones_only": (
+            "Included parents that do not have ports on their own GH key, "
+            "but were included because at least one clone has ports."
+        ),
+    })
+
+
     summary = {
         "transformer_schema": TRANSFORMER_SCHEMA,
         "started_utc": started_utc,
@@ -1855,9 +2081,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "title_overrides": {
             "stats": overrides_stats,
             "applied": overrides_applied
-        },
+        },        
+        "ports": summary_ports,
         "notes": {
             "ports_attached": False,
+             "export_scope": "Parents are exported only if INI says Arcade/Game AND the parent or any clone has ≥1 valid GH port row (platform present).",
             "filter_rules": {
                 "game_status_equals": "game",
                 "category_must_include": "Arcade",
@@ -1889,6 +2117,31 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     if ignored_top:
         log.info(f"Top ignored media devices: {ignored_top[:5]}")
+
+    # Soft QA checks (warn-only)
+    if parents_with_ports_count > len(out_map):
+        log.warning(
+            "[ports] parents_with_ports_count > included_parents_after_ports_gate "
+            f"({parents_with_ports_count} > {len(out_map)}): check counting logic."
+        )
+
+    if not clones_with_ports_set.issubset(included_clones_set):
+        extras = sorted(clones_with_ports_set - included_clones_set)[:20]
+        log.warning(
+            "[ports] Some clones_with_ports are not children of included parents "
+            f"(showing up to 20): {extras}"
+        )
+
+    if len(gh_keys_with_ports) > len(gh_ports):
+        log.warning(
+            "[ports] gh_keys_with_ports larger than gh_ports keys "
+            f"({len(gh_keys_with_ports)} > {len(gh_ports)}): unexpected."
+        )
+
+    # Sanity: 'excluded_by_ini' should be a subset of GH keys
+    if not set(summary_ports["gh_arcade_entries_with_ports_excluded_by_ini"]["list"]).issubset(set(gh_keys_with_ports)):
+        log.warning("[ports] Excluded-by-INI list contains entries not in gh_keys_with_ports.")
+
 
     ok_sum = _write_json(TRANS_SUMMARY_PATH, summary)
     log.info(f"Transformer completed in {duration:.2f}s "
