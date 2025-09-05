@@ -57,6 +57,7 @@ WIKI_PREFIX = "Lost In Translation/"
 WIKI_PAGES_REDIRECTS_PATH = OUTPUT_DIR / "exotica_wiki_pages_and_redirects.json"
 
 WIKI_OUT_PATH      = OUTPUT_DIR / "exotica_lit_wiki.json"
+RAW_OUT_PATH       = OUTPUT_DIR / "exotica_lit_raw_data.json"
 TRANS_SUMMARY_PATH = DATA_DIR / "transform_summary.json"
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
@@ -950,6 +951,68 @@ def _write_json(path: Path, obj: Any) -> bool:
         return False
 
 
+def _project_for_wiki(rec: dict) -> dict:
+    """
+    Site-facing: slim, preformatted fields only.
+    Keep only what ExoticA will ingest or render.
+    """
+    out = {}
+    # Always keep identification
+    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
+    if rec.get("year") is not None: out["year"] = rec["year"]
+    if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
+
+    # Preformatted convenience blocks (include only if present)
+    for k in ("roms_display", "chips_display", "displays_display", "controls_display"):
+        if rec.get(k): out[k] = rec[k]
+
+    # Ports (structured, provenance-friendly) — leave as-is if/when present
+    if rec.get("ports"): out["ports"] = rec["ports"]
+
+    # Optional: keep MAME titles table if the site will show it
+    if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
+
+    return out
+
+
+def _project_for_raw(machine: str, rec: dict) -> dict:
+    """
+    Review-facing: rich, structured, no preformatted strings.
+    Include per-variable fields for inspection and future renderers.
+    """
+    out = {}
+
+    # Identification & provenance
+    out["machine"] = machine
+    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
+    if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
+
+    # Title parsing (full structured description)
+    if rec.get("description"): out["description"] = rec["description"]
+
+    # Year/manufacturer
+    if rec.get("year") is not None: out["year"] = rec["year"]
+    if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
+
+    # ROM/media raw stats (carry raw inputs; skip roms_display)
+    for k in ("rom_count", "rom_bytes_total", "disk_required", "disk_regions"):
+        if k in rec: out[k] = rec[k]
+
+    # Chips / displays / controls: keep structured only
+    if rec.get("chips"): out["chips"] = rec["chips"]
+    if rec.get("displays"): out["displays"] = rec["displays"]
+    if rec.get("controls"): out["controls"] = rec["controls"]
+
+    # Ports (structured, when present)
+    if rec.get("ports"): out["ports"] = rec["ports"]
+
+    # Classifications & flags (useful for QA)
+    for k in ("game_status", "category", "type", "isbios", "isdevice", "ismechanical", "requires_samples"):
+        if k in rec: out[k] = rec[k]
+
+    return out
+
+
 # ----------------------------
 # Classification helpers
 # ----------------------------
@@ -1615,9 +1678,23 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
             "wiki_schema": WIKI_SCHEMA,
         },
-        "games": out_map
+        "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()}
     }
-    ok_out = _write_json(WIKI_OUT_PATH, wiki_doc)
+    ok_out_wiki = _write_json(WIKI_OUT_PATH, wiki_doc)
+
+    # --- Write raw review output (header + games) ---
+    raw_doc = {
+        "header": {
+            "versions": wiki_header_versions,
+            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "wiki_schema": WIKI_SCHEMA,
+        },
+        "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()}
+    }
+    ok_out_raw = _write_json(RAW_OUT_PATH, raw_doc)
+
+    ok_out = ok_out_wiki and ok_out_raw
+
 
     # --- Build and write transform summary ---
     parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
@@ -1716,10 +1793,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     # Outputs (artefacts the transformer WROTE)
     outputs_map = {
-        "exotica_lit_wiki":            str(WIKI_OUT_PATH).replace("\\", "/"),
-        "wiki_pages_and_redirects":    str(WIKI_PAGES_REDIRECTS_PATH).replace("\\", "/"),
+        "exotica_lit_wiki":         str(WIKI_OUT_PATH).replace("\\", "/"),
+        "exotica_lit_raw_data":     str(RAW_OUT_PATH).replace("\\", "/"),   # NEW
+        "wiki_pages_and_redirects": str(WIKI_PAGES_REDIRECTS_PATH).replace("\\", "/"),
     }
-
+    
     #parents_with_clones = sum(1 for r in out_map.values() if r["clones"])
     parents_with_clones = sum(
         1 for r in out_map.values()
