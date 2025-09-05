@@ -102,6 +102,134 @@ _CONTROL_TYPE_LABELS = {
     # fallback → title-case of raw type
 }
 
+_TERMINAL_PUNCT = ('.', '!', '?', '…')
+
+def _format_models_bracketed(models: list[str] | None) -> str:
+    """Return '[A, B]' or '' (no leading space)."""
+    models = [m.strip() for m in (models or []) if isinstance(m, str) and m.strip()]
+    return f"[{', '.join(models)}]" if models else ""
+
+
+def _title_case_words(s: str) -> str:
+    return " ".join(w[:1].upper() + w[1:].lower() if w else w for w in (s or "").split())
+
+def _format_regions(regs: list[str] | None) -> str:
+    regs = regs or ["??"]
+    regs = [r.strip() for r in regs if isinstance(r, str) and r.strip()]
+    regs = regs or ["??"]
+    return "".join(f"[{r}]" for r in regs)
+
+def _format_additional_tags(tags: list[str] | None) -> str:
+    tags = [t.strip() for t in (tags or []) if isinstance(t, str) and t.strip()]
+    return f" [{', '.join(tags)}]" if tags else ""
+
+def _format_models(models: list[str] | None) -> str:
+    models = [m.strip() for m in (models or []) if isinstance(m, str) and m.strip()]
+    return f" [{', '.join(models)}]" if models else ""
+
+def _append_provenance_comment(existing: str | None, is_parent_row: bool, machine: str) -> str:
+    role = "parent" if is_parent_row else "clone"
+    prov = f"This GH port entry is based on the MAME {role} {machine}."
+    c = (existing or "").strip()
+    if c:
+        if c.endswith(_TERMINAL_PUNCT):
+            return f"{c} {prov}"
+        else:
+            return f"{c}. {prov}"
+    else:
+        return prov  # caller will add the leading ' : ' separator
+
+
+def _render_ports_display(parent_machine: str, ports_obj: dict) -> dict[str, list[str]]:
+    """
+    Build a wiki-friendly single-line view per category, preserving GH order.
+    Row-level provenance is appended ONLY when a category mixes parent+clone rows.
+    Returns: { DisplayCategory: [line, ...], ... }
+    """
+    if not isinstance(ports_obj, dict):
+        return {}
+
+    out: dict[str, list[str]] = {}
+
+    # 1) Pre-scan categories to detect whether they mix parent+clone rows
+    cat_roles: dict[str, set[str]] = {}  # raw_cat -> {'parent'} | {'clone'} | {'parent','clone'}
+
+    def _scan_source(source: dict, role: str) -> None:
+        cats = (source or {}).get("categories") or {}
+        for cat_key, rows in cats.items():
+            if rows:
+                cat_roles.setdefault(cat_key, set()).add(role)
+
+    if ports_obj.get("parent_source"):
+        _scan_source(ports_obj["parent_source"], "parent")
+    for cs in ports_obj.get("clone_sources") or []:
+        _scan_source(cs, "clone")
+
+    # 2) Inner renderer that respects GH order and applies the mixed-category rule
+    def _render_source(source: dict, is_parent: bool) -> None:
+        cats = (source or {}).get("categories") or {}
+        for cat_key, rows in cats.items():
+            disp_cat = _title_case_words(cat_key)
+            bucket = out.setdefault(disp_cat, [])
+            mixed = (cat_roles.get(cat_key) == {"parent", "clone"})
+
+            for r in rows or []:
+                # Extract and format fields
+                regions = _format_regions(r.get("regions"))
+                platform = (r.get("platform") or "").strip()
+                tags = _format_additional_tags(r.get("additional_tags"))  # includes leading space if present
+                title = (r.get("title") or "").strip()
+                date = (r.get("date") or "").strip()
+                publisher = (r.get("publisher") or "").strip()
+                models_in = _format_models_bracketed(r.get("model"))      # "[A, B]" or ""
+                machine = (r.get("machine") or "").strip()
+
+                parts: list[str] = []
+
+                # Regions first
+                parts.append(regions)
+
+                # Platform (+tags). If there is NO title but there IS a model, show model here.
+                platform_seg = f"{platform}{tags}"
+                if title:
+                    parts.append(platform_seg)
+                else:
+                    parts.append(f"{platform_seg} {models_in}".strip())
+
+                # Title (quoted). If title exists and model exists, include model INSIDE quotes.
+                if title:
+                    safe_title = title.replace('"', '\\"')
+                    if models_in:
+                        parts.append(f"\"{safe_title} {models_in}\"")
+                    else:
+                        parts.append(f"\"{safe_title}\"")
+
+                # Date and publisher (if present)
+                if date:
+                    parts.append(f"({date})")
+                if publisher:
+                    parts.append(f"by {publisher}")
+
+                left = " ".join(p for p in parts if p)
+
+                # Comment + conditional provenance (only if category is mixed)
+                comment = (r.get("comment") or "").strip()
+                if mixed:
+                    comment = _append_provenance_comment(comment, is_parent_row=is_parent, machine=machine)
+
+                line = f"{left} : {comment}" if comment else left
+                bucket.append(line)
+
+    # Parent first, then clones — preserves GH order end-to-end
+    if ports_obj.get("parent_source"):
+        _render_source(ports_obj["parent_source"], is_parent=True)
+    for cs in ports_obj.get("clone_sources") or []:
+        _render_source(cs, is_parent=False)
+
+    return out
+
+
+
 def _read_gh_ports(path: Path) -> dict:
     data = _read_json(path)
     return data if isinstance(data, dict) else {}
@@ -1082,8 +1210,9 @@ def _project_for_wiki(rec: dict) -> dict:
     for k in ("roms_display", "chips_display", "displays_display", "controls_display"):
         if rec.get(k): out[k] = rec[k]
 
-    # Ports (structured, provenance-friendly) — leave as-is if/when present
-    if rec.get("ports"): out["ports"] = rec["ports"]
+    # Ports: wiki shows ONLY the single-line view
+    if rec.get("ports_display"):
+        out["ports_display"] = rec["ports_display"]
 
     # Optional: keep MAME titles table if the site will show it
     if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
@@ -1773,7 +1902,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             parents_with_ports_count += 1
 
 
-
         record = {
             "wiki_page_name": wiki_page_name,
             "description": desc_fields,  # retained for QA/reference
@@ -1809,6 +1937,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             
             "ports": ports_obj,
         }
+
+
+        ports_display = _render_ports_display(name, ports_obj)
+        if ports_display:
+            record["ports_display"] = ports_display  # this will be kept only in the wiki projection
 
         # If you still tally flags, this now counts parents only
         if _truthy_flag(minfo.get("isbios")):       included_flags["isbios"] += 1
