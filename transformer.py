@@ -104,6 +104,91 @@ _CONTROL_TYPE_LABELS = {
 
 _TERMINAL_PUNCT = ('.', '!', '?', '…')
 
+
+def _canonical_port_key(row: dict) -> tuple:
+    """
+    Build a key that ignores provenance and formatting differences,
+    so we can detect identical ports across parent/clone.
+    """
+    regions = tuple(r.strip() for r in (row.get("regions") or []) if isinstance(r, str))
+    platform = (row.get("platform") or "").strip()
+    title    = (row.get("title") or "").strip()
+    date     = (row.get("date") or "").strip()
+    publisher= (row.get("publisher") or "").strip()
+    tags     = tuple(t.strip() for t in (row.get("additional_tags") or []) if isinstance(t, str))
+    models   = tuple(m.strip() for m in (row.get("model") or []) if isinstance(m, str))
+    comment  = (row.get("comment") or "").strip()
+    # machine is deliberately excluded — that’s the provenance we’re checking across
+    return (regions, platform, title, date, publisher, tags, models, comment)
+
+def _has_parent_clone_duplicate_ports(ports_obj: dict) -> bool:
+    """
+    Return True if any category contains at least one identical port
+    present in BOTH parent_source and ANY clone_source.
+    """
+    if not isinstance(ports_obj, dict):
+        return False
+
+    p = (ports_obj.get("parent_source") or {}).get("categories") or {}
+    clones = [ (cs or {}).get("categories") or {} for cs in (ports_obj.get("clone_sources") or []) ]
+
+    if not p or not clones:
+        return False
+
+    # Build per-category sets for the parent
+    parent_sets: dict[str, set] = {}
+    for cat, rows in p.items():
+        s = set()
+        for r in (rows or []):
+            s.add(_canonical_port_key(r))
+        if s:
+            parent_sets[cat] = s
+
+    if not parent_sets:
+        return False
+
+    # Check intersection with each clone per category
+    for cdict in clones:
+        for cat, rows in cdict.items():
+            if cat not in parent_sets:
+                continue
+            for r in (rows or []):
+                if _canonical_port_key(r) in parent_sets[cat]:
+                    return True
+    return False
+
+def _date_sort_key(date_str: str, original_index: int) -> tuple[int, int, int, int]:
+    """
+    Turn a GH-cleaned partial date 'YYYY-MM-DD' (with possible 'X' chars) into a sortable key.
+    Rules:
+      - Replace 'X' with '0' to floor unknown components (earliest possible date).
+      - Missing/empty handled by caller (we only call this for dated rows).
+      - Use original_index as a final tiebreaker for stability.
+    """
+    s = (date_str or "").strip()
+    y, m, d = "0000", "00", "00"
+    parts = s.split("-")
+    if len(parts) >= 1 and parts[0]:
+        y = parts[0].replace("X", "0")
+    if len(parts) >= 2 and parts[1]:
+        m = parts[1].replace("X", "0")
+    if len(parts) >= 3 and parts[2]:
+        d = parts[2].replace("X", "0")
+    try:
+        yi = int(y)
+    except ValueError:
+        yi = 0
+    try:
+        mi = int(m)
+    except ValueError:
+        mi = 0
+    try:
+        di = int(d)
+    except ValueError:
+        di = 0
+    return (yi, mi, di, original_index)
+
+
 def _format_models_bracketed(models: list[str] | None) -> str:
     """Return '[A, B]' or '' (no leading space)."""
     models = [m.strip() for m in (models or []) if isinstance(m, str) and m.strip()]
@@ -142,19 +227,19 @@ def _append_provenance_comment(existing: str | None, is_parent_row: bool, machin
 
 def _render_ports_display(parent_machine: str, ports_obj: dict) -> dict[str, list[str]]:
     """
-    Build a wiki-friendly single-line view per category, preserving GH order.
-    Row-level provenance is appended ONLY when a category mixes parent+clone rows.
-    Returns: { DisplayCategory: [line, ...], ... }
+    Combine parent+clone rows per category, then:
+      - keep undated rows in GH encounter order,
+      - sort dated rows oldest→newest (X→0 floor),
+    Append per-row provenance ONLY when the category mixes parent+clone.
     """
     if not isinstance(ports_obj, dict):
         return {}
 
     out: dict[str, list[str]] = {}
 
-    # 1) Pre-scan categories to detect whether they mix parent+clone rows
-    cat_roles: dict[str, set[str]] = {}  # raw_cat -> {'parent'} | {'clone'} | {'parent','clone'}
-
-    def _scan_source(source: dict, role: str) -> None:
+    # 1) Detect mixing per category
+    cat_roles: dict[str, set[str]] = {}
+    def _scan_source(source: dict, role: str):
         cats = (source or {}).get("categories") or {}
         for cat_key, rows in cats.items():
             if rows:
@@ -162,69 +247,90 @@ def _render_ports_display(parent_machine: str, ports_obj: dict) -> dict[str, lis
 
     if ports_obj.get("parent_source"):
         _scan_source(ports_obj["parent_source"], "parent")
-    for cs in ports_obj.get("clone_sources") or []:
+    for cs in (ports_obj.get("clone_sources") or []):
         _scan_source(cs, "clone")
 
-    # 2) Inner renderer that respects GH order and applies the mixed-category rule
-    def _render_source(source: dict, is_parent: bool) -> None:
+    # 2) Build a combined stream per category with a global encounter index (preserve GH order)
+    combined: dict[str, list[tuple[int, str, dict]]] = {}  # cat -> [(enc_ix, role, row)]
+    enc_ix = 0
+
+    def _append_source(source: dict, role: str):
+        nonlocal enc_ix
         cats = (source or {}).get("categories") or {}
+        # Dicts keep GH order; rows are in GH order inside each category
         for cat_key, rows in cats.items():
-            disp_cat = _title_case_words(cat_key)
-            bucket = out.setdefault(disp_cat, [])
-            mixed = (cat_roles.get(cat_key) == {"parent", "clone"})
+            bucket = combined.setdefault(cat_key, [])
+            for r in (rows or []):
+                bucket.append((enc_ix, role, r))
+                enc_ix += 1
 
-            for r in rows or []:
-                # Extract and format fields
-                regions = _format_regions(r.get("regions"))
-                platform = (r.get("platform") or "").strip()
-                tags = _format_additional_tags(r.get("additional_tags"))  # includes leading space if present
-                title = (r.get("title") or "").strip()
-                date = (r.get("date") or "").strip()
-                publisher = (r.get("publisher") or "").strip()
-                models_in = _format_models_bracketed(r.get("model"))      # "[A, B]" or ""
-                machine = (r.get("machine") or "").strip()
-
-                parts: list[str] = []
-
-                # Regions first
-                parts.append(regions)
-
-                # Platform (+tags). If there is NO title but there IS a model, show model here.
-                platform_seg = f"{platform}{tags}"
-                if title:
-                    parts.append(platform_seg)
-                else:
-                    parts.append(f"{platform_seg} {models_in}".strip())
-
-                # Title (quoted). If title exists and model exists, include model INSIDE quotes.
-                if title:
-                    safe_title = title.replace('"', '\\"')
-                    if models_in:
-                        parts.append(f"\"{safe_title} {models_in}\"")
-                    else:
-                        parts.append(f"\"{safe_title}\"")
-
-                # Date and publisher (if present)
-                if date:
-                    parts.append(f"({date})")
-                if publisher:
-                    parts.append(f"by {publisher}")
-
-                left = " ".join(p for p in parts if p)
-
-                # Comment + conditional provenance (only if category is mixed)
-                comment = (r.get("comment") or "").strip()
-                if mixed:
-                    comment = _append_provenance_comment(comment, is_parent_row=is_parent, machine=machine)
-
-                line = f"{left} : {comment}" if comment else left
-                bucket.append(line)
-
-    # Parent first, then clones — preserves GH order end-to-end
     if ports_obj.get("parent_source"):
-        _render_source(ports_obj["parent_source"], is_parent=True)
-    for cs in ports_obj.get("clone_sources") or []:
-        _render_source(cs, is_parent=False)
+        _append_source(ports_obj["parent_source"], "parent")
+    for cs in (ports_obj.get("clone_sources") or []):
+        _append_source(cs, "clone")
+
+    # 3) For each category, split undated/dated, keep undated order, sort dated by date key (tiebreak: enc_ix)
+    for cat_key, triples in combined.items():
+        disp_cat = _title_case_words(cat_key)
+        bucket = out.setdefault(disp_cat, [])
+        mixed = (cat_roles.get(cat_key) == {"parent", "clone"})
+
+        undated = []
+        dated   = []
+        for enc, role, r in triples:
+            date = (r.get("date") or "").strip()
+            if date:
+                dated.append((enc, role, r, _date_sort_key(date, enc)))
+            else:
+                undated.append((enc, role, r))
+
+        dated.sort(key=lambda t: t[3])  # sort by computed key
+
+        ordered = [ (enc, role, r) for (enc, role, r) in undated ] + \
+                  [ (enc, role, r) for (enc, role, r, _) in dated ]
+
+        # 4) Render lines (unchanged formatting rules)
+        for enc, role, r in ordered:
+            is_parent = (role == "parent")
+
+            regions = _format_regions(r.get("regions"))
+            platform = (r.get("platform") or "").strip()
+            tags = _format_additional_tags(r.get("additional_tags"))
+            title = (r.get("title") or "").strip()
+            date  = (r.get("date") or "").strip()
+            pub   = (r.get("publisher") or "").strip()
+            models_in = _format_models_bracketed(r.get("model"))
+            machine = (r.get("machine") or "").strip()
+
+            parts: list[str] = []
+            parts.append(regions)
+
+            plat_seg = f"{platform}{tags}"
+            if title:
+                parts.append(plat_seg)
+            else:
+                parts.append(f"{plat_seg} {models_in}".strip())
+
+            if title:
+                safe_title = title.replace('"', '\\"')
+                if models_in:
+                    parts.append(f"\"{safe_title} {models_in}\"")
+                else:
+                    parts.append(f"\"{safe_title}\"")
+
+            if date:
+                parts.append(f"({date})")
+            if pub:
+                parts.append(f"by {pub}")
+
+            left = " ".join(p for p in parts if p)
+
+            comment = (r.get("comment") or "").strip()
+            if mixed:
+                comment = _append_provenance_comment(comment, is_parent_row=is_parent, machine=machine)
+
+            line = f"{left} : {comment}" if comment else left
+            bucket.append(line)
 
     return out
 
@@ -1739,6 +1845,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     # Track oddities while building records (e.g. parent listed in index but missing in mame map)
     missing_in_mame: List[str] = []
 
+    # --- QA: duplicate ports across parent/clone (parents only) ---
+    systems_with_parent_clone_port_dupes = 0
+    systems_with_parent_clone_port_dupes_list: list[str] = []
+
+
     # Title anomaly buckets (parents only, uncapped examples)
     title_anomalies: Dict[str, List[Dict[str, str]]] = {
         "unbalanced_round_brackets": [],
@@ -1900,6 +2011,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         clones_with_ports_set.update(clones_with_ports_local)
         if parent_has_ports:
             parents_with_ports_count += 1
+
+        # you've already got: ports_obj = ... (and you include this parent)
+        if _has_parent_clone_duplicate_ports(ports_obj):
+            systems_with_parent_clone_port_dupes += 1
+            systems_with_parent_clone_port_dupes_list.append(name)
 
 
         record = {
@@ -2179,6 +2295,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "but were included because at least one clone has ports."
         ),
     })
+
+    summary_ports["parent_clone_duplicate_ports"] = {
+        "systems_count": systems_with_parent_clone_port_dupes,
+        "systems_list": sorted(systems_with_parent_clone_port_dupes_list),
+        "note": "Systems where at least one port row is identical between the parent GH entry and a clone GH entry (same category).",
+        "note_duplicates": "Ports are not de-duplicated; identical parent/clone rows may appear intentionally for audit."
+    }
 
 
     summary = {
