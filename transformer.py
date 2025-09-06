@@ -104,6 +104,156 @@ _CONTROL_TYPE_LABELS = {
 
 _TERMINAL_PUNCT = ('.', '!', '?', '…')
 
+def _render_chips_display(
+    chips_raw: dict,
+    requires_samples: bool = False,
+    sound_channels: int | None = None,
+    speaker_count: int | None = None,
+) -> dict[str, list[str]]:
+    """
+    Build wiki-friendly chip lines for CPUs and Audio Chips.
+    Accepts either:
+      - dict sections with .get('items'), or
+      - plain lists of rows.
+    Skips 'Speaker'/'Samples' in the audio chip list; appends tail lines under Audio Chips.
+    """
+
+    def _rows(section):
+        """Return a list of rows from a section that may be a dict-with-items or a list."""
+        if isinstance(section, dict):
+            return section.get("items") or []
+        return section or []
+
+    def _norm_rows(rows):
+        """Yield normalised dict rows: {'name': str, 'clock_hz': float|int|None} from dicts or strings."""
+        for r in rows or []:
+            if isinstance(r, dict):
+                name = (r.get("name") or "").strip()
+                clk  = r.get("clock_hz")
+            elif isinstance(r, str):
+                name = r.strip()
+                clk  = None
+            else:
+                continue
+            if name:
+                yield {"name": name, "clock_hz": clk}
+
+    def group_and_render(rows: list[dict]) -> list[str]:
+        buckets: dict[tuple[str, int | None], int] = {}
+        clocks: dict[tuple[str, int | None], float | None] = {}
+        for r in rows:
+            name = r["name"]
+            clk  = r.get("clock_hz")
+            bucket = round(float(clk)) if isinstance(clk, (int, float)) else None
+            key = (name, bucket)
+            buckets[key] = buckets.get(key, 0) + 1
+            clocks.setdefault(key, float(clk) if isinstance(clk, (int, float)) else None)
+
+        ordered = sorted(buckets.items(), key=lambda kv: (kv[0][0].casefold(), -(clocks[kv[0]] or -1)))
+
+        lines: list[str] = []
+        for (name, _bucket), count in ordered:
+            clk_val = clocks[(name, _bucket)]
+            if clk_val is not None:
+                human = _hz_to_human(clk_val)   # your helper
+                if human:
+                    val, unit = human
+                    freq = f"{val:.3f} {unit}"
+                else:
+                    freq = _format_hz_3dp(clk_val) or ""  # your helper
+            else:
+                freq = ""
+            base = name + (f" @ {freq}" if freq else "")
+            lines.append(f"({count}x) {base}" if count > 1 else base)
+        return lines
+
+    # ---- normalise sources ----
+    cpus_src_rows       = _rows((chips_raw or {}).get("cpus"))
+    audio_src_rows_all  = _rows((chips_raw or {}).get("audio_chips"))
+
+    cpus_src      = list(_norm_rows(cpus_src_rows))
+    audio_src_all = list(_norm_rows(audio_src_rows_all))
+
+    # Exclude Speaker/Samples from the audio chip list itself
+    audio_src = [r for r in audio_src_all if r["name"].lower() not in {"speaker", "samples"}]
+
+    out = {
+        "cpus": group_and_render(cpus_src),
+        "audio_chips": group_and_render(audio_src),
+    }
+
+    # ---- tail lines under Audio Chips ----
+    tail: list[str] = []
+    if requires_samples:
+        tail.append("Requires additional samples")
+
+    if sound_channels is not None:
+        try:
+            n = int(sound_channels)
+        except Exception:
+            n = 0
+        tail.append(f"Audio {'Channel' if n == 1 else 'Channels'}: {n}")
+
+    if speaker_count is None:
+        speaker_count = sum(1 for r in audio_src_all if r["name"].lower() == "speaker")
+    try:
+        nsp = int(speaker_count or 0)
+    except Exception:
+        nsp = 0
+    tail.append(f"{'Speaker' if nsp == 1 else 'Speakers'}: {nsp}")
+
+    if tail:
+        out["audio_chips"].extend(tail)
+
+    return out
+
+
+def _render_mame_titles_display(rows: list[dict]) -> list[str]:
+    """
+    Render MAME parent+clone titles as single lines for the wiki:
+      'Title (YYYY) [parent: machine]' / 'Title [clone: machine]' if year missing.
+    Parent appears first; clones are ordered A→Z by 'title'.
+    """
+    if not isinstance(rows, list):
+        return []
+
+    # Split parent vs clones
+    parent_rows = [r for r in rows if str(r.get("role", "")).strip().lower() == "parent"]
+    clone_rows  = [r for r in rows if str(r.get("role", "")).strip().lower() != "parent"]
+
+    # Sort clones by title (case-insensitive), stable tiebreak on machine
+    clone_rows.sort(key=lambda r: (
+        (r.get("title") or "").casefold(),
+        (r.get("machine") or "").casefold()
+    ))
+
+    ordered = parent_rows + clone_rows
+
+    out: list[str] = []
+    for r in ordered:
+        title   = (r.get("title") or "").strip()
+        year    = (r.get("year") or "")
+        role    = str(r.get("role", "parent")).strip().lower() or "parent"
+        machine = (r.get("machine") or "").strip()
+
+        if not title:
+            continue  # defensive
+
+        parts = [title]
+        if str(year).strip():
+            parts.append(f"({year})")
+
+        # Include machine name in trailing tag
+        if machine:
+            parts.append(f"[{role}: {machine}]")
+        else:
+            parts.append(f"[{role}]")
+
+        out.append(" ".join(parts))
+
+    return out
+
+
 
 def _canonical_port_key(row: dict) -> tuple:
     """
@@ -511,7 +661,8 @@ def _buttons_count_from_rows(rows: list[dict]) -> int:
 
 
 def _pluralise(singular: str, n: int, plural: str | None = None) -> str:
-    return singular if n == 1 else (plural or f"{singular}s")
+    return singular if int(n or 0) == 1 else (plural or f"{singular}s")
+
 
 def _orientation_from_rotate(rot) -> str | None:
     try:
@@ -1312,16 +1463,18 @@ def _project_for_wiki(rec: dict) -> dict:
     if rec.get("year") is not None: out["year"] = rec["year"]
     if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
 
+    if rec.get("mame_titles_display"):
+        out["mame_titles_display"] = rec["mame_titles_display"]
+
     # Preformatted convenience blocks (include only if present)
     for k in ("roms_display", "chips_display", "displays_display", "controls_display"):
         if rec.get(k): out[k] = rec[k]
 
+    if rec.get("chips_display"): out["chips_display"] = rec["chips_display"]
+
     # Ports: wiki shows ONLY the single-line view
     if rec.get("ports_display"):
         out["ports_display"] = rec["ports_display"]
-
-    # Optional: keep MAME titles table if the site will show it
-    if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
 
     return out
 
@@ -1335,7 +1488,8 @@ def _project_for_raw(machine: str, rec: dict) -> dict:
 
     # Identification & provenance
     out["machine"] = machine
-    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
+    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]  
+    
     if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
 
     # Title parsing (full structured description)
@@ -1999,6 +2153,20 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             audio_samples_required_count += 1
 
 
+        #chips_disp = _render_chips_display(
+        #    record.get("chips") or {},
+        #    requires_samples=bool(record.get("requires_samples")),
+        #    sound_channels=(int(reported_channels) if reported_channels not in (None, "") else None),
+        #    speaker_count=(int(speaker_sum) if speaker_sum not in (None, "") else None),
+        #)
+
+        chips_disp = _render_chips_display(
+            chips_section,
+            requires_samples=_truthy_flag(minfo.get("requires_samples")),
+            sound_channels=(int(reported_channels) if reported_channels not in (None, "") else None),
+            speaker_count=(int(speaker_sum) if speaker_sum not in (None, "") else None),
+)
+
         parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})  # you already build this earlier
 
         ports_obj, clones_with_ports_local, parent_has_ports = _build_ports_for_parent(name, parents_map, gh_ports)
@@ -2032,6 +2200,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "disk_regions": disk_regions,
             
             "chips": chips_section,
+            
+            "chips_display": {
+                "cpus": chips_disp.get("cpus", []),
+                "audio_chips": chips_disp.get("audio_chips", []),
+            },
+                        
             "displays": displays_section,        # NEW: machine-readable
             "displays_display": displays_display, # NEW: human block you asked for
             "controls": controls_section,          # machine-readable
@@ -2053,6 +2227,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             
             "ports": ports_obj,
         }
+
+
+        # Build wiki-friendly list (no machine names)
+        mt_disp = _render_mame_titles_display(record["mame_titles"])
+        if mt_disp:
+            record["mame_titles_display"] = mt_disp
+
 
 
         ports_display = _render_ports_display(name, ports_obj)
