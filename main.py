@@ -54,6 +54,40 @@ _VERSION_RX = re.compile(
 )
 
 
+def _cached_raw_version(entry: dict | None) -> str | None:
+    """
+    Return the cached raw version string from an encodings.json entry.
+    Tolerates both new and legacy shapes.
+    """
+    if not isinstance(entry, dict):
+        return None
+    v = entry.get("version")
+    if isinstance(v, dict):
+        return v.get("raw")
+    if isinstance(v, str):
+        # legacy: version was stored as a plain string
+        return v
+    return None
+
+
+def _entry_differs(prev: dict | None, new: dict | None) -> bool:
+    """
+    Minimal diff test for encodings.json entries.
+    Compares encoding and version.raw (tolerates legacy shapes).
+    """
+    prev = prev or {}
+    new  = new or {}
+
+    prev_enc = prev.get("encoding")
+    new_enc  = new.get("encoding")
+
+    prev_raw = _cached_raw_version(prev)
+    new_raw  = _cached_raw_version(new)
+
+    return (prev_enc != new_enc) or (prev_raw != new_raw)
+
+
+
 def _history_root_attrs(p: Path, encoding: str = "utf-8") -> dict:
     """
     Read the root element of history.xml and return {'history_version','history_date'} if present.
@@ -231,24 +265,21 @@ def get_xml_version(file_path: Path, root_tag: str) -> str:
 
 def get_ini_version(file_path: Path, encoding: str) -> str:
     """
-    Extract a version string from the top of a .ini file.
-    Accepts suffixes (e.g., '2.79a') as part of the captured version.
-
-    Args:
-        file_path (Path): Path to the INI file.
-        encoding (str): Text encoding to use for reading.
-
-    Returns:
-        str: Raw version string, or 'Unknown' if not found.
+    Extract the MAME version from the INI header line.
+    Expected line examples:
+      ';; [GAMING HISTORY] Game Or No Game.ini for MAME 0.280 (mame0280) generated @ 31/08/2025 ;;'
+    We capture the token immediately following 'for MAME ' (e.g., '0.280').
     """
+    pat = re.compile(r"for\s+MAME\s+([0-9]+\.[0-9A-Za-z._-]+)")
     try:
-        with open(file_path, encoding=encoding) as f:
-            for line in f:
-                if line.strip().startswith(";;") and "MAME" in line:
-                    # Example line: ";; MAME 0.279a ...", capture the version token after 'MAME '
-                    match = re.search(r"MAME\s+([0-9]+\.[0-9A-Za-z._-]+)", line)
-                    if match:
-                        return match.group(1)
+        with open(file_path, encoding=encoding, errors="replace") as f:
+            for i, line in enumerate(f):
+                if i > 10:  # read only a few lines; headers are at the top
+                    break
+                if "for MAME" in line:
+                    m = pat.search(line)
+                    if m:
+                        return m.group(1)
     except Exception as e:
         log.warning(f"Could not extract version from {file_path.name}: {e}")
     return "Unknown"
@@ -300,9 +331,11 @@ def main():
         return
 
     data_dir = Path("data")
-    encoding_cache: Dict[str, Dict[str, Any]] = {}
 
-    # Load existing encodings.json if it exists (backwards-compatible with old shape)
+    # -------------------------------------------------------
+    # Load existing encodings.json (cache of {encoding,version})
+    # -------------------------------------------------------
+    encoding_cache: Dict[str, Dict[str, Any]] = {}
     if ENCODINGS_PATH.exists():
         try:
             with open(ENCODINGS_PATH, "r", encoding="utf-8") as f:
@@ -312,52 +345,143 @@ def main():
             log.warning("Could not read encodings.json. Will re-parse all files.")
             encoding_cache = {}
 
-    updated_encodings: Dict[str, Dict[str, Any]] = {}
+    # Helpers to read cached/raw version safely
+    def _cached_raw_version(entry: Dict[str, Any] | None) -> str | None:
+        if not isinstance(entry, dict):
+            return None
+        v = entry.get("version")
+        if isinstance(v, dict):
+            return v.get("raw")
+        return None
 
-    # Pass 1: gather current raw versions (using either cached encoding or fresh detection)
+    def _versions_differ(prev_raw: str | None, curr_raw: str | None) -> bool:
+        return (prev_raw or "") != (curr_raw or "")
+
+    updated_encodings: Dict[str, Dict[str, Any]] = dict(encoding_cache)
+    cache_changed = False
+
+    # -------------------------------------------------------
+    # Read CURRENT header versions (using cached encodings when possible)
+    # Decide per-file whether to re-detect encoding.
+    # -------------------------------------------------------
+    current_versions: Dict[str, str] = {}
     for file_path in required_paths:
         fname = file_path.name
-        stored_entry = encoding_cache.get(fname) or {}
-        stored_enc = stored_entry.get("encoding")
+        prev_entry = encoding_cache.get(fname) or {}
+        prev_raw = _cached_raw_version(prev_entry)
 
-        # Determine encoding (use cached if available; else detect)
-        if stored_enc:
-            encoding = stored_enc
-        else:
-            encoding = detect_encoding(file_path)
-
-        # Extract a raw version string using the chosen encoding (for INIs) or via XML root
+        # Determine current header version with minimal work.
         if fname.endswith(".xml"):
+            # XML: version is in root attributes; does not require encoding.
+            # We still may detect encoding later IF version changed (for audit/cache).
             root_tag = "mame" if "mame" in fname.lower() else "history"
-            raw_version = get_xml_version(file_path, root_tag)
+            curr_raw = get_xml_version(file_path, root_tag)
+            debug_log(f"[versions] XML {fname}: current_raw={curr_raw!r}")
+            current_versions[fname] = curr_raw
+
         elif fname.endswith(".ini"):
-            raw_version = get_ini_version(file_path, encoding)
+            # INI: to read the first line we need an encoding; try cached, else detect once.
+            cached_enc = prev_entry.get("encoding")
+            enc_used = cached_enc or detect_encoding(file_path)
+            debug_log(f"[versions] INI {fname}: reading header with encoding {enc_used!r}")
+            curr_raw = get_ini_version(file_path, enc_used)
+            debug_log(f"[versions] INI {fname}: prev_raw={prev_raw!r}, curr_raw={curr_raw!r}")
+            current_versions[fname] = curr_raw
+
         else:
-            raw_version = "Unknown"
+            # Unknown type, mark as Unknown
+            curr_raw = "Unknown"
+            current_versions[fname] = curr_raw
+            debug_log(f"[versions] {fname}: unsupported extension, curr_raw='Unknown'")
 
-        # Build a structured version record
-        vrec = version_record(raw_version)
+        # Compare and log
+        debug_log(f"[versions] Compare {fname}: prev_raw={prev_raw!r} vs curr_raw={curr_raw!r} "
+                  f"-> changed={_versions_differ(prev_raw, curr_raw)}")
 
-        # Decide whether to reuse cached encoding or replace it (we keep the detected one for safety)
-        updated_encodings[fname] = {
-            "encoding": encoding,
-            "version": vrec  # {'raw', 'numeric_core', 'suffix'}
-        }
+    # -------------------------------------------------------
+    # Re-detect encodings ONLY for files whose version changed
+    # or which have no cache entry yet.
+    # -------------------------------------------------------
+    for file_path in required_paths:
+        fname = file_path.name
+        prev_entry = encoding_cache.get(fname) or {}
+        prev_raw = _cached_raw_version(prev_entry)
+        curr_raw = current_versions.get(fname)
 
-    # Save encodings/versions (structured) to cache
-    with open(ENCODINGS_PATH, "w", encoding="utf-8") as f:
-        json.dump(updated_encodings, f, indent=4)
-    log.info("Saved updated encodings.json")
+        needs_redetect = (prev_entry == {}) or _versions_differ(prev_raw, curr_raw)
+
+        if fname.endswith(".xml"):
+            if needs_redetect:
+                # Audit the XML encoding now (even though we don't need it to read the version)
+                enc = detect_encoding(file_path)
+                vrec = version_record(curr_raw or "Unknown")
+                updated_encodings[fname] = {"encoding": enc, "version": vrec}
+                cache_changed = True
+                debug_log(f"[encodings] XML {fname}: version changed or new. "
+                          f"detected_encoding={enc!r}, version={vrec}")
+            else:
+                # Keep cached entry as-is (do not assume utf-8; preserve prior detection)
+                if prev_entry:
+                    updated_encodings[fname] = prev_entry
+                else:
+                    # No cache entry but no change detected (unlikely on first run) — detect once.
+                    enc = detect_encoding(file_path)
+                    vrec = version_record(curr_raw or "Unknown")
+                    updated_encodings[fname] = {"encoding": enc, "version": vrec}
+                    cache_changed = True
+                    debug_log(f"[encodings] XML {fname}: no prior cache; detected "
+                              f"encoding={enc!r}, version={vrec}")
+
+        elif fname.endswith(".ini"):
+            if needs_redetect:
+                # Version changed (or new): re-detect encoding and re-read version with that encoding.
+                enc = detect_encoding(file_path)
+                curr_raw = get_ini_version(file_path, enc)
+                vrec = version_record(curr_raw or "Unknown")
+                updated_encodings[fname] = {"encoding": enc, "version": vrec}
+                cache_changed = True
+                debug_log(f"[encodings] INI {fname}: version changed or new. "
+                          f"detected_encoding={enc!r}, version={vrec}")
+            else:
+                # Unchanged: keep prior cache entry intact.
+                if prev_entry:
+                    updated_encodings[fname] = prev_entry
+                else:
+                    # No cache entry but "unchanged" (unlikely) — detect once to seed the cache.
+                    enc = detect_encoding(file_path)
+                    curr_raw = get_ini_version(file_path, enc)
+                    vrec = version_record(curr_raw or "Unknown")
+                    updated_encodings[fname] = {"encoding": enc, "version": vrec}
+                    cache_changed = True
+                    debug_log(f"[encodings] INI {fname}: seeded cache with "
+                              f"encoding={enc!r}, version={vrec}")
+
+        else:
+            # Unknown extension: carry forward prior or seed minimally
+            if prev_entry:
+                updated_encodings[fname] = prev_entry
+            else:
+                updated_encodings[fname] = {"encoding": "utf-8", "version": version_record("Unknown")}
+                cache_changed = True
+
+    # -------------------------------------------------------
+    # Persist encodings.json ONLY if changes were made
+    # -------------------------------------------------------
+    if cache_changed:
+        with open(ENCODINGS_PATH, "w", encoding="utf-8") as f:
+            json.dump(updated_encodings, f, indent=4)
+        log.info("Saved updated encodings.json (changes detected).")
+    else:
+        log.info("Encodings unchanged; skipped writing encodings.json.")
 
     # ------------------------------
     # Version consistency reporting
     # ------------------------------
-    # Read the set back (to be explicit) and compute cross-file comparison.
-    mame_ver_raw = updated_encodings.get("mame.xml", {}).get("version", {}).get("raw", "Unknown")
-    hist_ver_raw = updated_encodings.get("history.xml", {}).get("version", {}).get("raw", "Unknown")
-    ini_game_raw = updated_encodings.get("[GAMING HISTORY] Game Or No Game.ini", {}).get("version", {}).get("raw", "Unknown")
-    ini_cat_raw  = updated_encodings.get("[GAMING HISTORY] Machine Category.ini", {}).get("version", {}).get("raw", "Unknown")
-    ini_type_raw = updated_encodings.get("[GAMING HISTORY] Machine Type.ini", {}).get("version", {}).get("raw", "Unknown")
+    mame_ver_raw = (updated_encodings.get("mame.xml", {})        .get("version", {}) or {}).get("raw", "Unknown")
+    hist_ver_raw = (updated_encodings.get("history.xml", {})     .get("version", {}) or {}).get("raw", "Unknown")
+    ini_game_raw = (updated_encodings.get("[GAMING HISTORY] Game Or No Game.ini", {}) .get("version", {}) or {}).get("raw", "Unknown")
+    ini_cat_raw  = (updated_encodings.get("[GAMING HISTORY] Machine Category.ini", {}) .get("version", {}) or {}).get("raw", "Unknown")
+    ini_type_raw = (updated_encodings.get("[GAMING HISTORY] Machine Type.ini", {})     .get("version", {}) or {}).get("raw", "Unknown")
 
     all_versions = [mame_ver_raw, hist_ver_raw, ini_game_raw, ini_cat_raw, ini_type_raw]
     if not same_numeric_core(*all_versions):
@@ -383,9 +507,12 @@ def main():
 
     log.info("Proceeding to source file parsing...")
 
-    # Pass encodings to downstream modules (simple map: filename -> encoding string)
-    encodings = {k: v["encoding"] for k, v in updated_encodings.items() if isinstance(v, dict) and "encoding" in v}
+    # Pass encodings to downstream modules (filename -> encoding)
+    encodings = {k: v.get("encoding", "utf-8")
+                 for k, v in updated_encodings.items()
+                 if isinstance(v, dict)}
 
+    # ---------------- HISTORY .ini parse ----------------
     log.info("Beginning History .ini parse...")
     ini_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     ini_t0 = time.perf_counter()
@@ -413,11 +540,9 @@ def main():
 
     ini_outputs = []
     ini_stats = {}
-    # Attach output metadata if present
     if ini_summary_path.exists():
         meta = _file_meta(ini_summary_path)
         ini_outputs.append(meta)
-        # Pull a small headline stat from the summary (optional, not duplicative)
         try:
             with open(ini_summary_path, encoding="utf-8") as f:
                 _ini_sum = json.load(f)
@@ -429,7 +554,6 @@ def main():
 
     if ini_output_path.exists():
         meta = _file_meta(ini_output_path)
-        # Add record count = number of machines in the classification map
         try:
             with open(ini_output_path, encoding="utf-8") as f:
                 _map = json.load(f)
@@ -450,15 +574,14 @@ def main():
     }
     stage_fragments = [ini_stage]
 
-
-    # --- MAME parse (timed) ---
+    # ---------------- MAME parse ----------------
     log.info("Beginning MAME XML canonical parse...")
     mame_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     mame_t0 = time.perf_counter()
     ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
     mame_duration = round(time.perf_counter() - mame_t0, 3)
     mame_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
-    # --- MAME stage fragment ---
+
     mame_xml          = data_dir / "mame.xml"
     mame_summary_path = Path("data/mame_parsing_summary.json")
     mame_out_path     = Path("output/mame_machines.json")
@@ -477,7 +600,6 @@ def main():
     if mame_summary_path.exists() and mame_out_path.exists():
         with open(mame_summary_path, encoding="utf-8") as f:
             msum = json.load(f)
-
         mver = {
             "build":      msum.get("mame", {}).get("build"),
             "mameconfig": msum.get("mame", {}).get("mameconfig"),
@@ -485,28 +607,24 @@ def main():
         mame_stage["inputs"][0]["version"] = {k: v for k, v in mver.items() if v}
         mame_stage["inputs"][0].pop("content", None)
 
-        # output meta + record count
         mout = _file_meta(mame_out_path)
         mout["summary_path"] = mame_summary_path.as_posix()
         with open(mame_out_path, encoding="utf-8") as f:
             m_machines = json.load(f)
-        mout["records"]     = len(m_machines)
+        mout["records"] = len(m_machines)
         mame_stage["outputs"].append(mout)
 
-        # ALSO include parent/clone index if present
         mame_parent_idx_path = Path("output/mame_parent_index.json")
         if mame_parent_idx_path.exists():
             mp = _file_meta(mame_parent_idx_path)
             try:
                 with open(mame_parent_idx_path, encoding="utf-8") as f:
                     idx = json.load(f)
-                # records: number of parents-with-clones
                 mp["records"] = len(idx.get("parents", {})) if isinstance(idx, dict) else None
             except Exception:
                 mp["records"] = None
             mame_stage["outputs"].append(mp)
 
-        # headline counters
         t = msum.get("totals", {})
         mame_stage["stats"] = {
             "total_machines":        t.get("total_machines"),
@@ -520,12 +638,11 @@ def main():
 
     stage_fragments.append(mame_stage)
 
-
-    # --- HISTORY parse (timed) ---
+    # ---------------- HISTORY parse ----------------
     log.info("Beginning History XML parse...")
     history_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     hist_t0 = time.perf_counter()
-    # --- HISTORY stage fragment ---
+
     history_xml        = data_dir / "history.xml"
     hist_summary_path  = Path("data/history_parsing_summary.json")
     gh_out_path        = Path("output/gh_system_ports.json")
@@ -553,7 +670,6 @@ def main():
     }
     if hist_errs:
         history_stage["errors"] = hist_errs
-    
 
     if hist_summary_path.exists() and gh_out_path.exists():
         with open(hist_summary_path, encoding="utf-8") as f:
@@ -563,22 +679,19 @@ def main():
         software_total = totals.get("software_total") or 0
         entries_total  = (systems_total or 0) + (software_total or 0)
 
-        # version info on the input
         hx = _history_root_attrs(history_xml, encoding=encodings.get("history.xml", "utf-8"))
         history_stage["inputs"][0]["version"] = {k: v for k, v in hx.items() if v}
 
-        # output meta + record count (from file)
         hout = _file_meta(gh_out_path)
         hout["summary_path"] = hist_summary_path.as_posix()
         try:
             with open(gh_out_path, encoding="utf-8") as f:
-                gh_data = json.load(f)         # dict
+                gh_data = json.load(f)
             hout["records"] = len(gh_data)
         except Exception:
             hout["records"] = None
         history_stage["outputs"].append(hout)
 
-        # keep totals in stats
         history_stage["stats"].update({
             "systems_total":  systems_total,
             "software_total": software_total,
@@ -589,17 +702,13 @@ def main():
             "ports_with_comments":  totals.get("ports_with_comments"),
         })
 
-    
     stage_fragments.append(history_stage)
 
-
-
-    # --- TRANSFORM (timed) ---
-    log.info("Beginning transform (no Ports yet)...")
+    # ---------------- TRANSFORM ----------------
+    log.info("Beginning transform...")
     transform_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     tr_t0 = time.perf_counter()
 
-    # prerequisites: INI + MAME must have succeeded, and required files must exist
     need_files = [
         Path("output/mame_machines.json"),
         Path("output/gh_ini_classifications.json"),
@@ -636,17 +745,14 @@ def main():
     if transform_errs:
         transform_stage["errors"] = transform_errs
 
-    # attach input file meta (for traceability) if present
     for p in need_files:
         if p.exists():
             transform_stage["inputs"].append(_file_meta(p))
 
-    # Optionally record the title overrides file as an input (not a prerequisite)
     ov_path = Path("data/title_overrides.json")
     if ov_path.exists():
         transform_stage["inputs"].append(_file_meta(ov_path))
 
-    # attach outputs + light stats if transform ran
     wiki_out_path = Path("output/exotica_lit_wiki.json")
     tr_summary_path = Path("data/transform_summary.json")
 
@@ -664,7 +770,6 @@ def main():
         if tr_summary_path.exists():
             s = _file_meta(tr_summary_path)
             transform_stage["outputs"].append(s)
-            # Pull a couple of headline stats (optional, compact)
             try:
                 with open(tr_summary_path, encoding="utf-8") as f:
                     ts = json.load(f)
@@ -679,25 +784,20 @@ def main():
 
     stage_fragments.append(transform_stage)
 
-
+    # ---------------- Manifest ----------------
     started_candidates = [ini_stage.get("started_utc"),
                           mame_stage.get("started_utc"),
                           history_stage.get("started_utc"),
                           transform_stage.get("started_utc")]
-
     finished_candidates = [ini_stage.get("finished_utc"),
                            mame_stage.get("finished_utc"),
                            history_stage.get("finished_utc"),
                            transform_stage.get("finished_utc")]
-
-
-    # Filter out any None
     started_candidates  = [t for t in started_candidates  if t]
     finished_candidates = [t for t in finished_candidates if t]
 
     run_started  = min(started_candidates)  if started_candidates  else datetime.datetime.utcnow().isoformat() + "Z"
     run_finished = max(finished_candidates) if finished_candidates else datetime.datetime.utcnow().isoformat() + "Z"
-
 
     manifest = {
         "schema_version": 1,
@@ -706,7 +806,6 @@ def main():
         "finished_utc": run_finished,
         "stages": [ini_stage, mame_stage, history_stage],
     }
-
 
     Path("data").mkdir(parents=True, exist_ok=True)
     with open("data/run_manifest.json", "w", encoding="utf-8") as f:
