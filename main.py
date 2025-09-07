@@ -538,6 +538,29 @@ def main():
         else:
             log.warning(f"INI missing: {fname}")
 
+
+    # --- Attach INI versions to manifest inputs (from updated_encodings) ---
+    for meta in ini_inputs:
+        fname = Path(meta["path"]).name
+        vrec = ((updated_encodings.get(fname) or {}).get("version") or {})
+        # Prefer what we already computed during the header pass
+        if vrec:
+            meta["version"] = {
+                k: vrec[k] for k in ("raw", "numeric_core", "suffix") if vrec.get(k)
+            }
+        else:
+            # Fallback (should be rare): read quickly with cached encoding to get a raw version
+            enc = ((updated_encodings.get(fname) or {}).get("encoding")) or "utf-8"
+            try:
+                raw = get_ini_version(data_dir / fname, enc)
+            except Exception:
+                raw = "Unknown"
+            core, suf = parse_version_loose(raw or "")
+            meta["version"] = {"raw": raw}
+            if core: meta["version"]["numeric_core"] = numeric_core_str(core)
+            if suf:  meta["version"]["suffix"] = suf
+
+
     ini_outputs = []
     ini_stats = {}
     if ini_summary_path.exists():
