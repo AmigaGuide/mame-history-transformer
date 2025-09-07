@@ -2153,19 +2153,21 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             audio_samples_required_count += 1
 
 
-        #chips_disp = _render_chips_display(
-        #    record.get("chips") or {},
-        #    requires_samples=bool(record.get("requires_samples")),
-        #    sound_channels=(int(reported_channels) if reported_channels not in (None, "") else None),
-        #    speaker_count=(int(speaker_sum) if speaker_sum not in (None, "") else None),
-        #)
-
         chips_disp = _render_chips_display(
             chips_section,
             requires_samples=_truthy_flag(minfo.get("requires_samples")),
             sound_channels=(int(reported_channels) if reported_channels not in (None, "") else None),
             speaker_count=(int(speaker_sum) if speaker_sum not in (None, "") else None),
-)
+        )
+
+        # NEW: turn dict-of-lists into one newline-delimited string with pluralised headers
+        cpus_lines = list(chips_disp.get("cpus") or [])
+        audio_lines = list(chips_disp.get("audio_chips") or [])
+
+        cpu_hdr   = f"{_pluralise('CPU', len(cpus_lines), 'CPUs')}:"
+        audio_hdr = f"{_pluralise('Audio Chip', len(audio_lines), 'Audio Chips')}:"
+
+        chips_display_block = "\n".join([cpu_hdr, *cpus_lines, audio_hdr, *audio_lines])
 
         parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})  # you already build this earlier
 
@@ -2200,11 +2202,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "disk_regions": disk_regions,
             
             "chips": chips_section,
+            "chips_display": chips_display_block,   # wiki string with \n separators
             
-            "chips_display": {
-                "cpus": chips_disp.get("cpus", []),
-                "audio_chips": chips_disp.get("audio_chips", []),
-            },
+            #"chips_display": {
+            #    "cpus": chips_disp.get("cpus", []),
+            #    "audio_chips": chips_disp.get("audio_chips", []),
+            #},
                         
             "displays": displays_section,        # NEW: machine-readable
             "displays_display": displays_display, # NEW: human block you asked for
