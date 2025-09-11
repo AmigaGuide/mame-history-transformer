@@ -1,28 +1,32 @@
 """
 Filename: history_metadata.py
-
+Version: 1.0.0
+Last modified: 2025-09-10
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
-Part of the TM470 Project:
+Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
 
-Description:
-Parses classification metadata from three Gaming-History .ini files:
-- Game Or No Game.ini
-- Machine Category.ini
-- Machine Type.ini
+Purpose:
+Parse classification metadata from three Gaming-History INI files:
+- [GAMING HISTORY] Game Or No Game.ini
+- [GAMING HISTORY] Machine Category.ini
+- [GAMING HISTORY] Machine Type.ini
 
 Outputs:
-1) data/ini_parsing_summary.json          (diagnostic summary for audit)
-2) output/gh_ini_classifications.json     (machine-centric parsed map)
-
-Returns True/False from the entry point to indicate parse success.
+1) data/ini_parsing_summary.json       (diagnostic summary for audit)
+2) output/gh_ini_classifications.json  (machine-centric parsed map)
 
 Notes:
 - Summary reports section labels exactly as found (e.g. "<not available>").
 - Parsed JSON converts "<not available>" to "unknown" and defaults missing fields to "unknown".
 - Category in output is always an array (even if a single label).
 - This module does not compute file size/hash/mtime and does not touch the manifest.
+- Entry point returns True/False to indicate parse success.
+
+Licence:
+This file forms part of a student project and is not intended for commercial use.
+See repository LICENCE for details.
 """
 
 from pathlib import Path
@@ -35,6 +39,12 @@ import re
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
+
+__all__ = [
+    "parse_history_inis",
+    "classify_machine",
+    "INI_FILES",
+]
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -55,14 +65,21 @@ _ini_parsed = False
 # Output normalisation
 GAME_STATUS_MAP = {"Game": "game", "No Game": "no_game"}
 UNKNOWN = "unknown"
-VALID_ARCADE_CATEGORIES = {"Arcade", "Coin-Op (Games)"}  # helper only
-
 
 # ----------------------------
 # Helpers
 # ----------------------------
 
 def _to_iso_date(s: str) -> str | None:
+    """
+    Parse a date string in DD/MM/YYYY or YYYY-MM-DD and return ISO 'YYYY-MM-DD'.
+
+    Args:
+        s: Date text to parse.
+
+    Returns:
+        ISO-formatted date string, or None if the input does not match either format.
+    """
     for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
         try:
             return datetime.datetime.strptime(s, fmt).date().isoformat()
@@ -70,16 +87,23 @@ def _to_iso_date(s: str) -> str | None:
             pass
     return None
 
+def _ini_version_info(p: Path, encoding: str) -> dict:
+    """Extract version/build and generated date from the INI header region.
 
-def _ini_version_info(p: Path, encoding: str = "utf-8") -> dict:
-    """Extract version/build and generated date from the INI header region."""
+    Heuristics:
+      - Looks for 'MAME <x.yz>' and '(mameNNNNN)' within the first 16 KB.
+      - Accepts either 'generated' or 'updated' followed by a date in DD/MM/YYYY or YYYY-MM-DD.
+      - Returns keys: mame_version, mame_build, generated_date_raw, generated_date (ISO).
+
+    This is *advisory* metadata only and is not used to decide whether to re-parse.
+    """
     try:
         with open(p, "r", encoding=encoding, errors="replace") as f:
             head = f.read(16384)  # first 16 KB is plenty
     except Exception:
         return {}
 
-    head = head.lstrip("\ufeff")
+    head = head.lstrip("\ufeff") # tolerate BOM if present
     head = re.sub(r"\s+", " ", head)
 
     info: dict[str, str] = {}
@@ -104,44 +128,48 @@ def _ini_version_info(p: Path, encoding: str = "utf-8") -> dict:
 
     return info
 
-
 def _normalise_section_header(label: str) -> str:
     """Trim edges and collapse internal whitespace; preserve case and punctuation."""
     label = label.strip()
     label = re.sub(r"\s+", " ", label)
     return label
 
-
 def _is_not_available_label(label: str | None) -> bool:
+    """
+    True if the label is a '<not available>' marker (case/whitespace tolerant).
+
+    Notes:
+        Accepts variations like '< not available >' with arbitrary spacing and case.
+    """
     if not label:
         return False
     return re.fullmatch(r"\s*<\s*not\s+available\s*>\s*", label, flags=re.IGNORECASE) is not None
-
-
-def _ini_line_counts(p: Path, encoding: str = "utf-8") -> Tuple[int, int]:
-    """Return (lines, non_comment_lines). ';;' denotes comments; blank lines ignored."""
-    lines = non_comment = 0
-    with open(p, encoding=encoding) as f:
-        for line in f:
-            lines += 1
-            s = line.strip()
-            if s and not s.startswith(";;"):
-                non_comment += 1
-    return lines, non_comment
-
 
 def _parse_ini_file_extended(path: Path, encoding: str) -> dict:
     """
     Parse GH-style INIs where each [section] is followed by machine names.
 
     Returns a dict with:
-      - machine_sections: Dict[str, Set[str]]  # machine -> set of sections (normalised)
-      - section_listed_counts: Dict[str, int]  # per section, count of listed entries
-      - section_unique_sets: Dict[str, Set[str]]  # per section, unique machine names
+      - machine_sections: Dict[str, Set[str]]
+            machine -> set of sections (normalised, preserves original label text)
+      - section_listed_counts: Dict[str, int]
+            per section, count of *listed* lines (includes duplicates within a section)
+      - section_unique_sets: Dict[str, Set[str]]
+            per section, unique machine names (deduped within that section)
       - entries_listed: int
-      - duplicates_across_sections: int  # total extra assignments beyond first
+            sum of section_listed_counts (i.e. raw listed lines under sections)
+      - duplicates_across_sections: int
+            total extra assignments beyond the *first* section per machine
+            e.g. If a machine appears in 3 sections, that contributes +2 here.
       - machines_with_multiple_sections: int
-      - duplicates_within_section: int   # repeated same machine within same section (rare)
+            number of machines assigned to ≥ 2 sections
+      - duplicates_within_section: int
+            repeated same machine within the same section (rare data issue):
+            computed as entries_listed - sum(len(unique_set) per section)
+
+    Notes:
+      - Lines under [FOLDER_SETTINGS] are ignored (metadata, not assignments).
+      - Section headers are normalised for spacing, but case/punctuation are preserved.
     """
     current_section = None
     machine_sections: Dict[str, Set[str]] = defaultdict(set)
@@ -154,14 +182,16 @@ def _parse_ini_file_extended(path: Path, encoding: str) -> dict:
             if not line or line.startswith(";;"):
                 continue
             if line.startswith("[") and line.endswith("]"):
+                # Section header; the next non-empty non-comment lines are machine names
                 sec = _normalise_section_header(line[1:-1])
                 current_section = sec
                 continue
             if current_section and current_section != "FOLDER_SETTINGS":
                 name = line
-                section_listed_counts[current_section] += 1
+                section_listed_counts[current_section] += 1  # raw line count under this section
                 if name in section_unique_sets[current_section]:
-                    # duplicate within same section
+                    # Duplicate within the same section (data smell). We still count it
+                    # in section_listed_counts, but de-dup for unique set metrics.
                     pass
                 section_unique_sets[current_section].add(name)
                 machine_sections[name].add(current_section)
@@ -183,9 +213,21 @@ def _parse_ini_file_extended(path: Path, encoding: str) -> dict:
         "duplicates_within_section": duplicates_within_section,
     }
 
-
 def _load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
-    """Load all classification INIs into the internal cache."""
+    """Load all classification INIs into the internal cache.
+
+    Cache policy:
+      - Single-process cache via module-level _parsed + _ini_parsed.
+      - Idempotent: subsequent calls return the same structures without re-reading files.
+
+    Missing files:
+      - We log a warning and return an *empty* skeleton for that INI so downstream
+        metrics and writers still run deterministically.
+      - Encoding for missing files is still recorded from the encodings mapping.
+
+    Returns:
+      Parsed structures keyed by {"game_status","category","type"} with version and encoding.
+    """
     global _ini_parsed
     if _ini_parsed:
         return _parsed
@@ -195,6 +237,7 @@ def _load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
         enc = encodings.get(path.name, "utf-8")
         debug_log(f"[history_metadata] Parsing {path.name} with encoding {enc}...")
         if not path.exists():
+            # Provide a neutral skeleton so writers can produce a consistent summary            
             log.warning(f"Missing INI: {path.name}")
             _parsed[key] = {
                 "machine_sections": defaultdict(set),
@@ -218,18 +261,36 @@ def _load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
     log.info(f"INI classification data loaded in {time.perf_counter() - t0:.2f} seconds")
     return _parsed
 
-
 # ----------------------------
 # Public lookups
 # ----------------------------
 
 def classify_machine(machine_name: str, encodings: Dict[str, str]) -> Dict[str, object]:
     """
-    Return classification details for a MAME machine from the .ini metadata.
-    Fields:
-      - game_status: 'game' | 'no_game' | 'unknown'
-      - category:    List[str]  (always an array; ['unknown'] if missing)
-      - type:        str        ('unknown' if missing)
+    Return machine-centric classification from the three INIs.
+
+    Returns a dict:
+      {
+        "game_status": str,   # 'game' | 'no_game' | 'unknown'
+        "category":    list,  # list[str]; ['unknown'] if none/only <not available>
+        "type":        str    # 'unknown' if none/only <not available>
+      }
+
+    Rules:
+      - '[GAMING HISTORY] Game Or No Game.ini':
+           'Game' → 'game'; 'No Game' → 'no_game'; only '<not available>' → 'unknown';
+           any other single/mixture → 'unknown' (defensive default).
+      - '[GAMING HISTORY] Machine Category.ini':
+           output is ALWAYS an array; '<not available>' maps to 'unknown'.
+           If both concrete labels and 'unknown' appear, we drop 'unknown'.
+      - '[GAMING HISTORY] Machine Type.ini':
+           one canonical label chosen deterministically (A–Z) if multiple appear;
+           '<not available>' forces 'unknown'.
+
+    Examples:
+      - {} across all INIs → {'game_status':'unknown','category':['unknown'],'type':'unknown'}
+      - {'Game'}, {'Arcade','Shooter'}, {'<not available>'}
+        → {'game_status':'game','category':['Arcade','Shooter'],'type':'unknown'}
     """
     _load_ini_classifications(encodings)
 
@@ -274,24 +335,27 @@ def classify_machine(machine_name: str, encodings: Dict[str, str]) -> Dict[str, 
 
     return {"game_status": game_status, "category": category_list, "type": machine_type}
 
-
-def is_valid_arcade_game(machine_name: str, encodings: Dict[str, str]) -> bool:
-    """True if machine is 'game' AND category includes Arcade or Coin-Op (Games)."""
-    info = classify_machine(machine_name, encodings)
-    return (info["game_status"] == "game") and any(c in VALID_ARCADE_CATEGORIES for c in info["category"])
-
-
 # ----------------------------
 # Summary helpers
 # ----------------------------
 
 def _sorted_counts_from_listed(d: Dict[str, int]) -> Dict[str, int]:
+    """
+    Return a key-sorted copy of a section → listed-count mapping.
+
+    Purpose:
+        Provides stable, A–Z ordering for JSON output and diffs.
+    """
     return {k: d[k] for k in sorted(d.keys())}
 
-
 def _sorted_counts_from_unique_sets(d: Dict[str, Set[str]]) -> Dict[str, int]:
-    return {k: len(d[k]) for k in sorted(d.keys())}
+    """
+    Convert a section → unique-names set mapping into counts, sorted by section.
 
+    Returns:
+        Dict of section → unique count, with sections ordered A–Z.
+    """
+    return {k: len(d[k]) for k in sorted(d.keys())}
 
 # ----------------------------
 # Writers
@@ -302,14 +366,18 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
     Build and write data/ini_parsing_summary.json
 
     Per INI we include:
-      - filename, encoding, version
-      - entries_listed (all lines under sections)
-      - entries_indexed (unique machines)
-      - sections_total
-      - section_counts_listed
-      - section_counts_unique
-      - machines_with_multiple_sections
-      - duplicate_assignments
+      - filename, encoding, version (as parsed from header)
+      - entries_listed: raw lines assigned under sections (may include duplicates)
+      - entries_indexed: number of unique machine names under any section
+      - sections_total: number of distinct sections encountered
+      - section_counts_listed: per-section raw line counts (includes duplicates)
+      - section_counts_unique: per-section unique machine counts
+      - machines_with_multiple_sections: machines appearing under ≥ 2 sections
+      - duplicate_assignments: sum over machines of (assignments - 1)
+      - errors: missing-file notices (if any)
+
+    Returns:
+      (ok: bool, path: str)  # path is normalised with '/' separators for logs.
     """
     now = datetime.datetime.utcnow().isoformat() + "Z"
     files_block = {}
@@ -332,6 +400,8 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
         entries_indexed = len(ms)
         sections_total = len(slc.keys() | sus.keys())
 
+        # Coverage summarises the union of machine names across all three INIs so
+        # we can see where labels are missing or incomplete by file.
         files_block[key] = {
             "filename": path.name,
             "encoding": enc,
@@ -374,20 +444,28 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         log.info(f"Wrote {out_path}")
-        return True, str(out_path).replace("\\", "/")
+        return True, str(out_path).replace("\\", "/") # normalise for log readability across OSes
     except Exception as e:
         log.error(f"Failed to write INI summary: {e}")
         return False, str(out_path).replace("\\", "/")
-
 
 def _write_machine_centric_output(output_dir: Path, encodings: Dict[str, str]) -> Tuple[bool, str]:
     """
     Build and write output/gh_ini_classifications.json
 
-    - Union of machine names across the three INIs
-    - game_status: string (game | no_game | unknown)
-    - category:    array of strings (always array; ['unknown'] if none)
-    - type:        string (unknown if '<not available>' or missing)
+    Output schema:
+      {
+        "<machine_name>": {
+          "game_status": "game" | "no_game" | "unknown",
+          "category":    [ ... ],          # always an array, alphabetically sorted, no duplicate 'unknown'
+          "type":        "<label>|unknown"  # single string as per classify_machine rules
+        },
+        ...
+      }
+
+    Notes:
+      - Names are sorted A–Z to ensure stable diffs in version control.
+      - We reuse classify_machine(...) to keep rules in one place.
     """
     # Union of names across the three mappings
     union_names: Set[str] = set()
@@ -408,11 +486,10 @@ def _write_machine_centric_output(output_dir: Path, encodings: Dict[str, str]) -
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(out_map, f, indent=2, ensure_ascii=False)
         log.info(f"Wrote {out_path}")
-        return True, str(out_path).replace("\\", "/")
+        return True, str(out_path).replace("\\", "/") # normalise for log readability across OSes
     except Exception as e:
         log.error(f"Failed to write INI classifications: {e}")
         return False, str(out_path).replace("\\", "/")
-
 
 # ----------------------------
 # Entry point for main.py
@@ -423,10 +500,14 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     Entry point expected by main.py.
 
     Behaviour:
-    - Load and cache the three INIs.
-    - Write data/ini_parsing_summary.json (per-file counts; coverage; duplicates).
-    - Write output/gh_ini_classifications.json (machine-centric; category as array).
-    - Return True on success; False otherwise.
+      1) Load & cache the three INIs into _parsed.
+      2) Write data/ini_parsing_summary.json (audit/diagnostics per INI).
+      3) Write output/gh_ini_classifications.json (machine-centric view).
+      4) Log overall duration.
+
+    Success criteria:
+      - Returns True only if both files were written successfully.
+      - Missing INIs do not cause failure; they are reported in 'errors' inside the summary.
     """
     t0 = time.perf_counter()
     _load_ini_classifications(encodings)

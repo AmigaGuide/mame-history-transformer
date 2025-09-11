@@ -1,37 +1,45 @@
 """
 Filename: mame_parser.py
-
+Version: 1.0.0
+Last modified: 2025-09-10
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
-Part of the TM470 Project:
+Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
 
-Description:
-Parses the full MAME XML and writes:
+Purpose:
+Parse the full MAME XML and write:
   - output/mame_machines.json              (canonical, unfiltered dump)
   - data/mame_parsing_summary.json         (totals-only summary)
+  - output/mame_parent_index.json          (parent -> clones index + reverse map)
 
 No classification or filtering is applied here. Downstream modules will handle
 selection (using .ini metadata) and the join with Gaming-History.
 
-This file is part of a student project and is not intended for commercial use.
+Licence:
+This file forms part of a student project and is not intended for commercial use.
+See repository LICENCE for details.
 """
 
 from __future__ import annotations
-from pathlib import Path
+
+import datetime
 import json
 import time
 import xml.etree.ElementTree as ET
 from collections import Counter
-from typing import Dict, Any
-import logging
-import datetime
+from pathlib import Path
+from typing import Any, Dict
 
 from config import LOG_LEVEL
-from logger import setup_logger, debug_log
+from logger import setup_logger
 
 log = setup_logger(log_level=LOG_LEVEL)
+
+__all__ = ["MAME_PARSER_SCHEMA", "parse_mame_xml"]
+
 MAME_PARSER_SCHEMA = "1.0"
+
 
 def _build_parent_index(machines: dict[str, dict]) -> dict:
     """
@@ -58,43 +66,16 @@ def _build_parent_index(machines: dict[str, dict]) -> dict:
         lst = parents.setdefault(parent, [])
         lst.append(mname)
 
-    # Deduplicate + sort clone lists; sort parent keys
+    # Deduplicate + sort clone lists; sort parent keys for stable diffs
     parents_sorted: dict[str, list[str]] = {
         p: sorted(set(clones)) for p, clones in parents.items() if clones
     }
     parents_sorted = {p: parents_sorted[p] for p in sorted(parents_sorted.keys())}
 
-    # Sort reverse map by clone name for deterministic diffs
+    # Sort reverse map by clone name for deterministic output
     child_to_parent_sorted = {c: child_to_parent[c] for c in sorted(child_to_parent.keys())}
 
     return {"parents": parents_sorted, "child_to_parent": child_to_parent_sorted}
-
-def _txt(el):
-    """Return stripped element text or ''."""
-    return (el.text or "").strip() if el is not None else ""
-
-def _int_attr(elem, name):
-    """Parse int attribute if purely numeric; else None."""
-    if elem is None:
-        return None
-    s = (elem.attrib.get(name) or "").strip()
-    return int(s) if s.isdigit() else None
-
-def _float_attr(elem, name):
-    """Parse float attribute; else None."""
-    if elem is None:
-        return None
-    s = (elem.attrib.get(name) or "").strip()
-    try:
-        return float(s) if s else None
-    except ValueError:
-        return None
-
-def _lower_or_none(s):
-    """Lower-case non-empty string; else None."""
-    s = (s or "").strip()
-    return s.lower() if s else None
-
 
 
 def _sorted_numeric_keys_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
@@ -132,16 +113,25 @@ def _sort_numeric_str(counter: Dict[str, int]) -> Dict[str, int]:
     items.sort(key=lambda t: t[0])
     return {str(k): v for k, v in items}
 
-
-
 def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
     """
     Parse the entire mame.xml and write:
       - output/mame_machines.json
       - data/mame_parsing_summary.json
+      - output/mame_parent_index.json
+
+    Args:
+        file_path: Path to data/mame.xml.
+        encodings: Mapping of filename -> encoding (expects 'mame.xml' key).
+        max_records: Optional cap for debugging; 0 means no limit.
 
     Returns:
-        list[dict]: Unfiltered list of machine dicts (canonical fields).
+        bool: True on success, False if XML parse error occurs.
+
+    Notes:
+        - Uses ElementTree.iterparse to keep memory bounded.
+        - Emits progress every 5,000 machines.
+        - Keeps distributions and invariants for quick sanity checks in the summary.
     """
     start = time.perf_counter()
     log.info(f"Starting full MAME XML parsing: {file_path.name}" +
@@ -176,17 +166,17 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     control_ways_overall_ctr  = Counter()
     control_ways2_overall_ctr = Counter()
     control_ways3_overall_ctr = Counter()
-    control_buttons_overall_ctr     = Counter()  # histogram of buttons per control
-    control_reqbuttons_overall_ctr  = Counter()  # histogram of reqbuttons per control    
+    control_buttons_overall_ctr     = Counter()
+    control_reqbuttons_overall_ctr  = Counter()
     cpus_per_machine_ctr = Counter()
     sound_devices_per_machine_ctr = Counter()
     displays_per_machine_ctr = Counter()
-    speakers_per_machine_ctr = Counter()        # counts <device_ref name="speaker">
-    sound_channels_per_machine_ctr = Counter()  # from <sound channels="">
-    display_types_overall_ctr = Counter()  # raster/vector/lcd/svg/unknown
-    display_tags_overall_ctr = Counter()   # e.g. screen, screen0, left, right, (unspecified)
-    disk_regions_overall_ctr = Counter()  # e.g. {"cdrom": 90, "laserdisc": 12, "harddisk": 15, "unknown": 3}
-    disk_media_platforms_per_machine_ctr = Counter()  # histogram of len(unique disk regions) per machine
+    speakers_per_machine_ctr = Counter()
+    sound_channels_per_machine_ctr = Counter()
+    display_types_overall_ctr = Counter()
+    display_tags_overall_ctr = Counter()
+    disk_regions_overall_ctr = Counter()
+    disk_media_platforms_per_machine_ctr = Counter()
 
     machines_out: Dict[str, Dict[str, Any]] = {}
 
@@ -406,6 +396,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     disk_media_platforms_count = len(disk_regions)  # 0 for ROM-only machines
                     disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
 
+                    # Keep a few illustrative examples per bucket (0..N) for the summary
                     disk_media_examples = locals().setdefault("disk_media_examples", {})  # create once in function scope
                     examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
                     if len(examples) < 5:
@@ -491,16 +482,50 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     parse_seconds = time.perf_counter() - start
     generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
-
     def _build_summary():
+        """
+        Build the totals/metrics summary block for the parsed MAME dataset.
+
+        Draws on the counters and derived values accumulated in parse_mame_xml()
+        (years, manufacturers, players, controls, chips, audio, displays, disk
+        regions/media, etc.) and returns a deterministic, JSON-serialisable dict
+        with:
+          - "mame": parser schema/version and MAME header attributes
+          - "totals": overall counts plus per-field distributions and sums
+                      (each distribution is normalised/sorted for readability)
+
+        Notes:
+        - Uses local helpers such as _sorted_numeric_keys_with_unknown_last(),
+          _sorted_alpha_with_unknown_last(), and _sort_numeric_str() to provide
+          stable ordering and to place "unknown" last where applicable.
+        - Includes small illustrative examples for disk media platform buckets.
+        - Intended solely for reporting/sanity checking; does not alter primary data.
+
+        Returns:
+            dict: Summary document ready for JSON output.
+        """
         # Core distributions
         years_dist  = _sorted_numeric_keys_with_unknown_last(dict(years_ctr))
         manuf_dist  = _sorted_alpha_with_unknown_last(dict(manuf_ctr))
         display_types_overall_dist = _sorted_alpha_with_unknown_last(dict(display_types_overall_ctr))
         display_tags_overall_dist  = _sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
 
-        # Helper: numeric-string dists with 'unknown' appended by caller logic
+
+
         def _numdist(counter):
+            """
+            Convenience normaliser for per-machine histograms.
+
+            Converts a Counter/dict whose keys are numeric strings (plus optional
+            "unknown") into an ascending, string-keyed dict using _sort_numeric_str().
+            If "unknown" exists in the source, it is appended as the final key.
+
+            Args:
+                counter (Mapping[str, int]): Source histogram.
+
+            Returns:
+                dict[str, int]: Sorted distribution with "unknown" last if present.
+            """
             dist = _sort_numeric_str(dict(counter))
             if "unknown" in counter:
                 dist["unknown"] = counter["unknown"]
@@ -526,7 +551,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         control_buttons_overall_dist    = _numdist(control_buttons_overall_ctr)
         control_reqbuttons_overall_dist = _numdist(control_reqbuttons_overall_ctr)
 
-        # Sums
+        # Convenience sums (sanity checks)
         years_sum         = sum(years_dist.values())
         manufacturers_sum = sum(manuf_dist.values())
         players_sum       = sum(players_dist.values())
@@ -641,14 +666,23 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             }
         }
 
-
     summary = _build_summary()
 
+
     # --- INVARIANTS & CONSISTENCY CHECKS (warnings only) -------------------------
-    def _sum(counter):  # simple helper
+    def _sum(counter):
+        """
+        Lightweight helper to sum the values in a count mapping.
+
+        Args:
+            counter (Mapping[Any, int]): Histogram or dict of counts.
+
+        Returns:
+            int: Sum of all count values.
+        """
         return sum(counter.values())
 
-    # Per-machine counters that should sum to total machines
+    # Per-machine counters should sum to total machines
     checks_equal_total = [
         ("years_ctr", _sum(years_ctr)),
         ("manuf_ctr", _sum(manuf_ctr)),
@@ -744,7 +778,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     # ----------------------------
     # Also write parent/clone index
     # ----------------------------
-    parent_index = _build_parent_index(machines_out)  # or machines_sorted; content identical
+    parent_index = _build_parent_index(machines_out) # machines_out vs machines_sorted: content identical
     parent_index_path = (data_dir.parent / "output" / "mame_parent_index.json")
     parent_index_path.parent.mkdir(parents=True, exist_ok=True)
 

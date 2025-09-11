@@ -1,41 +1,56 @@
 """
 Filename: encoding_utils.py
-
+Version: 1.0.0
+Last modified: 2025-09-10
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
-Part of the TM470 Project:
+Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
 
-Description:
-Detects the encoding of a given file using the `chardet` library.
+Purpose:
+Detect the text encoding of a file using the `chardet` library. This module is
+deliberately narrow in scope: it does not handle caching, version tracking, or
+fallback logic—only detection.
 
-This module does not handle any caching or version tracking logic—
-it simply returns the encoding of the requested file.
+Key behaviours:
+- Reads file bytes and returns `chardet.detect(...).get('encoding')` or "Unknown".
+- Emits lightweight debug logs for traceability.
 
-This file is part of a student project and is not intended for commercial use.
+Exports:
+- detect_encoding(file_path: Path) -> str
+
+Licence:
+This file forms part of a student project and is not intended for commercial use.
+See repository LICENCE for details.
 """
 
-from pathlib import Path
-import chardet
+from __future__ import annotations
 
-from logger import debug_log
+from pathlib import Path  # stdlib
+import chardet            # third-party
+
+from logger import debug_log  # local
+
+__all__ = ["detect_encoding"]
+
 
 def detect_encoding(file_path: Path) -> str:
     """
-    Detect the encoding of a file using the `chardet` library.
+    Detect the encoding of a file using `chardet`.
 
     Parameters:
-        file_path (Path): Path to the XML or INI file.
+        file_path: Path to the XML/INI (or other text) file.
 
     Returns:
-        str: Detected encoding (or 'Unknown' if detection fails).
+        Detected encoding label (e.g. "UTF-8", "windows-1252"), or "Unknown" if
+        chardet does not provide an encoding.
     """
     debug_log(f"Detecting encoding for: {file_path.name}")
 
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         raw_data = f.read()
         result = chardet.detect(raw_data)
-        encoding = result['encoding'] or "Unknown"
+        encoding = result.get("encoding") or "Unknown"
 
     debug_log(f"Detected encoding for {file_path.name}: {encoding}")
     return encoding

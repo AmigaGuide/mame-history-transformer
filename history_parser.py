@@ -1,31 +1,48 @@
 """
 Filename: history_parser.py
-
+Version: 1.0.0
+Last modified: 2025-09-10
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
-Part of the TM470 Project:
+Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
 
-Description:
-Parses the Gaming-History XML file (history.xml) and extracts structured metadata from
-<entry> elements, distinguishing between arcade-relevant <systems> and non-arcade <software>.
+Purpose:
+Stream-parse Gaming-History's history.xml <entry> elements and extract structured,
+arcade-relevant metadata for ExoticA's LiT. Handles section segmentation, PORTS
+parsing (including platform banners and inheritance), and emits a rich summary.
 
-For arcade entries, the script captures:
-- The primary GH system name and any aliases
-- The Gaming-History ID (gh_id) from the CONTRIBUTE section
-- Each <text> section is segmented before parsing
-- A PORTS section is parsed for:
-  - Overview paragraph
-  - Platform category counters (CONSOLES, COMPUTERS, etc.)
-  - A full list of parsed port entries with extracted metadata
+Inputs:
+- history.xml (Gaming-History export), encoding determined externally and passed in.
+- Optional: CONTRIBUTE section lines containing gh_id (format: 'id=<int>').
 
-Output is saved to output/gh_systems.json and used to support ExoticA's
-Lost in Translation (LiT) Wiki metadata.
+Outputs:
+- output/gh_system_ports.json (per-system structured PORTS data, sorted)
+- data/history_parsing_summary.json (totals, distributions, anomalies, audits)
+Schema: HISTORY_PARSER_SCHEMA = "1.0"
 
-This file is part of a student project and is not intended for commercial use.
+Key behaviours:
+- Uses ElementTree.iterparse() to stream and bound memory.
+- Preserves raw text (no editorial changes); normalises NBSP only for separator logic.
+- Detects and audits platform banners; inherits banner platform when rows omit it.
+- Treats floppy disk inch marks (e.g. 3.5", 5.25", 3.25", 8") as literals, not quotes.
+- Auditing: Includes platform banners and inheritance, disk-size quote handling,
+  null-platform rows, odd quotes/brackets, missing PORTS subheadings, publisher
+  indicators, and distribution counts (platforms, models, regions, tags).
+  See data/history_parsing_summary.json for full details.
+
+Logging:
+- Configured via config.LOG_LEVEL and logger.setup_logger; writes informative and
+  warning diagnostics, plus end-of-run invariants to validate counts.
+
+Runtime:
+- Python 3.10+ recommended.
+- Standard library only (xml.etree.ElementTree, re, json, html, collections, etc.).
+
+Licence:
+This file forms part of a student project and is not intended for commercial use.
+See repository LICENCE for details.
 """
-
-# UPDATED history_parser.py to include extended summary tracking within existing structure
 
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -33,34 +50,67 @@ import time
 import re
 import json
 import html
-from collections import Counter, defaultdict, OrderedDict
+from collections import Counter, defaultdict
 import datetime
 
 from config import LOG_LEVEL
 from logger import setup_logger, debug_log
 from date_utils import parse_date_string
 
+__all__ = [
+    "HISTORY_PARSER_SCHEMA",
+    "KNOWN_PLATFORMS",
+    "segment_text_sections",
+    "extract_ports_section",
+    "parse_port_entry",
+    "parse_history_entries",
+]
+
 log = setup_logger(log_level=LOG_LEVEL)
 
 HISTORY_PARSER_SCHEMA = "1.0"
+
+# Headings like '----- PORTS -----' (case-insensitive). Captures the name between dashes.
+# Note: GH content sometimes uses mixed case, hence re.IGNORECASE.
 SECTION_PATTERN = re.compile(r"^-+\s+([A-Z0-9 &]+)\s+-+$", re.IGNORECASE)
+
+# Category headings inside PORTS, e.g. '* CONSOLES:' (bullet optional spacing).
 CATEGORY_HEADING_PATTERN = re.compile(r"^\*\s*([A-Z0-9 &]+)\s*:\s*$", re.IGNORECASE)
+
+# Expected top-level PORTS categories; anything else is reported under anomalies.
 KNOWN_PLATFORMS = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
 
-def is_odd(n):
-    return n % 2 == 1
-
 def segment_text_sections(text: str, parsing_state: dict) -> dict:
+    """
+    Split a Gaming-History <text> block into named sections.
+
+    Parses dashed headings such as '----- PORTS -----', preserves true blank lines
+    only within the PORTS section (to support platform-banner detection), and
+    increments the section heading counters in `parsing_state`.
+
+    Args:
+      text: Raw, HTML-unescaped text content from a single <entry>/<text>.
+      parsing_state: Mutable state dictionary used to collect parsing counters.
+
+    Returns:
+      A mapping of section name to list of normalised lines. The "OVERVIEW" key is
+      used for content prior to the first recognised section heading.
+
+    Notes:
+      Non-breaking spaces are normalised to regular spaces so that visually blank
+      lines become truly blank and act as separators in PORTS.
+    """
     sections = defaultdict(list)
     current_section = "OVERVIEW"
 
     for raw in text.splitlines():
-        # normalise NBSP → space, then strip to test emptiness
+        # NBSP → space so visually blank lines become true separators in PORTS.
         norm = re.sub(r"\u00A0", " ", raw or "")
         line = norm.strip()
 
         # Section heading like '----- PORTS -----'
         match = SECTION_PATTERN.match(line)
+        # Count every section heading encountered (used for a site-wide distribution).
         if match:
             section_name = match.group(1).strip().upper()
             current_section = section_name
@@ -79,22 +129,33 @@ def segment_text_sections(text: str, parsing_state: dict) -> dict:
 
     return sections
 
+def extract_ports_section(lines: list[str], system_name: str, parsing_state: dict
+                          ) -> tuple[str, Counter, dict, int]:
+    """
+    Parse a PORTS section into overview, category counts, per-category entries, and totals.
 
-def extract_ports_section(lines: list[str], system_name: str, parsing_state: dict) -> tuple[str, Counter, dict, int]:
+    Implements platform-banner detection at the start of category blocks (CONSOLES,
+    COMPUTERS, HANDHELDS, OTHERS). When a banner is found, it is recorded for audit
+    and inherited as the platform by subsequent port rows that do not specify one.
+
+    Args:
+      lines: The PORTS section lines including blank separators.
+      system_name: The primary Gaming-History system name for this entry.
+      parsing_state: Mutable state dictionary for counters, audits, and anomalies.
+
+    Returns:
+      A 4-tuple:
+        - overview (str): Concatenated overview text prior to the first category.
+        - platform_counter (Counter): Counts of category headings encountered.
+        - platform_entries (dict): Mapping category -> list of parsed port dicts.
+        - total_port_lines (int): Total number of concrete port rows parsed.
+
+    Notes:
+      - Banner logic only triggers at block start (immediately after a heading or
+        a truly blank line) and only if the next non-empty line is plausibly port
+        shaped (quotes, brackets, parentheses, or a colon).
+      - Null-platform rows (even after inheritance) are tracked under anomalies.
     """
-    Parse a PORTS block:
-      - Build overview (pre-category text).
-      - Count category headings (CONSOLES/COMPUTERS/HANDHELDS/OTHERS).
-      - Detect 'platform banner' ONLY when:
-          • it is the first non-empty line after a category heading OR a truly blank line, AND
-          • the very next non-empty line is 'portish' (contains quotes or [] or () or a colon), AND
-          • the candidate itself has no quotes/parentheses/colon and DOES NOT start with '['.
-            (Bracket qualifiers such as 'Sony PS3 [PSN]' are allowed if not leading.)
-        Banners are recorded under anomalies and used to INHERIT platform into following port rows.
-      - All other non-empty lines under a recognised category are parsed as port rows.
-      - Returns (overview, platform_counter, platform_entries, total_port_lines).
-    """
-    # Ensure anomaly trackers & new null-platform trackers exist
     if "platform_banner_total" not in parsing_state:
         parsing_state["platform_banner_total"] = 0
     if "platform_banners_by_system" not in parsing_state:
@@ -105,72 +166,21 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
     parsing_state.setdefault("null_platform_examples", defaultdict(list))
 
     def _norm(s: str) -> str:
-        """
-        Normalise a single line of text for PORTS parsing.
-
-        - Converts non-breaking spaces (U+00A0) to a regular space so visually blank
-          lines become truly blank after stripping.
-        - Strips leading and trailing whitespace only (internal spacing is preserved).
-        - Treats None as an empty string.
-
-        This is used to make blank-line separators in the PORTS section reliable even
-        when the source uses NBSPs.
-
-        Examples
-        --------
-        >>> _norm(None)
-        ''
-        >>> _norm('\\u00A0\\u00A0')  # two NBSPs
-        ''
-        >>> _norm('Foo\\u00A0Bar ')
-        'Foo Bar'
-        """
+        """Normalise a line: convert NBSP to space, strip edges only, preserve internal spacing; None → ''. """
         if s is None:
             return ""
         return s.replace("\u00A0", " ").strip()
-
+       
     def _is_portish(s: str) -> bool:
-        """
-        Heuristic: does a line *look* like a concrete PORT entry?
-
-        After normalisation via _norm(), returns True if the line contains any of:
-        - a double-quoted title:        '"'
-        - region/model square brackets: '[' or ']'
-        - a parenthesised date:         '(' or ')'
-        - a colon separator:            ':'   (e.g. 'Atari 2600: Release cancelled')
-
-        These markers are characteristic of Gaming-History port rows (region/date/
-        title/publisher notes). Banner lines should lack all of them.
-
-        Notes
-        -----
-        - Empty or whitespace-only lines return False.
-        - This is a lightweight shape check; it does not validate syntax.
-
-        Examples
-        --------
-        >>> _is_portish('[EU] (1993) "Mortal Kombat [Model T-81186-50]"')
-        True
-        >>> _is_portish('Atari 2600: Release cancelled')
-        True
-        >>> _is_portish('Sega Mega Drive / Genesis')
-        False
-        >>> _is_portish('')  # or None via _norm in the caller
-        False
-        """
+        """Return True if the line looks like a port row (quotes/brackets/parens/colon)."""
         t = _norm(s)
         if not t:
             return False
         return ('"' in t) or ('[' in t) or (']' in t) or ('(' in t) or (')' in t) or (':' in t)
 
     def _looks_like_banner_text(s: str) -> bool:
-        """
-        Banner shape:
-          - NOT starting with '[' (leading region/tag means it's a port)
-          - No quotes/parens/colon anywhere (ports have those)
-          - Bracket qualifiers allowed ONLY if not leading (e.g. 'Sony PS3 [PSN]')
-          - Must contain letters after stripping trailing/inline brackets for the letter check
-        """
+        """Return True if the line is a platform banner – not starting with '[', no quotes/parens/colon; 
+        bracket qualifiers allowed only if not leading and there is at least one letter."""
         t = _norm(s)
         if not t:
             return False
@@ -183,9 +193,9 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
 
     # --- state ----------------------------------------------------------------
     overview_lines: list[str] = []
-    platform_counter: Counter = Counter()         # counts of KNOWN_PLATFORMS headings seen
-    platform_entries: dict[str, list[dict]] = {}  # {category -> [parsed_entry, ...]}
-    current_category: str | None = None           # category: CONSOLES/COMPUTERS/...
+    platform_counter: Counter = Counter()
+    platform_entries: dict[str, list[dict]] = {}
+    current_category: str | None = None
     found_first_category = False
     total_port_lines = 0
 
@@ -199,7 +209,8 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
     while i < n:
         raw = lines[i]
         line = _norm(raw)
-
+        
+        # Only treat a line as a banner at block start *and* if the next non-empty line looks port-like.
         # Category heading like "* CONSOLES:"
         m = CATEGORY_HEADING_PATTERN.match(line)
         if m:
@@ -252,24 +263,21 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
                 break
 
             if next_nonempty and _is_portish(next_nonempty):
-                # Confirmed banner: record and set context; do not count as a port row
+                # Audit banner, set platform context; not a port row.
                 parsing_state["platform_banner_total"] += 1
                 parsing_state["platform_banners_by_system"][system_name][line] += 1
                 platform_ctx = line
                 at_block_start = False
                 i += 1
                 continue
-            # else: treat this line as a sparse/ambiguous port row (fall through)
 
         # Otherwise, treat as a real port row
         if current_category:
             parsed_entry = parse_port_entry(line, system_name=system_name, parsing_state=parsing_state)
 
-            # INHERIT: if no inline platform, use current banner context
-            inherited = False
+            # No inline platform → inherit current banner.
             if not parsed_entry.get("platform") and platform_ctx:
                 parsed_entry["platform"] = platform_ctx
-                inherited = True
                 # reflect in platforms_found (avoid double counting inline platform cases)
                 platforms = parsing_state.setdefault(
                     "platforms_found", defaultdict(lambda: {"count": 0, "systems": []})
@@ -277,7 +285,7 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
                 platforms[platform_ctx]["count"] += 1
                 platforms[platform_ctx]["systems"].append(system_name)
 
-            # If still no platform, record a null-platform anomaly
+            # Still no platform after inheritance → record anomaly (manual review).
             if not parsed_entry.get("platform"):
                 parsing_state["null_platform_ports_total"] += 1
                 parsing_state["null_platform_ports_by_system"][system_name] += 1
@@ -304,12 +312,36 @@ def extract_ports_section(lines: list[str], system_name: str, parsing_state: dic
 
     return overview, platform_counter, platform_entries, total_port_lines
 
-
 def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = None) -> dict:
     """
-    Parse a single PORTS line into a structured record.
-    Behaviour matches legacy logic; adds a platform *fallback* that reuses the same
-    strip steps in the same order when the primary working_line becomes empty.
+    Parse a single port line into structured fields.
+
+    Extracts regions, platform, model identifiers, title, date, publisher, comment,
+    and additional tags. Handles comments using the first colon outside quotes.
+    Disk-size inch marks (for example 3.5", 5.25", 3.25", 8") do not toggle the
+    in-quotes state, preventing misclassification of comments and publishers.
+
+    Args:
+      line: A single normalised PORTS line.
+      system_name: The GH system this line belongs to (for audits).
+      parsing_state: Mutable state dictionary for counters, audits, and anomalies.
+
+    Returns:
+      A dict with:
+        - regions (list[str])
+        - platform (str | None)
+        - model (list[str])
+        - title (str | None)
+        - date (str | None)  # ISO-like normalised by parse_date_string
+        - publisher (str | None)
+        - comment (str | None)
+        - additional_tags (list[str])
+        - residue (list[str])  # unparsed fragments such as unrecognised dates
+
+    Notes:
+      - The colon splitter ignores colons inside real quoted titles but also ignores
+        floppy disk inch marks when accounting for quotes.
+      - Publisher indicators (“by”, “released by”) are counted for summary metrics.
     """
     port = {
         "regions": [],
@@ -328,25 +360,46 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
 
 
     def _mark_residue():
+        """
+        Flag that this system produced leftover, unparsed fragments.
+
+        Side effects:
+            Adds the current system_name (from the closure) to
+            parsing_state["systems_with_residue"], which is later summarised
+            under residue_flags.systems_with_residue.
+        """
         parsing_state.setdefault("systems_with_residue", set()).add(system_name)
 
-    # --- helpers (local; order-matched) ---------------------------------------
-    def _split_comment_outside_quotes(s: str) -> tuple[str, str | None]:
-        """Split on the first ':' not inside double quotes. Return (before, comment_or_None)."""
+    def _split_comment_outside_quotes(s: str) -> tuple[str, str | None]:       
+        """Split on first ':' outside quotes; disk-size inch marks (3", 3.25", 3.5", 5.25", 8") do not toggle."""
         idx = -1
         in_quotes = False
         for i, ch in enumerate(s):
             if ch == '"':
+                # Look behind a few characters for disk size patterns
+                window = s[max(0, i-4):i+1]  # captures '3.5"' or '5.25"'
+                m = re.search(r'(3\.5|5\.25)"$', window)
+                if m:
+                    # record audit trail using variables from the outer scope (closure)
+                    if parsing_state is not None and system_name:
+                        size = m.group(1)  # '3.5' or '5.25'
+                        parsing_state.setdefault("disk_size_quotes", defaultdict(list))
+                        parsing_state["disk_size_quotes"][size].append(system_name)
+                    continue  # do not toggle in_quotes for disk-size markers
+
+                # normal quote toggling
                 in_quotes = not in_quotes
+
             elif ch == ':' and not in_quotes:
                 idx = i
                 break
+
         if idx != -1:
-            return s[:idx].rstrip(), s[idx + 1 :].strip()
+            return s[:idx].rstrip(), s[idx + 1:].strip()
         return s, None
 
     def _strip_square_brackets_exact_once(s: str, bracket_payloads: list[str]) -> str:
-        """Remove each literal '[payload]' once (mirrors your existing replacements)."""
+        """Remove each literal '[payload]' once."""
         out = s
         for payload in bracket_payloads:
             out = out.replace(f"[{payload}]", "")
@@ -377,23 +430,17 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
         return pre, date_raw, post
 
     def _fallback_platform_from_original(src: str) -> str | None:
-        """
-        Derive platform from the original line using the SAME step order:
-          1) split comment at colon (outside quotes),
-          2) strip all [ ... ],
-          3) strip all " ... ",
-          4) strip all ( ... ),
-          5) trim.
-        """
+        """Derive a platform candidate from the original line by removing the comment 
+        (outside quotes), all [..], quoted titles and (...) date, then trimming; return None if empty."""
         base, _comment = _split_comment_outside_quotes(src)
         base = _strip_all_square_brackets(base)
         base = re.sub(r'"[^"]*"', "", base)
         base = re.sub(r"\([^)]*\)", "", base)
         cand = base.strip()
         return cand or None
-    # --------------------------------------------------------------------------
 
-    # Count odd quotes / brackets (unchanged)
+
+    # Anomaly counters: track likely quoting mistakes; exclude inch marks (3.5", 5.25").
     disk_quote_matches = re.findall(r'\b(?:3\.5|5\.25)"(?!\w)', working_line)
     quote_count = working_line.count('"') - len(disk_quote_matches)
     bracket_count = (working_line.count('(') + working_line.count(')') +
@@ -404,13 +451,13 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     if bracket_count % 2 == 1:
         parsing_state.setdefault("odd_brackets", defaultdict(list))[system_name].append(working_line)
 
-    # 1) comment (outside quotes) – identical logic
+    # 1) comment (outside quotes)
     working_line, comment = _split_comment_outside_quotes(working_line)
     if comment:
         port["comment"] = comment
         parsing_state["ports_with_comments"] += 1
 
-    # 2) square brackets – identical behaviour including Model handling
+    # 2) square brackets – including Model handling
     square_brackets = re.findall(r"\[(.*?)\]", working_line)
     for tag in square_brackets:
         tag_clean = tag.strip()
@@ -444,26 +491,27 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
         else:
             port["additional_tags"].append(tag_clean)
 
-    # remove only the exact bracket payloads we just processed (as before)
+    # remove only the exact bracket payloads we just processed
     working_line = _strip_square_brackets_exact_once(working_line, square_brackets)
 
-    # 3) title – identical behaviour (first quoted)
+    # 3) title – (first quoted)
     working_line, title = _strip_first_quoted_title(working_line)
     if title:
         port["title"] = title
 
-    # 4) date (and publisher from tail) – identical behaviour
+    # 4) date (and publisher from tail)
     working_line, date_raw, post_date_text = _strip_first_parentheses_and_after(working_line)
     if date_raw:
         normalised_date = parse_date_string(date_raw, context=system_name)
         if normalised_date:
             port["date"] = normalised_date
         else:
+            # Unrecognised date → keep original in residue and flag for summary.
             port["residue"].append(date_raw)
             parsing_state.setdefault("unparsable_dates", defaultdict(list))[system_name].append(date_raw)
             _mark_residue()
 
-        # indicator counting only (unchanged)
+        # indicator counting only
         zone = (post_date_text or "").strip()
         if zone:
             m = re.match(r'^(released\s+by|by)\b', zone, flags=re.IGNORECASE)
@@ -486,7 +534,7 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
             publisher_data["count"] += 1
             publisher_data["systems"].append(system_name)
     else:
-        # no (date) → look for 'by ...' in the remaining text; count indicators (unchanged)
+        # no (date) → look for 'by ...' in the remaining text; count indicators
         if re.search(r"\breleased\s+by\b", working_line, flags=re.IGNORECASE):
             parsing_state["publisher_indicators_found"]["released_by"] += 1
         elif re.search(r"\bby\b", working_line, flags=re.IGNORECASE):
@@ -512,14 +560,14 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     if not platform_candidate:
         platform_candidate = _fallback_platform_from_original(original_line)
 
-    # 5c) assign & count (unchanged)
+    # 5c) assign & count
     if platform_candidate:
         port["platform"] = platform_candidate
         platforms = parsing_state.setdefault("platforms_found", defaultdict(lambda: {"count": 0, "systems": []}))
         platforms[platform_candidate]["count"] += 1
         platforms[platform_candidate]["systems"].append(system_name)
 
-    # Track for additional summary (unchanged)
+    # Track for additional summary
     if port["title"]:
         parsing_state["titles_found"].add(port["title"])
     for region in port["regions"]:
@@ -534,29 +582,29 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
 
     return port
 
-
-def parse_history_entries(file_path: Path, encoding: str) -> dict:
+def parse_history_entries(file_path: Path, encoding: str) -> bool:
     """
-    Parse history.xml <entry> blocks into `output/gh_systems.json` and emit a rich
-    summary to `data/history_parsing_summary.json`.
+    Stream-parse history.xml <entry> elements and emit structured outputs.
 
-    Behaviour:
-    - Splits <text> into sections (caller’s segment_text_sections should preserve blank
-      lines inside PORTS so banner detection can work).
-    - Distinguishes <systems> (arcade-relevant) vs <software> (skipped).
-    - Extracts GH ID from the CONTRIBUTE section when present.
-    - Parses PORTS with extract_ports_section():
-        * Builds an overview paragraph (pre-category).
-        * Collects per-category port rows (with banner inheritance applied inside
-          extract_ports_section).
-        * Tracks platform banners (anomaly/audit) and null-platform ports (anomaly).
-    - Gathers various counters (publishers, platforms, titles, region codes, models, etc.).
-    - Writes:
-        * output/gh_systems.json    — per-system parsed record
-        * data/history_parsing_summary.json — totals + “found” + anomalies
+    Distinguishes arcade-relevant <systems> from <software>. Segments <text> into
+    sections, extracts GH ID from CONTRIBUTE, and parses PORTS (including banner
+    inheritance). Writes per-system JSON (gh_system_ports.json) and a rich summary
+    (history_parsing_summary.json) covering totals, distributions, audits, and anomalies.
+
+    Args:
+      file_path: Path to history.xml.
+      encoding: Text encoding to use when reading.
 
     Returns:
-        True on success; False on XML parse error.
+      True on success, False on XML parse error.
+
+    Raises:
+      None directly; errors are logged and a boolean is returned.
+
+    Notes:
+      - Uses ElementTree.iterparse to keep memory bounded.
+      - Includes a set of invariants at the end which log warnings if counts drift
+        (for example platform totals vs port line totals).
     """
     start = time.perf_counter()
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
@@ -614,6 +662,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "null_platform_ports_total": 0,
         "null_platform_ports_by_system": Counter(),
         "null_platform_examples": defaultdict(list),
+        
+        # Track disk-size quotes (3.5" / 5.25")
+        "disk_size_quotes": defaultdict(list),  # { "3.5": [systems], "5.25": [systems], ... }
     }
 
     # ----------------------------
@@ -733,7 +784,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "gh_system_ports.json"  # renamed
 
-    # Deterministic, case-insensitive key order
+    # Stable diffs: sort system keys case-insensitively before writing JSON.
     systems_sorted = {k: gh_systems[k] for k in sorted(gh_systems.keys(), key=str.lower)}
 
     try:
@@ -757,7 +808,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "systems": systems_unique,
         }
 
-    # --- section_headings_found: unique + distribution (A–Z) ---
+    # For inspection and diff-friendliness: lists are deduped and A–Z sorted; maps A–Z sorted.
     _section_heads = dict(parsing_state["section_headings_found"])
     section_headings_block = {
         "unique": len(_section_heads),
@@ -904,7 +955,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "by_system": dict(sorted(_pms_map.items(), key=lambda kv: kv[0].lower())),
     }
 
-
     # --- residue_flags.unparsable_dates: count + systems_affected + by_system (exhaustive) ---
     _ud_map = parsing_state["unparsable_dates"]  # {system: [bad_date_str, ...]}
     unparsable_dates_block = {
@@ -923,11 +973,21 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "items": _swr_items,
     }
 
-
+    _dsq = parsing_state["disk_size_quotes"]
+    disk_size_quotes_block = {
+        "unique": len(_dsq),
+        "distribution": {
+            size: {
+                "count": len(set(systems)),
+                "systems": sorted(set(systems)),
+            }
+            for size, systems in sorted(_dsq.items(), key=lambda kv: kv[0])
+        },
+    }
 
     summary = {
         "history": {
-        "history_parser_schema": HISTORY_PARSER_SCHEMA,  # already defined = "1.0"
+        "history_parser_schema": HISTORY_PARSER_SCHEMA,
         "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
         "version": history_version,
         "date": history_date,
@@ -956,6 +1016,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "models_found": models_block,
             "comments_found": comments_block,
             "additional_tags_found": additional_tags_block,
+            "disk_size_quotes": disk_size_quotes_block,
             "port_overview_texts": port_overview_block,
         },
         "anomalies": {
@@ -963,7 +1024,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             "odd_number_of_quotes": odd_number_of_quotes_block,
             "odd_number_of_brackets": odd_number_of_brackets_block,
             "ports_missing_subheadings": ports_missing_subheadings_block,
-            # Banner lines (audit trail)
             "platform_banners": {
                 "count": parsing_state["platform_banner_total"],
                 "systems_affected": len(parsing_state["platform_banners_by_system"]),
@@ -975,7 +1035,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
                     for sys, counter in sorted(parsing_state["platform_banners_by_system"].items())
                 }
             },
-            # Ports that still had null platform after inheritance (ideally 0)
+            # Ports that still have null platform after inheritance (ideally 0)
             "null_platform_ports": {
                 "count": parsing_state["null_platform_ports_total"],
                 "systems_affected": len(parsing_state["null_platform_ports_by_system"]),
@@ -1003,8 +1063,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
 
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
-
-    # --- INVARIANTS & CONSISTENCY CHECKS (warnings only) -------------------------
+    # --- Invariants (warnings only): detect drift between row-level counts and summary totals ---
     issues = 0
     def _warn_ok(cond: bool, msg: str):
         nonlocal issues
@@ -1012,19 +1071,19 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
             issues += 1
             log.warning(msg)
 
-    # 1) Entry accounting
+    # 1) Sanity: systems + software must equal the total number of <entry> elements parsed.
     _warn_ok(
         systems_count + software_count == total_entries,
         f"[history_parser] systems+software != total_entries ({systems_count}+{software_count}!={total_entries})"
     )
 
-    # 2) Output cardinality
+    # 2) Output cardinality: ensure we wrote exactly one gh_systems record per <systems> entry.
     _warn_ok(
         len(gh_systems) == systems_count,
         f"[history_parser] gh_systems record count {len(gh_systems)} != systems_count {systems_count}"
     )
 
-    # 3) Platform usage counts should cover all parsed port lines (inline + inherited + null)
+    # 3) Sanity: platform hits plus null-platform rows must equal the number of parsed port lines.
     platform_occurrences = sum(d["count"] for d in parsing_state["platforms_found"].values())
     null_pl = parsing_state["null_platform_ports_total"]
     _warn_ok(
@@ -1034,13 +1093,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         "(see anomalies.platform_banners / null_platform_ports)"
     )
 
-    # 4) Null-platform: per-system sum matches total
+    # 4) Sanity: per-system null-platform sum must match the global null-platform total.
     _warn_ok(
         sum(parsing_state["null_platform_ports_by_system"].values()) == null_pl,
         "[history_parser] sum(null_platform_ports_by_system) != null_platform_ports_total"
     )
 
-    # 5) Banner totals: per-system sum matches global
+    # 5) Sanity: per-system banner counts must sum to the global banner total.
     banner_total_calc = sum(sum(c.values()) for c in parsing_state["platform_banners_by_system"].values())
     _warn_ok(
         banner_total_calc == parsing_state["platform_banner_total"],
@@ -1048,7 +1107,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         f"({parsing_state['platform_banner_total']} != {banner_total_calc})"
     )
 
-    # 6) Sanity limits
+    # 6) Sanity limits: counts should not exceed their logical bounds.
     _warn_ok(
         systems_with_ports <= systems_count,
         f"[history_parser] systems_with_ports {systems_with_ports} > systems_count {systems_count}"
@@ -1058,21 +1117,19 @@ def parse_history_entries(file_path: Path, encoding: str) -> dict:
         f"[history_parser] port_overview_count {port_overview_count} > systems_with_ports {systems_with_ports}"
     )
 
-    # 7) PORTS category headings are within the expected set (soft check)
+    # 7) Soft check: any unexpected PORTS categories should be reported (information only).
     unknown_cats = [k for k in parsing_state["platform_categories_found"].keys()
                     if k.upper() not in KNOWN_PLATFORMS]
     if unknown_cats:
         log.info("[history_parser] unexpected PORTS categories encountered: %s", ", ".join(sorted(set(unknown_cats))))
 
-    # 8) Residue values are correct
+    # 8) Residue values are coherent: systems_with_residue should at least cover unparsable_dates keys.
     _warn_ok(
         len(parsing_state.get("systems_with_residue", set())) >= len(parsing_state.get("unparsable_dates", {})),
         "[history_parser] systems_with_residue fewer than unparsable_dates keys"
     )
 
-
     if issues == 0:
         log.info("[history_parser] invariants passed")
-
 
     return True

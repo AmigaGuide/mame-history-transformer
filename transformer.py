@@ -1,32 +1,49 @@
 """
 Filename: transformer.py
-
+Version: 1.0.0
+Last modified: 2025-09-11
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
-Part of the TM470 Project:
+Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
 
 Description:
-Transforms parsed artefacts into a Wiki-ready dataset.
+Transforms parsed artefacts into a Wiki-ready dataset in a single step.
 
-Phase 1 (this file): Parent/clone selection based on INI classifications + Title parsing.
-- Keep parents where INI: game_status == "game" AND category includes "Arcade".
-- Include ALL clones of those parents (even if clone classifications are unknown).
-- Parse titles per spec: titles/subtitles/versions/global_version (numbered fields).
-- Do NOT use 'type' to filter (kept for description only).
-- Do NOT filter isbios/isdevice/ismechanical; just report any that appear post-filter.
+Scope:
+- Select parent machines where INI says game_status == "game" AND category includes "Arcade".
+- Include a parent in the final export only if the parent OR any of its clones has ≥1 valid
+  Gaming-History port row (platform present). Clone data is used for ports and titles display,
+  but the export is parent-centric.
+- Parse titles into numbered fields (titleN / subtitleN / versionN) plus a global_version string.
+  Title parsing tolerates nested brackets and reports anomalies for QA.
+- Build wiki display blocks for ROM/media, chips/audio, displays and controls.
+- Attach cleaned “ports_display” per category (parent+clone rows combined with date sorting).
+- Generate a deterministic pages/redirects map for the ExoticA namespace.
 
 Inputs:
 - output/mame_machines.json
 - output/gh_ini_classifications.json
 - output/mame_parent_index.json
+- data/history_parsing_summary.json            (for version header)
+- data/mame_parsing_summary.json               (for version header)
+- data/ini_parsing_summary.json                (for INI version header)
+- data/title_overrides.json (optional)
 
 Outputs:
-- output/exotica_lit_wiki.json        (Wiki-ready, no Ports yet; includes parsed description object)
-- data/transform_summary.json         (counts, QA diagnostics, uncapped title anomaly examples)
+- output/exotica_lit_wiki.json                 (Wiki-ready projection)
+- output/exotica_lit_raw_data.json             (Rich, review-oriented projection)
+- output/exotica_wiki_pages_and_redirects.json (Deterministic list + redirects map)
+- data/transform_summary.json                  (counts, QA diagnostics, and notes)
 
 Returns:
 - True on success, False otherwise.
+
+Notes:
+- Deterministic ordering is preserved throughout for stable diffs.
+- Ports are attached (parent and clone provenance retained for audit).
+- See transform_summary.json → "notes" for the exact selection and parsing rules.
+This file is part of a student project and is not intended for commercial use.
 """
 
 from pathlib import Path
@@ -43,7 +60,7 @@ from logger import setup_logger, debug_log
 log = setup_logger(log_level=LOG_LEVEL)
 
 # --- Schemas (bump only when shapes change) ---
-TRANSFORMER_SCHEMA = "0.5"   # used in data/transform_summary.json
+TRANSFORMER_SCHEMA = "0.7"   # used in data/transform_summary.json
 WIKI_SCHEMA        = "1.0"   # used in exotica_lit_wiki.json header
 
 DATA_DIR   = Path("data")
@@ -66,7 +83,7 @@ _ALNUM = re.compile(r"[A-Za-z0-9]")
 _INFIX_RE = re.compile(r"[A-Za-z0-9]\([^()\[\]]+\)[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
 
-# Display precedence for the “Plus:” line (higher = earlier).
+# Display precedence for the media "Plus:" line (higher = earlier).
 _MEDIA_ORDER = {
     "GD-ROM": 100,
     "DVD-ROM": 90,
@@ -104,6 +121,61 @@ _CONTROL_TYPE_LABELS = {
 
 _TERMINAL_PUNCT = ('.', '!', '?', '…')
 
+def _gh_ids_from_ports_obj(ports_obj: dict) -> list[int]:
+    """
+    Flatten and de-duplicate GH ids found in a ports object.
+    Returns a stable, ascending list of integers.
+    """
+    ids: set[int] = set()
+    if not isinstance(ports_obj, dict):
+        return []
+    p = ports_obj.get("parent_source") or {}
+    gid = p.get("gh_id")
+    if isinstance(gid, int):
+        ids.add(gid)
+    for cs in (ports_obj.get("clone_sources") or []):
+        gid = (cs or {}).get("gh_id")
+        if isinstance(gid, int):
+            ids.add(gid)
+    return sorted(ids)
+
+def _collect_gh_ids_from_ports(ports_obj: dict) -> list:
+    """
+    Return a stable, de-duplicated list of Gaming-History IDs present in a ports object.
+
+    This scans both the parent_source and all clone_sources. Null/missing IDs are ignored.
+    The result is sorted by string representation for deterministic output across runs,
+    while preserving original types (e.g., ints remain ints).
+
+    Args:
+        ports_obj (dict): The ports structure built by _build_ports_for_parent().
+
+    Returns:
+        list: Sorted unique GH IDs (e.g., [123, 456]) found anywhere in ports_obj.
+    """
+    if not isinstance(ports_obj, dict):
+        return []
+
+    ids = set()
+
+    # parent
+    p = ports_obj.get("parent_source")
+    if isinstance(p, dict):
+        gid = p.get("gh_id")
+        if gid is not None:
+            ids.add(gid)
+
+    # clones
+    for c in (ports_obj.get("clone_sources") or []):
+        if not isinstance(c, dict):
+            continue
+        gid = c.get("gh_id")
+        if gid is not None:
+            ids.add(gid)
+
+    # Sort deterministically but keep original types
+    return sorted(ids, key=lambda x: str(x))
+
 def _render_chips_display(
     chips_raw: dict,
     requires_samples: bool = False,
@@ -139,6 +211,15 @@ def _render_chips_display(
                 yield {"name": name, "clock_hz": clk}
 
     def group_and_render(rows: list[dict]) -> list[str]:
+        """
+        Collapse identical chips by (name, rounded clock) and render human-readable lines.
+
+        Expects rows like {'name': str, 'clock_hz': int|float|None}. Buckets by
+        (name, round(clock_hz)), counts multiplicity, formats the clock using
+        _hz_to_human()/_format_hz_3dp(), and returns labels such as
+        "Yamaha YM2151 @ 3.580 MHz" or "(2x) OKI MSM6295". Ordering is
+        case-insensitive by name, then by descending clock.
+        """
         buckets: dict[tuple[str, int | None], int] = {}
         clocks: dict[tuple[str, int | None], float | None] = {}
         for r in rows:
@@ -155,12 +236,12 @@ def _render_chips_display(
         for (name, _bucket), count in ordered:
             clk_val = clocks[(name, _bucket)]
             if clk_val is not None:
-                human = _hz_to_human(clk_val)   # your helper
+                human = _hz_to_human(clk_val)
                 if human:
                     val, unit = human
                     freq = f"{val:.3f} {unit}"
                 else:
-                    freq = _format_hz_3dp(clk_val) or ""  # your helper
+                    freq = _format_hz_3dp(clk_val) or ""
             else:
                 freq = ""
             base = name + (f" @ {freq}" if freq else "")
@@ -207,7 +288,6 @@ def _render_chips_display(
 
     return out
 
-
 def _render_mame_titles_display(rows: list[dict]) -> list[str]:
     """
     Render MAME parent+clone titles as single lines for the wiki:
@@ -252,8 +332,6 @@ def _render_mame_titles_display(rows: list[dict]) -> list[str]:
         out.append(" ".join(parts))
 
     return out
-
-
 
 def _canonical_port_key(row: dict) -> tuple:
     """
@@ -338,31 +416,34 @@ def _date_sort_key(date_str: str, original_index: int) -> tuple[int, int, int, i
         di = 0
     return (yi, mi, di, original_index)
 
-
 def _format_models_bracketed(models: list[str] | None) -> str:
     """Return '[A, B]' or '' (no leading space)."""
     models = [m.strip() for m in (models or []) if isinstance(m, str) and m.strip()]
     return f"[{', '.join(models)}]" if models else ""
 
-
 def _title_case_words(s: str) -> str:
+    """Return the string in title case (first letter upper, rest lower) per word."""
     return " ".join(w[:1].upper() + w[1:].lower() if w else w for w in (s or "").split())
 
 def _format_regions(regs: list[str] | None) -> str:
+    """Format region codes as '[XX]' blocks concatenated without spaces, defaulting to '[??]'."""
     regs = regs or ["??"]
     regs = [r.strip() for r in regs if isinstance(r, str) and r.strip()]
     regs = regs or ["??"]
     return "".join(f"[{r}]" for r in regs)
 
 def _format_additional_tags(tags: list[str] | None) -> str:
+    """Format additional_tags as ' [A, B]' suffix or '' if none."""
     tags = [t.strip() for t in (tags or []) if isinstance(t, str) and t.strip()]
     return f" [{', '.join(tags)}]" if tags else ""
 
 def _format_models(models: list[str] | None) -> str:
+    """Format model list as ' [A, B]' suffix or '' if none."""    
     models = [m.strip() for m in (models or []) if isinstance(m, str) and m.strip()]
     return f" [{', '.join(models)}]" if models else ""
 
 def _append_provenance_comment(existing: str | None, is_parent_row: bool, machine: str) -> str:
+    """Append a provenance sentence noting whether the GH row came from the parent or a clone machine."""    
     role = "parent" if is_parent_row else "clone"
     prov = f"This GH port entry is based on the MAME {role} {machine}."
     c = (existing or "").strip()
@@ -389,7 +470,9 @@ def _render_ports_display(parent_machine: str, ports_obj: dict) -> dict[str, lis
 
     # 1) Detect mixing per category
     cat_roles: dict[str, set[str]] = {}
+    
     def _scan_source(source: dict, role: str):
+        """Mark which role (parent/clone) contributes rows per category into cat_roles."""        
         cats = (source or {}).get("categories") or {}
         for cat_key, rows in cats.items():
             if rows:
@@ -405,6 +488,7 @@ def _render_ports_display(parent_machine: str, ports_obj: dict) -> dict[str, lis
     enc_ix = 0
 
     def _append_source(source: dict, role: str):
+        """Append rows from a source into the combined stream, preserving GH encounter order."""        
         nonlocal enc_ix
         cats = (source or {}).get("categories") or {}
         # Dicts keep GH order; rows are in GH order inside each category
@@ -484,19 +568,18 @@ def _render_ports_display(parent_machine: str, ports_obj: dict) -> dict[str, lis
 
     return out
 
-
-
 def _read_gh_ports(path: Path) -> dict:
+    """Read a GH ports JSON file and return a dict (or {} on failure)."""    
     data = _read_json(path)
     return data if isinstance(data, dict) else {}
 
 def _is_valid_port_row(row: dict) -> bool:
-    # Gatekeeper: platform must be a non-empty string
+    """Return True if a GH port row has a non-empty 'platform' string."""
     plat = (row or {}).get("platform")
     return isinstance(plat, str) and plat.strip() != ""
 
 def _norm_regions(regs) -> list[str]:
-    # Empty -> ["??"]; otherwise keep as-is (GH already uses 2-char codes)
+    """Normalise regions to a non-empty list of strings, defaulting to ['??']."""
     if not regs:
         return ["??"]
     out = []
@@ -506,22 +589,38 @@ def _norm_regions(regs) -> list[str]:
     return out or ["??"]
 
 def _norm_tags(tags) -> list[str]:
-    # additional_tags: keep non-empty strings only
+    """Return a cleaned list of non-empty 'additional_tags' strings."""
     out = []
     for t in (tags or []):
         if isinstance(t, str) and t.strip():
             out.append(t.strip())
     return out
 
-def _collect_valid_ports_by_category(gh_entry: dict, source_machine: str) -> dict[str, list[dict]]:
+def _collect_valid_ports_by_category(
+    gh_entry: dict, 
+    source_machine: str, 
+    source_gh_id: int | None = None
+) -> dict[str, list[dict]]:
     """
-    Returns { category: [ normalised rows... ] }.
-    Each row carries 'machine' provenance.
+    Normalise valid GH port rows grouped by category for a single GH source.
+
+    Args:
+        gh_entry: The GH entry dict for one machine (e.g., gh_ports['puckman']).
+        source_machine: The MAME shortname this GH entry belongs to (provenance).
+        source_gh_id: The GH numeric id (if present) for this source; copied to every row.
+
+    Returns:
+        Dict mapping category -> list of normalised row dicts. Every row includes:
+        - 'machine' : provenance MAME shortname
+        - 'gh_id'   : the GH id we got from gh_entry (may be None)
+        - 'platform', 'regions', 'model', 'title', 'date', 'publisher',
+          'comment', 'additional_tags'
     """
     cats = {}
     ports = (gh_entry or {}).get("ports") or {}
     if not isinstance(ports, dict):
         return cats
+
     for cat, rows in ports.items():
         if not isinstance(rows, list):
             continue
@@ -530,7 +629,8 @@ def _collect_valid_ports_by_category(gh_entry: dict, source_machine: str) -> dic
             if not isinstance(r, dict) or not _is_valid_port_row(r):
                 continue
             out_rows.append({
-                "machine": source_machine,                     # provenance
+                "machine": source_machine,
+                "gh_id": source_gh_id,
                 "platform": r.get("platform"),
                 "regions": _norm_regions(r.get("regions")),
                 "model": r.get("model") or [],
@@ -548,11 +648,10 @@ def _gh_keys_with_any_valid_ports(gh_ports: dict) -> set[str]:
     """All GH shortnames that have at least one valid row in any category."""
     out = set()
     for key, entry in gh_ports.items():
-        cats = _collect_valid_ports_by_category(entry, key)
+        cats = _collect_valid_ports_by_category(entry, key, (entry or {}).get("gh_id"))
         if any(cats.values()):
             out.add(key)
     return out
-
 
 def _build_ports_for_parent(parent: str,
                             parents_map: dict[str, list],
@@ -571,12 +670,12 @@ def _build_ports_for_parent(parent: str,
     # Parent source
     p_entry = gh_ports.get(parent)
     if isinstance(p_entry, dict):
-        p_cats = _collect_valid_ports_by_category(p_entry, parent)
+        p_cats = _collect_valid_ports_by_category(p_entry, parent, p_entry.get("gh_id"))
         if any(p_cats.values()):
             ports_obj["parent_source"] = {
                 "machine": parent,
                 "gh_id": p_entry.get("gh_id"),
-                "categories": p_cats
+                "categories": p_cats,
             }
             parent_has_ports = True
 
@@ -585,23 +684,23 @@ def _build_ports_for_parent(parent: str,
         c_entry = gh_ports.get(clone)
         if not isinstance(c_entry, dict):
             continue
-        c_cats = _collect_valid_ports_by_category(c_entry, clone)
+        c_cats = _collect_valid_ports_by_category(c_entry, clone, c_entry.get("gh_id"))
         if any(c_cats.values()):
             ports_obj["clone_sources"].append({
                 "machine": clone,
                 "gh_id": c_entry.get("gh_id"),
-                "categories": c_cats
+                "categories": c_cats,
             })
             clones_with_ports.add(clone)
+
 
     if not parent_has_ports and not ports_obj["clone_sources"]:
         return None, clones_with_ports, False
 
     return ports_obj, clones_with_ports, parent_has_ports
 
-
-
 def _control_type_label(raw_type: str | None) -> str:
+    """Map a raw MAME control type to a human-readable label (fallback to title-case)."""    
     t = (raw_type or "").strip().lower()
     return _CONTROL_TYPE_LABELS.get(t, t.title() if t else "Unknown Control")
 
@@ -633,6 +732,7 @@ def _ways_pretty(raw: str | None) -> str:
     return raw.strip()
 
 def _ways_label(ways: str | None, ways2: str | None, ways3: str | None) -> str:
+    """Combine ways/ways2/ways3 into a comma-separated label like '2-way, 8-way'."""    
     parts = [p for p in map(_ways_pretty, (ways, ways2, ways3)) if p]
     return ", ".join(parts)
 
@@ -658,13 +758,13 @@ def _buttons_count_from_rows(rows: list[dict]) -> int:
         total += max(0, n)
     return total
 
-
-
 def _pluralise(singular: str, n: int, plural: str | None = None) -> str:
+    """Return singular or plural form based on n, using a custom plural when provided."""    
     return singular if int(n or 0) == 1 else (plural or f"{singular}s")
 
 
 def _orientation_from_rotate(rot) -> str | None:
+    """Convert MAME rotate degrees to 'Horizontal'/'Vertical', or None if unknown."""    
     try:
         r = int(rot)
     except Exception:
@@ -673,9 +773,10 @@ def _orientation_from_rotate(rot) -> str | None:
         return "Horizontal"
     if r in (90, 270):
         return "Vertical"
-    return None  # unknown/odd but harmless
+    return None
 
 def _type_title(s: str | None) -> str:
+    """Normalise a display type token to title-case with known aliases (Raster/Vector/SVG/LCD)."""    
     s = (s or "").strip().lower()
     if s == "raster": return "Raster"
     if s == "vector": return "Vector"
@@ -684,6 +785,7 @@ def _type_title(s: str | None) -> str:
     return s.title() if s else ""
 
 def _format_hz_3dp(hz) -> str | None:
+    """Format a numeric frequency as 'N.NNN Hz' or return None on invalid/zero input."""    
     try:
         v = float(hz)
     except Exception:
@@ -842,6 +944,43 @@ def _build_displays_section(displays: list[dict] | None, display_count: int | No
 
 
 def _displays_section_to_display(section: dict) -> str:
+    """
+    Render a human-readable block describing the machine's video displays.
+
+    Input shape (as produced by _build_displays_section):
+        {
+          "heading": "Screen" | "Screens",
+          "count": <int>,  # total number of screens
+          "groups": [
+            {
+              "count": <int>,              # how many identical screens in this group
+              "type": "Raster"|"Vector"|"SVG"|"LCD",
+              "orientation": "Horizontal"|"Vertical"|"",
+              "width": <int|None>,         # only for Raster/LCD
+              "height": <int|None>,        # only for Raster/LCD
+              "refresh": "59.640 Hz"|None  # already formatted to 3dp
+            },
+            ...
+          ]
+        }
+
+    Output format (newline-separated):
+        - First line: "<heading>: <count>" where heading is "Screen" or "Screens".
+        - Then, for each group (in the order provided):
+            * A line with the screen type and optional orientation, prefixed with
+              "(Nx) " if the whole group has multiplicity > 1, for example:
+                  "Raster (Horizontal)"
+                  "(2x) LCD (Vertical)"
+            * If width/height are present, a line "W x H pixels".
+            * If a refresh string is present, a line like "59.640 Hz".
+
+    Rules and edge cases:
+        - Orientation is omitted when blank.
+        - Resolution lines appear only for Raster/LCD where width and height are known.
+        - Refresh is omitted if missing.
+        - The function assumes the input dict is already validated and grouped
+          by _build_displays_section.
+    """
     lines: list[str] = []
     heading = section.get("heading") or "Screen"
     count = section.get("count") or 0
@@ -1096,8 +1235,7 @@ def _format_chips_and_audio_block(chips: list[dict] | None,
 
 
 def _order_media_labels(labels: list[str]) -> list[str]:
-    """Sort labels by precedence, then A→Z as a stable tiebreaker."""
-    # De-dupe while preserving first occurrence (defensive)
+    """Return media labels sorted by project precedence, then A→Z for ties."""
     labels = list(dict.fromkeys(labels))
     return sorted(
         labels,
@@ -1171,9 +1309,8 @@ def _normalise_device_to_media(raw: str) -> str | None:
     # Everything else (runtime, install, recovery, disks, cycraft, buses, etc.) -> ignore
     return None
 
-
 def _normalise_device_list_to_media(devs: Iterable[str] | str | None) -> list[str]:
-    """Return de-duplicated friendly labels, preserving original order; ignore unknowns."""
+    """Map raw device tokens to friendly media labels, de-duplicated in input order."""
     if devs is None:
         return []
     seq = devs if isinstance(devs, (list, tuple)) else [devs]
@@ -1190,10 +1327,8 @@ def _normalise_device_list_to_media(devs: Iterable[str] | str | None) -> list[st
             out.append(label)
     return out
 
-
-
 def join_with_ampersand(items: Sequence[str]) -> str:
-    """Join items as: A; A & B; A, B & C (no trimming; upstream cleaned)."""
+    """Join items as 'A'; 'A & B'; or 'A, B & C' without trimming."""
     n = len(items)
     if n == 0:
         return ""
@@ -1204,7 +1339,7 @@ def join_with_ampersand(items: Sequence[str]) -> str:
     return f"{', '.join(items[:-1])} & {items[-1]}"
 
 def _split_outside_parens(s: str) -> list[str]:
-    """Split on '/' only when outside (...) groups. Leave content inside parens untouched."""
+    """Split on '/' only when outside parentheses, preserving inner groups."""
     parts, buf, depth = [], [], 0
     for ch in s or "":
         if ch == "(":
@@ -1226,9 +1361,56 @@ def _split_outside_parens(s: str) -> list[str]:
     # Do not strip—inputs already cleaned upstream
     return parts
 
-def _format_rom_block(rom_count: int, rom_bytes_total: int,
-                      disk_required: str | None, disk_regions) -> str:
-                          
+
+def _format_rom_block(rom_count: int,
+                      rom_bytes_total: int,
+                      disk_required: str | None,
+                      disk_regions) -> str:
+    """
+    Build the three-line ROM/media summary used in the wiki infobox.
+
+    Lines:
+      1) "<N> ROM" or "<N> ROMs" with thousands separators, for example:
+           "6 ROMs"
+      2) "<bytes> bytes" followed by a binary-unit parenthetical where applicable
+         (KiB, MiB, GiB) to 2dp, for example:
+           "7,413,760 bytes (7.07 MiB)"
+         Values under 1024 bytes omit the parenthetical.
+      3) Optional "Plus: <media>" line, only when disk_required == "yes".
+         The media portion is a human-friendly join (A & B & C) of device labels,
+         each optionally prefixed with "(Nx)" when the same medium appears multiple
+         times in the raw device list.
+
+    Media mapping and ordering:
+      - Raw device tokens from disk_regions (strings like "cdrom", "dvdrom1", "gdrom",
+        "laserdisc1", "cf", "sdcard", "hdd", etc.) are normalised via
+        _normalise_device_to_media to labels such as "CD-ROM", "DVD-ROM", "GD-ROM",
+        "LaserDisc", "Hard disk", "CompactFlash card", "Secure Digital card".
+      - Unknown or non-media tokens are ignored.
+      - Multiplicity is counted case-insensitively and rendered as "(Nx) Label"
+        only when N > 1, for example "(2x) CD-ROM".
+      - Unique labels are ordered by project precedence using _order_media_labels,
+        then alphabetically for ties.
+      - Labels are joined with join_with_ampersand for final display.
+
+    Parameters:
+        rom_count        Number of ROM files reported by MAME.
+        rom_bytes_total  Sum of ROM sizes in bytes.
+        disk_required    "yes" or "no" (truthy check is case-insensitive); only "yes"
+                         triggers the Plus line.
+        disk_regions     A string or list of raw device tokens that indicate additional
+                         media (for example ["cdrom", "dvdrom1", "laserdisc2"]).
+
+    Returns:
+        A single string with 2 or 3 lines as described above.
+
+    Notes:
+        - disk_regions may be a single string or a list; both are supported.
+        - If disk_required is "yes" but no valid media can be mapped, the Plus line
+          is omitted.
+        - Thousands separators are applied to byte counts and ROM totals for readability.
+    """
+    
     # Line 1
     line1 = f"{rom_count:,} ROM" + ("" if rom_count == 1 else "s")
 
@@ -1254,11 +1436,9 @@ def _format_rom_block(rom_count: int, rom_bytes_total: int,
 
             # Preserve first-seen identity for later stable precedence sorting
             first_seen_unique = list(dict.fromkeys(all_labels))
-
-            # Apply your precedence sort
             ordered_unique = _order_media_labels(first_seen_unique)
 
-            # Render with “(Nx)” prefix when N>1, per your style “(2x) CD-ROM”
+            # Render with “(Nx)” prefix when N>1
             display_labels = []
             for lab in ordered_unique:
                 n = counts[lab.casefold()]
@@ -1285,6 +1465,7 @@ def _bytes_to_binary_human(n: int) -> tuple[float, str] | None:
     return None
 
 def format_manufacturers_for_wiki(raw: str | None) -> str:
+    """Split on '/' outside parentheses and join parts with '&' per house style."""    
     parts = [p.strip() for p in _split_outside_parens(raw or "") if p.strip()]
     if not parts:
         return ""
@@ -1376,7 +1557,7 @@ def _mame_titles_for_parent(parent_name: str,
         "role": "parent",
         "machine": parent_name,
         "title": _raw_mame_title(pinfo, parent_name),
-        "year": pinfo.get("year"),  # keep as-is, e.g. "198?" or "1980"
+        "year": pinfo.get("year"),
     })
 
     # Clone rows
@@ -1409,12 +1590,12 @@ def _clone_entries_for_parent(parent_name: str,
     """
     clones = (parent_index.get("parents") or {}).get(parent_name, []) or []
     out: list[dict] = []
-    for c in sorted(clones):  # stable order
+    for c in sorted(clones):
         minfo = mame.get(c, {})
         out.append({
             "machine": c,
-            "title": _raw_mame_title(minfo, c),   # raw MAME title, no overrides
-            "year": minfo.get("year"),            # as-is, e.g. "198?" or "1980"
+            "title": _raw_mame_title(minfo, c),
+            "year": minfo.get("year"),
         })
     return out
 
@@ -1432,6 +1613,7 @@ def _core(s: str | None) -> str | None:
 # ----------------------------
 
 def _read_json(path: Path):
+    """Read JSON from path and return the parsed object; on error, log and return None."""    
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -1441,6 +1623,7 @@ def _read_json(path: Path):
 
 
 def _write_json(path: Path, obj: Any) -> bool:
+    """Write obj as pretty-printed JSON to path (creating parents); return True on success."""    
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -1470,11 +1653,14 @@ def _project_for_wiki(rec: dict) -> dict:
     for k in ("roms_display", "chips_display", "displays_display", "controls_display"):
         if rec.get(k): out[k] = rec[k]
 
-    if rec.get("chips_display"): out["chips_display"] = rec["chips_display"]
+    #if rec.get("chips_display"): out["chips_display"] = rec["chips_display"]
 
     # Ports: wiki shows ONLY the single-line view
     if rec.get("ports_display"):
         out["ports_display"] = rec["ports_display"]
+
+    if rec.get("gh_ids"):
+        out["gh_ids"] = rec["gh_ids"]
 
     return out
 
@@ -1514,6 +1700,8 @@ def _project_for_raw(machine: str, rec: dict) -> dict:
     # Classifications & flags (useful for QA)
     for k in ("game_status", "category", "type", "isbios", "isdevice", "ismechanical", "requires_samples"):
         if k in rec: out[k] = rec[k]
+
+    if rec.get("gh_ids"): out["gh_ids"] = rec["gh_ids"]
 
     return out
 
@@ -1635,7 +1823,7 @@ def _dedupe_anomalies_preferring_pre_override(anoms: dict) -> dict:
 
 
 # ----------------------------
-# TITLE PARSING (fixed)
+# TITLE PARSING
 # ----------------------------
 
 def _normalise_inside_group(s: str) -> Tuple[str, bool]:
@@ -1820,8 +2008,8 @@ def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[D
     if _find_infix_brackets_no_spaces(full_desc):
         anomalies["infix_brackets_no_spaces"].append({"example": full_desc})
 
-    # Split into title units outside brackets
     def split_top_level(text: str, delim: str) -> List[str]:
+        """Split text on delim only at top level (ignoring bracketed regions)."""        
         out, buf = [], []
         dR = dS = 0
         i, L, dlen = 0, len(text), len(delim)
@@ -1888,6 +2076,7 @@ def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[D
 # ----------------------------
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
+    """End-to-end transform: load artefacts, build parent-centric records, write wiki/raw JSON."""    
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     t0 = time.perf_counter()
 
@@ -1916,10 +2105,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     parent_index = _read_json(PARENT_INDEX_PATH)
     gh_ports = _read_gh_ports(GH_SYSTEM_PORTS_PATH)
     gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
+
     if not isinstance(mame, dict) or not isinstance(ini_map, dict) or not isinstance(parent_index, dict):
         log.error("Missing or invalid inputs; aborting transform.")
         return False
 
+    parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})
 
     # --- Read stage summaries (sources of truth for versions) ---
     mame_sum = _read_json(DATA_DIR / "mame_parsing_summary.json") or {}
@@ -1941,8 +2132,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     # Per-INI versions: tolerate current and older shapes
     ini_versions_raw: dict[str, str] = {}
-
-    # Your current shape: { "ini": { "files": { "game_status": {...}, "category": {...}, "type": {...} } } }
     ini_root = (ini_sum.get("ini") or {}) if isinstance(ini_sum, dict) else {}
     files_node = ini_root.get("files")
 
@@ -2020,12 +2209,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     # --- Audit: raw device strings we ignored (no known media mapping) ---
     ignored_device_counts: dict[str, int] = {}
-    _IGNORED_TOP_N = 25  # change if you want more/less in the summary
+    _IGNORED_TOP_N = 25
 
     # --- Audio QA tallies (parents only) ---
     audio_total_with_channels = 0
     audio_channel_speaker_mismatch = 0
-    audio_mismatch_examples: list[dict] = []   # keep small sample for summary
+    audio_mismatch_examples: list[dict] = []
     audio_samples_required_count = 0
 
     # --- GH port tallies 
@@ -2036,7 +2225,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     for name in sorted(included_parents):
         minfo = mame.get(name)
         if not minfo:
-            continue  # defensive
+            continue
 
         cls = _classify(name, ini_map)
 
@@ -2073,8 +2262,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         desc_fields, _ = _parse_description(raw_desc)
         wiki_page_name = _wiki_page_name_from_desc(desc_fields)
 
-        #raw_man = minfo.get("manufacturer")
-        #manufacturer_display = format_manufacturers_for_wiki(raw_man)
         raw_man = minfo.get("manufacturer") or ""
         manufacturer_display = join_with_ampersand(_split_outside_parens(raw_man))
 
@@ -2112,7 +2299,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             minfo.get("device_ref"),
         )
 
-
         displays_section = _build_displays_section(
             minfo.get("displays"),
             minfo.get("display_count")
@@ -2125,8 +2311,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             minfo.get("controls"),
         )
         controls_display = _controls_section_to_display(controls_section)
-
-
 
         reported_channels = minfo.get("sound_channels")
         speaker_sum = _sum_device_speakers(minfo.get("device_ref"))
@@ -2160,7 +2344,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             speaker_count=(int(speaker_sum) if speaker_sum not in (None, "") else None),
         )
 
-        # NEW: turn dict-of-lists into one newline-delimited string with pluralised headers
+        # Turn dict-of-lists into one newline-delimited string with pluralised headers
         cpus_lines = list(chips_disp.get("cpus") or [])
         audio_lines = list(chips_disp.get("audio_chips") or [])
 
@@ -2169,9 +2353,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
         chips_display_block = "\n".join([cpu_hdr, *cpus_lines, audio_hdr, *audio_lines])
 
-        parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})  # you already build this earlier
-
-        ports_obj, clones_with_ports_local, parent_has_ports = _build_ports_for_parent(name, parents_map, gh_ports)
+        ports_obj, clones_with_ports_local, parent_has_ports = _build_ports_for_parent(
+            name, parents_map, gh_ports
+        )
 
         # Final inclusion gate: keep this parent only if parent or any clone has ports
         if ports_obj is None:
@@ -2182,19 +2366,20 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if parent_has_ports:
             parents_with_ports_count += 1
 
-        # you've already got: ports_obj = ... (and you include this parent)
         if _has_parent_clone_duplicate_ports(ports_obj):
             systems_with_parent_clone_port_dupes += 1
             systems_with_parent_clone_port_dupes_list.append(name)
 
+        gh_ids = _gh_ids_from_ports_obj(ports_obj)
+
 
         record = {
             "wiki_page_name": wiki_page_name,
-            "description": desc_fields,  # retained for QA/reference
+            "description": desc_fields,
             "year": minfo.get("year") if minfo.get("year") not in ("", None) else None,
             "manufacturer": manufacturer_display if manufacturer_display else None,
             # Preformatted
-            "roms_display": roms_display, # e.g. "10 ROMs\n25,376 bytes (24.78 KiB)\nPlus: laserdisc"
+            "roms_display": roms_display,
             # Raw ROM/media stats
             "rom_count": rom_count,
             "rom_bytes_total": rom_bytes_total,
@@ -2202,17 +2387,12 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "disk_regions": disk_regions,
             
             "chips": chips_section,
-            "chips_display": chips_display_block,   # wiki string with \n separators
-            
-            #"chips_display": {
-            #    "cpus": chips_disp.get("cpus", []),
-            #    "audio_chips": chips_disp.get("audio_chips", []),
-            #},
-                        
-            "displays": displays_section,        # NEW: machine-readable
-            "displays_display": displays_display, # NEW: human block you asked for
-            "controls": controls_section,          # machine-readable
-            "controls_display": controls_display,  # human-readable now
+            "chips_display": chips_display_block,
+                                    
+            "displays": displays_section,
+            "displays_display": displays_display,
+            "controls": controls_section,
+            "controls_display": controls_display,
 
             # Classifications (from INI)
             "game_status": cls["game_status"],
@@ -2229,6 +2409,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "mame_titles": _mame_titles_for_parent(name, mame, parent_index),
             
             "ports": ports_obj,
+            
+            "gh_ids": gh_ids,
         }
 
 
@@ -2237,13 +2419,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if mt_disp:
             record["mame_titles_display"] = mt_disp
 
-
-
         ports_display = _render_ports_display(name, ports_obj)
         if ports_display:
-            record["ports_display"] = ports_display  # this will be kept only in the wiki projection
+            record["ports_display"] = ports_display
 
-        # If you still tally flags, this now counts parents only
         if _truthy_flag(minfo.get("isbios")):       included_flags["isbios"] += 1
         if _truthy_flag(minfo.get("isdevice")):     included_flags["isdevice"] += 1
         if _truthy_flag(minfo.get("ismechanical")): included_flags["ismechanical"] += 1
@@ -2310,10 +2489,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     # Case-insensitive de-duplication on sources; record conflicts if the same source maps to different targets
     redirects_map: dict[str, str] = {}
     redirect_conflicts: list[dict] = []
-    sources_seen: dict[str, str] = {}  # lower(source) -> target
+    sources_seen: dict[str, str] = {}
 
     for machine, rec in out_map.items():
-        target = pages_map[machine]  # prefixed page name
+        target = pages_map[machine]
         desc   = rec.get("description") or {}
         wiki_name = rec.get("wiki_page_name") or ""
         for src in _build_redirect_sources(desc, wiki_name):
@@ -2331,7 +2510,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                     "machines": sorted(set(owners)),
                 })
 
-    # Optional: sort redirects for stability BEFORE embedding
+    # Sort redirects for stability BEFORE embedding
     redirects_map = dict(sorted(redirects_map.items(), key=lambda kv: kv[0].casefold()))
 
     # Assemble and write file (stats near the top)
@@ -2346,9 +2525,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "page_name_collisions": len(page_name_collisions),
             "redirect_conflicts": len(redirect_conflicts),
         },
-        "pages": pages_map,              # machine -> page (sorted by page)
-        "page_names": page_names_list,   # sorted list of pages
-        "redirects": redirects_map,      # source -> target (both prefixed)
+        "pages": pages_map,
+        "page_names": page_names_list,
+        "redirects": redirects_map,
         "conflicts": {
             "page_name_collisions": page_name_collisions,
             "redirect_conflicts": redirect_conflicts,
@@ -2510,7 +2689,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "audio": {
                 "machines_reporting_channels": audio_total_with_channels,
                 "channel_speaker_mismatches": audio_channel_speaker_mismatch,
-                "mismatch_examples": audio_mismatch_examples,   # up to 10
+                "mismatch_examples": audio_mismatch_examples,
                 "machines_requiring_samples": audio_samples_required_count
             },
         },
@@ -2524,7 +2703,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         },        
         "ports": summary_ports,
         "notes": {
-            "ports_attached": False,
+            "ports_attached": True,
              "export_scope": "Parents are exported only if INI says Arcade/Game AND the parent or any clone has ≥1 valid GH port row (platform present).",
             "filter_rules": {
                 "game_status_equals": "game",
@@ -2541,9 +2720,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             },
             "clones_list_title_source": "raw MAME 'description' (no overrides)",
             "ignored_media_devices": {
-                "total_ignored_entries": ignored_total,          # sum of all unmapped raw entries
-                "unique_ignored": len(ignored_device_counts),    # how many distinct raw strings
-                "top_ignored": ignored_top,                      # top N offenders
+                "total_ignored_entries": ignored_total,
+                "unique_ignored": len(ignored_device_counts),
+                "top_ignored": ignored_top,
             },                        
         },
         "errors": [] if ok_out and not missing_in_mame else (

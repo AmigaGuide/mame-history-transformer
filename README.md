@@ -1,81 +1,88 @@
-# TM470 - Lost in Translation Parser
+# TM470 – Lost in Translation Parser
 
 This repository contains code developed for the Open University TM470 project:
 
-**"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."**
+**“Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation.”**
 
 ## Overview
 
-This project parses and reconciles two sources:
+This project parses and reconciles multiple sources:
 
-- **MAME XML** — structured data describing arcade machines, ROMs, devices and clone relationships.
-- **Gaming-History XML** — semi-structured trivia including arcade-to-home conversion details under headings such as `PORTS`.
-- **Gaming-History INI** – Raw list of MAME machine names based on categories such 'Game' or 'No Game' and what type of hardware is being emulated.
+- **MAME XML** - highly structured data describing arcade machines, ROMs, chips, devices, displays, controls, and clone relationships.  
+- **Gaming-History XML** - semi-structured trivia including arcade-to-home conversion details under headings such as `PORTS`.  
+- **Gaming-History INI files** - structured classification lists identifying whether a machine is a game, its category (e.g. Arcade, Computers, Consoles), and its hardware type.
 
-The pipeline produces **reader-ready JSON** for ExoticA’s *Lost in Translation* wiki infoboxes, plus diagnostic summaries for quality assurance.
+The pipeline produces **ExoticA-ready JSON** for the *Lost in Translation* wiki, plus diagnostic summaries and manifests for quality assurance and reproducibility.
 
 ## Data flow (modules)
 
 | Module                | Purpose                                                                 |
 |-----------------------|-------------------------------------------------------------------------|
-| `main.py`             | Entry point; coordinates runs and stage dependencies                    |
-| `mame_parser.py`      | Streams MAME XML; extracts machines, years, manufacturers, ROM stats, disk flags/regions, and parent/clone relations |
+| `config.py`           | Global constants, including log level and schema versions               |
+| `date_utils.py`       | Normalises date strings (e.g. fuzzy “198?” → `198X-XX-XX`)              |
+| `encoding_utils.py`   | Detects file encodings using `chardet`                                  |
 | `history_metadata.py` | Aggregates `.ini` metadata for classifications (game status, category, type) |
 | `history_parser.py`   | Extracts and normalises `PORTS` from Gaming-History XML                 |
-| `encoding_utils.py`   | Detects/caches file encodings using `chardet`                           |
-| `logger.py`           | Configures logging                                                       |
-| `config.py`           | Global constants (including log level)                                  |
-| `transformer.py`      | Final coordinator: applies selection rules, parses titles, formats manufacturers, builds ROM block, normalises media, and emits wiki-ready JSON and summaries |
+| `logger.py`           | Shared logging (file + console) with `[file::function]` prefixes        |
+| `main.py`             | Entry point; orchestrates pipeline, validates encodings/versions, builds per-run manifest |
+| `mame_parser.py`      | Streams MAME XML; extracts machines, years, manufacturers, ROM stats, disk/media flags, displays, controls, and parent/clone relations |
+| `transformer.py`      | Final stage: applies selection rules, parses titles, formats manufacturers, chips, ROM/media/controls/displays, merges GH ports, and emits wiki-ready JSON |
 
 ## Current capabilities
 
-- **Selection rules (parents only):**
-  - Keep parents where `.ini` says `game_status == "game"` and `category` includes `Arcade`.
-  - Include clones only for the titles table in each parent’s record (for reference).
+- **Parent/clone handling**
+  - Parents included if `.ini` → `game_status == "game"` and `category` contains Arcade.  
+  - Clones linked under parents; their ports are unioned into the parent’s record.  
 
-- **Title parsing & redirects:**
-  - Splits titles into numbered `titleN`, `subtitleN`, `versionN` with a single `global_version`.
-  - Builds a canonical wiki page name from `title1[: subtitle1]`.
-  - Emits a sorted pages map and case-insensitive redirects (with conflict detection).
+- **Title parsing & redirects**
+  - Splits titles into numbered blocks + `global_version`.  
+  - Builds wiki page names and sorted redirects.  
+  - Title anomalies logged; optional overrides applied from `data/title_overrides.json`.  
 
-- **Manufacturer display (house style):**
-  - Split on `/` **only when outside parentheses**, trim each part, then join with **`&`**:
-    - `ADK / SNK` → `ADK & SNK`
-    - `Tatsumi (Atari/Namco/Taito license) / Taito` → `Tatsumi (Atari/Namco/Taito license) & Taito`
-  - Single, reusable `join_with_ampersand()` to keep prose consistent.
+- **Manufacturer formatting**
+  - Splits on `/` outside parentheses, rejoins with `&`.  
+  - Example: `ADK / SNK` → `ADK & SNK`.  
 
-- **ROMs block (infobox ready):**
-  - Line 1: plural-aware ROM count, e.g. `6 ROMs`.
-  - Line 2: byte total with binary unit (KiB/MiB/GiB), e.g. `7,413,760 bytes (7.07 MiB)`.
-  - Line 3: shown **only** when `disk_required == "yes"` → `Plus: <media>`.
-  - Multi-media join with `&` and optional precedence ordering.
+- **ROM/media block**
+  - Multi-line: ROM count, total bytes (binary units), plus optional `Plus:` line for disks.  
+  - Media normalisation (e.g. CD-ROM, DVD-ROM, GD-ROM, LaserDisc, CED, HDD, CompactFlash, SD card, NAND flash, USB storage, VHS tape).  
+  - Multiplicities shown as `(Nx) Label`.  
 
-- **Media normalisation (from MAME internal device names):**
-  - Maps raw device paths/tokens to tasteful labels:
-    - **CD-ROM**, **DVD-ROM**, **GD-ROM**, **LaserDisc**, **Capacitance Electronic Disc (CED)**,
-      **Hard disk**, **CompactFlash card**, **Secure Digital card**, **NAND flash**, **USB storage**, **VHS tape**.
-  - Ignores non-media tokens (e.g. `runtime`, `install`, `disks`, `cycraft`).
-  - Supports multiple media per parent and de-dupes per parent for counting.
+- **Chips (CPU/Audio)**
+  - Groups identical chips, frequency formatted to 3dp.  
+  - Audio tail lines include “Requires additional samples”, “Audio Channel(s): N”, and “Speaker(s): N”.  
 
-- **Diagnostics & audit:**
-  - `media_label_counts` and `parents_with_any_media` (parents only).
-  - **Ignored media devices** section listing unmapped raw tokens (top N).
-  - Title anomaly buckets (e.g. unbalanced brackets, odd separators).
+- **Displays**
+  - Groups identical screens, outputs `(Nx)` form.  
+  - Shows type, orientation, resolution, refresh Hz.  
+
+- **Controls**
+  - Player count, control types, ways (including half-ways), buttons vs reqbuttons.  
+  - Human-readable labels, with pluralisation and “No Buttons” case handled.  
+
+- **Ports (from GH XML)**
+  - Extracts parent + clone ports with provenance.  
+  - Preserves GH order and quirks (no silent deduplication).  
+  - Wiki projection: one-line per port, embedding [Model] in title when present, provenance sentence when clone-sourced.  
+
+- **Diagnostics & QA**
+  - Summaries for encodings, INIs, MAME, GH XML, and transforms.  
+  - Per-run manifest (`run_manifest.json`) records inputs, outputs, hashes, and timings.  
+  - Title, media, platform, and publisher anomalies logged for audit.  
 
 ## Outputs
 
-- `output/exotica_lit_wiki.json`  
-  Wiki-ready JSON with a header (versions, generated_at, schema) and a `games` map.  
-  Key fields per parent include:
-  - `wiki_page_name`
-  - `description` (numbered title fields + global_version)
-  - `manufacturer` (joined with `&`)
-  - `roms_display` (2-3 line block as above)
-  - `mame_titles` (parent + clones table rows for reference)
-  - `.ini` classifications and MAME flags (isbios, isdevice, ismechanical)
+- `data/encodings.json` - cached encodings + version strings  
+- `data/run_manifest.json` - per-run provenance (inputs, outputs, hashes, timings)  
+- `data/mame_parsing_summary.json` - MAME totals, distributions, anomalies  
+- `data/history_parsing_summary.json` - GH systems/ports metadata, anomalies, audit trails  
+- `data/ini_parsing_summary.json` - INI coverage, duplicates, unknowns  
+- `data/transform_summary.json` - transformer metrics, title/media/port stats  
 
-- `output/exotica_wiki_pages_and_redirects.json`  
-  Sorted pages list, page→machine map, redirects, and collision/conflict stats.
-
-- `data/transform_summary.json`  
-  Run timings, version sources, selection/filter counts, title anomalies, media counts, and ignored media audit.
+- `output/mame_machines.json` - canonical per-machine MAME dataset  
+- `output/mame_parent_index.json` - parent→clones and clone→parent maps  
+- `output/gh_system_ports.json` - parsed GH systems + PORTS  
+- `output/gh_ini_classifications.json` - per-machine INI classifications  
+- `output/exotica_lit_raw_data.json` - full structured per-parent records (debug/validation)  
+- `output/exotica_lit_wiki.json` - slimmed, wiki-ready JSON for ExoticA infoboxes  
+- `output/exotica_wiki_pages_and_redirects.json` - page list, redirects, collisions  
