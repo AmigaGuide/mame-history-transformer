@@ -215,7 +215,11 @@ data/*
 
 # Project logs folder
 logs/
+
+# Ignore everything in the output folder...
 output/
+# ...except the following
+!output/README.md
 
 # Ignore everything under the For_BuZz folder (presentation artefacts)
 findings/tools/For_BuZz/

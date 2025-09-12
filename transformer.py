@@ -1,7 +1,7 @@
 """
 Filename: transformer.py
-Version: 1.0.0
-Last modified: 2025-09-11
+Version: 1.0.1
+Last modified: 2025-09-12
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
 Project:
@@ -60,7 +60,7 @@ from logger import setup_logger, debug_log
 log = setup_logger(log_level=LOG_LEVEL)
 
 # --- Schemas (bump only when shapes change) ---
-TRANSFORMER_SCHEMA = "0.7"   # used in data/transform_summary.json
+TRANSFORMER_SCHEMA = "0.8"   # used in data/transform_summary.json
 WIKI_SCHEMA        = "1.0"   # used in exotica_lit_wiki.json header
 
 DATA_DIR   = Path("data")
@@ -120,6 +120,57 @@ _CONTROL_TYPE_LABELS = {
 }
 
 _TERMINAL_PUNCT = ('.', '!', '?', '…')
+
+def _dedupe_ci_preserve_order(items: list[str]) -> list[str]:
+    """Case-insensitive de-duplication preserving first-seen casing and order."""
+    out, seen = [], set()
+    for s in items or []:
+        key = (s or "").casefold()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(s)
+    return out
+
+
+def _primary_redirects_for_unit1(desc_fields: dict, target_page_name: str) -> list[str]:
+    """
+    Build redirects for unit 1 only:
+      - If Subtitle1 present: ["Title1: Subtitle1", "Title1"]
+      - Else: ["Title1"]
+    Exclude any equal (case-insensitive) to target_page_name.
+    Collapse internal whitespace like _collapse_ws.
+    """
+    t = _collapse_ws((desc_fields.get("title1") or "").strip())
+    s = _collapse_ws((desc_fields.get("subtitle1") or "").strip())
+    target_ci = (target_page_name or "").casefold()
+    out: list[str] = []
+    if not t:
+        return out
+    if s:
+        full = _collapse_ws(f"{t}: {s}")
+        if full.casefold() != target_ci:
+            out.append(full)
+        if t.casefold() != target_ci:
+            out.append(t)
+    else:
+        if t.casefold() != target_ci:
+            out.append(t)
+    return _dedupe_ci_preserve_order(out)
+
+
+def _clone_primary_redirects(clone_machine: str,
+                             mame: Dict[str, Any],
+                             target_page_name: str) -> list[str]:
+    """
+    Parse the clone's raw MAME title and return unit-1 redirects
+    (full 'Title: Subtitle' + lazy 'Title' when Subtitle exists; else just 'Title').
+    No versions/global_version are used. Results are unprefixed.
+    """
+    minfo = mame.get(clone_machine) or {}
+    raw = _raw_mame_title(minfo, clone_machine)
+    desc_fields, _ = _parse_description(raw)
+    return _primary_redirects_for_unit1(desc_fields, target_page_name)
+
 
 def _gh_ids_from_ports_obj(ports_obj: dict) -> list[int]:
     """
@@ -1643,7 +1694,11 @@ def _project_for_wiki(rec: dict) -> dict:
     out = {}
     # Always keep identification
     if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
+    
+    out["wiki_redirects"] = rec.get("wiki_redirects", [])
+
     if rec.get("year") is not None: out["year"] = rec["year"]
+    
     if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
 
     if rec.get("mame_titles_display"):
@@ -1652,8 +1707,6 @@ def _project_for_wiki(rec: dict) -> dict:
     # Preformatted convenience blocks (include only if present)
     for k in ("roms_display", "chips_display", "displays_display", "controls_display"):
         if rec.get(k): out[k] = rec[k]
-
-    #if rec.get("chips_display"): out["chips_display"] = rec["chips_display"]
 
     # Ports: wiki shows ONLY the single-line view
     if rec.get("ports_display"):
@@ -1674,8 +1727,11 @@ def _project_for_raw(machine: str, rec: dict) -> dict:
 
     # Identification & provenance
     out["machine"] = machine
-    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]  
+    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
     
+    # Surface redirects as an unprefixed list
+    out["wiki_redirects"] = rec.get("wiki_redirects", [])
+
     if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
 
     # Title parsing (full structured description)
@@ -1683,6 +1739,7 @@ def _project_for_raw(machine: str, rec: dict) -> dict:
 
     # Year/manufacturer
     if rec.get("year") is not None: out["year"] = rec["year"]
+    
     if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
 
     # ROM/media raw stats (carry raw inputs; skip roms_display)
@@ -2419,10 +2476,34 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if mt_disp:
             record["mame_titles_display"] = mt_disp
 
+        # ----------------- Build wiki_redirects (unprefixed) -----------------
+        # Parent-derived redirects (titles/subtitles only; no versions)
+        parent_redirects = _build_redirect_sources(desc_fields, wiki_page_name)
+
+        # Clone-derived redirects ONLY for clones that actually appear in GH ports
+        clone_redirects: list[str] = []
+        for cs in (ports_obj.get("clone_sources") or []):
+            c_machine = (cs or {}).get("machine")
+            if not c_machine:
+                continue
+            clone_redirects.extend(_clone_primary_redirects(c_machine, mame, wiki_page_name))
+
+        # Merge, normalise whitespace, de-dup case-insensitively, and exclude equals to page name
+        merged_redirects: list[str] = []
+        target_ci = (wiki_page_name or "").casefold()
+        for s in (parent_redirects + clone_redirects):
+            n = _collapse_ws(s)
+            if n and n.casefold() != target_ci:
+                merged_redirects.append(n)
+
+        record["wiki_redirects"] = _dedupe_ci_preserve_order(merged_redirects)
+        # ---------------------------------------------------------------------
+
         ports_display = _render_ports_display(name, ports_obj)
         if ports_display:
             record["ports_display"] = ports_display
-
+        
+        
         if _truthy_flag(minfo.get("isbios")):       included_flags["isbios"] += 1
         if _truthy_flag(minfo.get("isdevice")):     included_flags["isdevice"] += 1
         if _truthy_flag(minfo.get("ismechanical")): included_flags["ismechanical"] += 1
@@ -2491,11 +2572,19 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     redirect_conflicts: list[dict] = []
     sources_seen: dict[str, str] = {}
 
+
     for machine, rec in out_map.items():
         target = pages_map[machine]
-        desc   = rec.get("description") or {}
         wiki_name = rec.get("wiki_page_name") or ""
-        for src in _build_redirect_sources(desc, wiki_name):
+
+        # Prefer the per-record list (already includes parent + GH-referenced clones).
+        # Fallback to computed parent-only sources if, for any reason, it’s absent.
+        sources = rec.get("wiki_redirects")
+        if not sources:
+            desc = rec.get("description") or {}
+            sources = _build_redirect_sources(desc, wiki_name)
+
+        for src in (sources or []):
             psrc = _pref(src)
             key = psrc.casefold()
             prev = sources_seen.get(key)
