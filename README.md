@@ -1,4 +1,7 @@
-# TM470 – Lost in Translation Parser
+# MAME-History-Transformer
+
+Lineage: this repository mirrors the full history of the TM470 EMA project (tag: tm470-ema-2025) and continues as a modular v2.
+
 
 This repository contains code developed for the Open University TM470 project:
 
