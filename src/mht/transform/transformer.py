@@ -54,8 +54,11 @@ import time
 import re
 from collections import Counter
 
-from config import LOG_LEVEL
-from logger import setup_logger, debug_log
+#from config import LOG_LEVEL
+from mht.utils.config import LOG_LEVEL
+
+#from logger import setup_logger, debug_log
+from mht.utils.logger import setup_logger, debug_log
 
 log = setup_logger(log_level=LOG_LEVEL)
 

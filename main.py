@@ -38,6 +38,11 @@ See repository LICENCE for details.
 
 from __future__ import annotations
 
+# --- temporary path shim while we migrate imports ---
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).parent / "src"))
+# ----------------------------------------------------
+
 import datetime
 import hashlib
 import json
@@ -47,13 +52,25 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import LOG_LEVEL
-from logger import setup_logger, debug_log
-from encoding_utils import detect_encoding
-from mame_parser import parse_mame_xml
-from history_parser import parse_history_entries
-from history_metadata import parse_history_inis
-from transformer import run_transformer
+#from config import LOG_LEVEL
+from mht.utils.config import LOG_LEVEL
+
+#from logger import setup_logger, debug_log
+from mht.utils.logger import setup_logger, debug_log
+
+#from encoding_utils import detect_encoding
+from mht.utils.encoding_utils import detect_encoding
+
+#from mame_parser import parse_mame_xml
+#from history_parser import parse_history_entries
+#from history_metadata import parse_history_inis
+from mht.inputs.mame_parser import parse_mame_xml
+from mht.inputs.history_parser import parse_history_entries
+from mht.inputs.history_metadata import parse_history_inis
+
+#from transformer import run_transformer
+from mht.transform.transformer import run_transformer
+
 
 # Public API (this module is intended to be run as a script, but the helpers are importable)
 __all__ = [

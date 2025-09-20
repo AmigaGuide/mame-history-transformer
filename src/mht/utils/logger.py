@@ -38,7 +38,9 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from config import LOG_LEVEL  # central log level configuration
+#from config import LOG_LEVEL  # central log level configuration
+#from .config import LOG_LEVEL
+from mht.utils.config import LOG_LEVEL
 
 __all__ = ["setup_logger", "debug_log"]
 

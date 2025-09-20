@@ -38,7 +38,9 @@ from __future__ import annotations
 
 import re
 from dateutil import parser as date_parser
-from logger import setup_logger, debug_log
+
+#from logger import setup_logger, debug_log
+from mht.utils.logger import setup_logger, debug_log
 
 __all__ = ["parse_date_string"]
 

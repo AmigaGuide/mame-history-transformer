@@ -37,8 +37,11 @@ import time
 import datetime
 import re
 
-from config import LOG_LEVEL
-from logger import setup_logger, debug_log
+#from config import LOG_LEVEL
+from mht.utils.config import LOG_LEVEL
+
+#from logger import setup_logger, debug_log
+from mht.utils.logger import setup_logger, debug_log
 
 __all__ = [
     "parse_history_inis",

@@ -53,9 +53,14 @@ import html
 from collections import Counter, defaultdict
 import datetime
 
-from config import LOG_LEVEL
-from logger import setup_logger, debug_log
-from date_utils import parse_date_string
+#from config import LOG_LEVEL
+from mht.utils.config import LOG_LEVEL
+
+#from logger import setup_logger, debug_log
+from mht.utils.logger import setup_logger, debug_log
+
+#from date_utils import parse_date_string
+from mht.utils.date_utils import parse_date_string
 
 __all__ = [
     "HISTORY_PARSER_SCHEMA",

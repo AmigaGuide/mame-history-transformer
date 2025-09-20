@@ -31,8 +31,11 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict
 
-from config import LOG_LEVEL
-from logger import setup_logger
+#from config import LOG_LEVEL
+from mht.utils.config import LOG_LEVEL
+
+#from logger import setup_logger
+from mht.utils.logger import setup_logger
 
 log = setup_logger(log_level=LOG_LEVEL)
 

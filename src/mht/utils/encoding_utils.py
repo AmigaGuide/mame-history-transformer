@@ -29,7 +29,8 @@ from __future__ import annotations
 from pathlib import Path  # stdlib
 import chardet            # third-party
 
-from logger import debug_log  # local
+#from logger import debug_log  # local
+from mht.utils.logger import debug_log
 
 __all__ = ["detect_encoding"]
 
