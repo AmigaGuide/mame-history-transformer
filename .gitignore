@@ -220,10 +220,10 @@ logs/
 output/
 # ...except the following
 !output/README.md
+!output/.gitkeep
 
 # Ignore everything under the For_BuZz folder (presentation artefacts)
 findings/tools/For_BuZz/
-
 # But keep hand-crafted example JSONs and code in findings/tools
 !findings/tools/*.json
 !findings/tools/*.py

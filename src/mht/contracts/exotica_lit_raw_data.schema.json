@@ -1,0 +1,396 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:exotica:schema:exotica_lit_raw_data:1.0.0",
+  "title": "ExoticA Lost in Translation – Raw Data",
+  "description": "Schema for the verbose/raw LiT output used for validation and review.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["header", "games"],
+  "properties": {
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_id", "schema_version", "versions", "generated_at"],
+      "properties": {
+        "schema_id": { "const": "exotica_lit_raw_data" },
+        "schema_version": { "$ref": "#/$defs/SemVer" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "versions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mame_xml_version", "gaming_history_xml_version", "ini_versions"],
+          "properties": {
+            "mame_xml_version": { "type": "string" },
+            "gaming_history_xml_version": { "type": "string" },
+            "ini_versions": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "games": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9_]+$": { "$ref": "#/$defs/GameRecord" }
+      }
+    }
+  },
+
+  "$defs": {
+    "SemVer": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+
+    "MachineName": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+
+    "YearString": {
+      "type": "string",
+      "pattern": "^[0-9?]{4,5}$"
+    },
+
+    "LooseDate": {
+      "description": "YYYY-MM-DD with unknowns allowed: X in year digits (e.g. 198X/19XX) and XX for month/day; or null.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9X]{4}-(\\d{2}|XX)-(\\d{2}|XX)$"
+    },
+
+    "Region2": {
+      "description": "Two-letter region or '??'.",
+      "type": "string",
+      "pattern": "^[A-Z?]{2}$"
+    },
+
+    "NonEmptyString": { "type": "string", "minLength": 1 },
+    "StringOrNull": { "type": ["string", "null"] },
+
+    "RefreshHzString": {
+      "description": "e.g. '60.606 Hz'",
+      "type": "string",
+      "pattern": "^\\d+(?:\\.\\d+)?\\s*Hz$"
+    },
+
+    "PortsItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["machine", "gh_id", "platform", "regions", "model", "title", "date", "publisher", "comment", "additional_tags"],
+      "properties": {
+        "machine": { "$ref": "#/$defs/MachineName" },
+        "gh_id": { "type": "integer", "minimum": 1 },
+        "platform": { "$ref": "#/$defs/NonEmptyString" },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Region2" }
+        },
+        "model": {
+          "type": "array",
+          "minItems": 0,
+          "items": { "type": "string" }
+        },
+        "title": { "$ref": "#/$defs/StringOrNull" },
+        "date": { "$ref": "#/$defs/LooseDate" },
+        "publisher": { "$ref": "#/$defs/StringOrNull" },
+        "comment": { "$ref": "#/$defs/StringOrNull" },
+        "additional_tags": {
+          "type": "array",
+          "minItems": 0,
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "PortsCategories": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "CONSOLES":  { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/PortsItem" } },
+        "HANDHELDS": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/PortsItem" } },
+        "COMPUTERS": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/PortsItem" } },
+        "OTHERS":    { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/PortsItem" } }
+      }
+    },
+
+    "CloneSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["machine", "gh_id", "categories"],
+      "properties": {
+        "machine": { "$ref": "#/$defs/MachineName" },
+        "gh_id": { "type": "integer", "minimum": 1 },
+        "categories": { "$ref": "#/$defs/PortsCategories" }
+      }
+    },
+
+    "ParentSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["machine", "gh_id", "categories"],
+      "properties": {
+        "machine": { "$ref": "#/$defs/MachineName" },
+        "gh_id": { "type": "integer", "minimum": 1 },
+        "categories": { "$ref": "#/$defs/PortsCategories" }
+      }
+    },
+
+    "MameTitleRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "machine", "title", "year"],
+      "properties": {
+        "role": { "type": "string", "enum": ["parent", "clone"] },
+        "machine": { "$ref": "#/$defs/MachineName" },
+        "title": { "$ref": "#/$defs/NonEmptyString" },
+        "year": { "$ref": "#/$defs/YearString" }
+      }
+    },
+
+    "DisplayGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "type", "orientation", "width", "height", "refresh"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "type": { "type": "string", "enum": ["Raster", "Vector", "LCD", "SVG"] },
+        "orientation": { "type": "string" },
+        "width": { "type": ["integer", "null"], "minimum": 1 },
+        "height": { "type": ["integer", "null"], "minimum": 1 },
+        "refresh": { "$ref": "#/$defs/RefreshHzString" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "Vector" } }, "required": ["type"] },
+          "then": {
+            "properties": {
+              "width":  { "type": ["integer", "null"], "minimum": 1 },
+              "height": { "type": ["integer", "null"], "minimum": 1 }
+            }
+          },
+          "else": {
+            "properties": {
+              "width":  { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      ]
+    },
+
+    "GameRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "machine",
+        "wiki_page_name",
+        "wiki_redirects",
+        "mame_titles",
+        "description",
+        "year",
+        "manufacturer",
+        "rom_count",
+        "rom_bytes_total",
+        "disk_required",
+        "disk_regions",
+        "chips",
+        "displays",
+        "controls",
+        "ports",
+        "game_status",
+        "category",
+        "type",
+        "isbios",
+        "isdevice",
+        "ismechanical",
+        "requires_samples",
+        "gh_ids"
+      ],
+      "properties": {
+        "machine": { "$ref": "#/$defs/MachineName" },
+
+        "wiki_page_name": { "$ref": "#/$defs/NonEmptyString" },
+        "wiki_redirects": {
+          "type": "array",
+          "minItems": 0,
+          "items": { "type": "string" }
+        },
+
+        "mame_titles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/MameTitleRow" }
+        },
+
+        "description": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title1", "subtitle1", "version1", "global_version"],
+          "properties": {
+            "title1": { "type": "string" },
+            "subtitle1": { "type": "string" },
+            "version1": { "type": "string" },
+            "global_version": { "type": "string" }
+          },
+          "patternProperties": {
+            "^(title|subtitle|version)[2-9][0-9]*$": { "type": "string" }
+          }
+        },
+
+        "year": { "$ref": "#/$defs/YearString" },
+        "manufacturer": { "$ref": "#/$defs/NonEmptyString" },
+
+        "rom_count": { "type": "integer", "minimum": 0 },
+        "rom_bytes_total": { "type": "integer", "minimum": 0 },
+
+        "disk_required": { "type": "string", "enum": ["yes", "no"] },
+
+        "disk_regions": {
+          "type": "array",
+          "minItems": 0,
+          "items": { "type": "string" }
+        },
+
+        "chips": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cpus", "audio_chips", "requires_samples", "audio_channels", "speakers"],
+          "properties": {
+            "cpus": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["heading", "count", "items"],
+              "properties": {
+                "heading": { "type": "string" },
+                "count": { "type": "integer", "minimum": 0 },
+                "items": { "type": "array", "minItems": 0, "items": { "type": "string" } }
+              }
+            },
+            "audio_chips": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["heading", "count", "items"],
+              "properties": {
+                "heading": { "type": "string" },
+                "count": { "type": "integer", "minimum": 0 },
+                "items": { "type": "array", "minItems": 0, "items": { "type": "string" } }
+              }
+            },
+            "requires_samples": { "type": "boolean" },
+            "audio_channels": { "type": "integer", "minimum": 0 },
+            "speakers": { "type": "integer", "minimum": 0 }
+          }
+        },
+
+        "displays": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["heading", "count", "groups"],
+          "properties": {
+            "heading": { "type": "string" },
+            "count": { "type": "integer", "minimum": 0 },
+            "groups": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/DisplayGroup" }
+            }
+          }
+        },
+
+        "controls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["players", "per_player"],
+          "properties": {
+            "players": { "type": "integer", "minimum": 0 },
+            "per_player": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["player", "control_lines", "buttons"],
+                "properties": {
+                  "player": { "type": "integer", "minimum": 1 },
+                  "control_lines": {
+                    "type": "array",
+                    "minItems": 0,
+                    "items": { "type": "string" }
+                  },
+                  "buttons": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
+
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["clone_sources", "parent_source"],
+          "properties": {
+            "clone_sources": {
+              "type": "array",
+              "minItems": 0,
+              "items": { "$ref": "#/$defs/CloneSource" }
+            },
+            "parent_source": { "$ref": "#/$defs/ParentSource" }
+          },
+          "allOf": [
+            {
+              "anyOf": [
+                { "properties": { "clone_sources": { "minItems": 1 } } },
+                {
+                  "properties": {
+                    "parent_source": {
+                      "properties": {
+                        "categories": {
+                          "anyOf": [
+                            { "required": ["CONSOLES"]  },
+                            { "required": ["HANDHELDS"] },
+                            { "required": ["COMPUTERS"] },
+                            { "required": ["OTHERS"]    }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+
+        "game_status": { "type": "string", "enum": ["game", "no-game"] },
+
+        "category": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+
+        "type": { "type": "string" },
+
+        "isbios": { "type": "boolean" },
+        "isdevice": { "type": "boolean" },
+        "ismechanical": { "type": "boolean" },
+        "requires_samples": { "type": "boolean" },
+
+        "gh_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

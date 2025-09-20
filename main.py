@@ -39,8 +39,8 @@ See repository LICENCE for details.
 from __future__ import annotations
 
 # --- temporary path shim while we migrate imports ---
-import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parent / "src"))
+#import sys, pathlib
+#sys.path.insert(0, str(pathlib.Path(__file__).parent / "src"))
 # ----------------------------------------------------
 
 import datetime
