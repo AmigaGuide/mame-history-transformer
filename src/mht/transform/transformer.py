@@ -59,9 +59,13 @@ from logger import setup_logger, debug_log
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-# --- Schemas (bump only when shapes change) ---
+
 TRANSFORMER_SCHEMA = "0.8"   # used in data/transform_summary.json
-WIKI_SCHEMA        = "1.0"   # used in exotica_lit_wiki.json header
+
+SCHEMA_ID_WIKI = "exotica_lit_wiki"
+SCHEMA_VER_WIKI = "1.0.0"
+SCHEMA_ID_RAW  = "exotica_lit_raw_data"
+SCHEMA_VER_RAW = "1.0.0"
 
 DATA_DIR   = Path("data")
 OUTPUT_DIR = Path("output")
@@ -2513,9 +2517,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     # --- Write wiki output (header + games) ---
     wiki_doc = {
         "header": {
+            "schema_id": SCHEMA_ID_WIKI,            # NEW
+            "schema_version": SCHEMA_VER_WIKI,      # NEW
             "versions": wiki_header_versions,
             "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "wiki_schema": WIKI_SCHEMA,
         },
         "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()}
     }
@@ -2524,9 +2529,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     # --- Write raw review output (header + games) ---
     raw_doc = {
         "header": {
+            "schema_id": SCHEMA_ID_RAW,             # NEW
+            "schema_version": SCHEMA_VER_RAW,       # NEW
             "versions": wiki_header_versions,
             "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "wiki_schema": WIKI_SCHEMA,
         },
         "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()}
     }
