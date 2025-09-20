@@ -66,7 +66,7 @@ log = setup_logger(log_level=LOG_LEVEL)
 TRANSFORMER_SCHEMA = "0.8"   # used in data/transform_summary.json
 
 SCHEMA_ID_WIKI = "exotica_lit_wiki"
-SCHEMA_VER_WIKI = "1.0.0"
+SCHEMA_VER_WIKI = "1.1.0"
 SCHEMA_ID_RAW  = "exotica_lit_raw_data"
 SCHEMA_VER_RAW = "1.0.0"
 
