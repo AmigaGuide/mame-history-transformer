@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:exotica:schema:exotica_lit_raw_data:1.0.0",
+  "$id": "urn:exotica:schema:exotica_lit_raw_data:1.0.1",
   "title": "ExoticA Lost in Translation – Raw Data",
   "description": "Schema for the verbose/raw LiT output used for validation and review.",
   "type": "object",
@@ -291,84 +291,103 @@
           }
         },
 
-        "displays": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["heading", "count", "groups"],
-          "properties": {
-            "heading": { "type": "string" },
-            "count": { "type": "integer", "minimum": 0 },
-            "groups": {
-              "type": "array",
-              "minItems": 1,
-              "items": { "$ref": "#/$defs/DisplayGroup" }
-            }
-          }
-        },
+		"displays": {
+		  "type": "object",
+		  "additionalProperties": false,
+		  "required": ["heading", "count", "groups"],
+		  "properties": {
+			"heading": { "type": "string" },
+			"count": { "type": "integer", "minimum": 0 },
+			"groups": {
+			  "type": "array",
+			  "items": { "$ref": "#/$defs/DisplayGroup" }
+			}
+		  },
+		  "allOf": [
+			{
+			  "if": { "properties": { "count": { "const": 0 } }, "required": ["count"] },
+			  "then": { "properties": { "groups": { "maxItems": 0 } } },
+			  "else": { "properties": { "groups": { "minItems": 1 } } }
+			}
+		  ]
+		},
 
-        "controls": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["players", "per_player"],
-          "properties": {
-            "players": { "type": "integer", "minimum": 0 },
-            "per_player": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["player", "control_lines", "buttons"],
-                "properties": {
-                  "player": { "type": "integer", "minimum": 1 },
-                  "control_lines": {
-                    "type": "array",
-                    "minItems": 0,
-                    "items": { "type": "string" }
-                  },
-                  "buttons": { "type": "integer", "minimum": 0 }
-                }
-              }
-            }
-          }
-        },
+		"controls": {
+		  "type": "object",
+		  "additionalProperties": false,
+		  "required": ["players", "per_player"],
+		  "properties": {
+			"players": { "type": "integer", "minimum": 0 },
+			"per_player": {
+			  "type": "array",
+			  "items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["player", "control_lines", "buttons"],
+				"properties": {
+				  "player": { "type": "integer", "minimum": 1 },
+				  "control_lines": {
+					"type": "array",
+					"minItems": 0,
+					"items": { "type": "string" }
+				  },
+				  "buttons": { "type": "integer", "minimum": 0 }
+				}
+			  }
+			}
+		  },
+		  "allOf": [
+			{
+			  "if": { "properties": { "players": { "const": 0 } }, "required": ["players"] },
+			  "then": { "properties": { "per_player": { "maxItems": 0 } } },
+			  "else": { "properties": { "per_player": { "minItems": 1 } } }
+			}
+		  ]
+		},
 
-        "ports": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["clone_sources", "parent_source"],
-          "properties": {
-            "clone_sources": {
-              "type": "array",
-              "minItems": 0,
-              "items": { "$ref": "#/$defs/CloneSource" }
-            },
-            "parent_source": { "$ref": "#/$defs/ParentSource" }
-          },
-          "allOf": [
-            {
-              "anyOf": [
-                { "properties": { "clone_sources": { "minItems": 1 } } },
-                {
-                  "properties": {
-                    "parent_source": {
-                      "properties": {
-                        "categories": {
-                          "anyOf": [
-                            { "required": ["CONSOLES"]  },
-                            { "required": ["HANDHELDS"] },
-                            { "required": ["COMPUTERS"] },
-                            { "required": ["OTHERS"]    }
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          ]
-        },
+		"ports": {
+		  "type": "object",
+		  "additionalProperties": false,
+		  "required": ["clone_sources", "parent_source"],
+		  "properties": {
+			"clone_sources": {
+			  "type": "array",
+			  "minItems": 0,
+			  "items": { "$ref": "#/$defs/CloneSource" }
+			},
+
+			"parent_source": {
+			  "anyOf": [
+				{ "type": "object", "maxProperties": 0 },
+				{ "$ref": "#/$defs/ParentSource" }
+			  ]
+			}
+		  },
+
+		  "allOf": [
+			{
+			  "anyOf": [
+				{ "properties": { "clone_sources": { "minItems": 1 } } },
+				{
+				  "properties": {
+					"parent_source": {
+					  "properties": {
+						"categories": {
+						  "anyOf": [
+							{ "required": ["CONSOLES"]  },
+							{ "required": ["HANDHELDS"] },
+							{ "required": ["COMPUTERS"] },
+							{ "required": ["OTHERS"]    }
+						  ]
+						}
+					  }
+					}
+				  }
+				}
+			  ]
+			}
+		  ]
+		},
 
         "game_status": { "type": "string", "enum": ["game", "no-game"] },
 

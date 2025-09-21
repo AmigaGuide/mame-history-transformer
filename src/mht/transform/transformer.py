@@ -62,13 +62,14 @@ from mht.utils.logger import setup_logger, debug_log
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-
+# --- Schemas (bump only when shapes change) ---
 TRANSFORMER_SCHEMA = "0.8"   # used in data/transform_summary.json
 
 SCHEMA_ID_WIKI = "exotica_lit_wiki"
 SCHEMA_VER_WIKI = "1.1.0"
 SCHEMA_ID_RAW  = "exotica_lit_raw_data"
-SCHEMA_VER_RAW = "1.0.0"
+SCHEMA_VER_RAW = "1.1.0"
+
 
 DATA_DIR   = Path("data")
 OUTPUT_DIR = Path("output")
@@ -855,20 +856,27 @@ def _format_hz_3dp(hz) -> str | None:
 
 def _build_controls_section(players: int | None, controls: list[dict] | None) -> dict:
     """
-    Returns:
-    {
-      "players": <int>,
-      "per_player": [
-        {"player": 1, "control_lines": ["4-way Joystick"], "buttons": 1},
-        ...
-      ]
-    }
+    Build the controls block.
+
+    Rules:
+    - Group raw control rows by player; collapse duplicate control lines with “(Nx) …”.
+    - Sum buttons per player as an integer.
+    - If there are no control rows:
+        * If players > 0: emit placeholder entries for players 1..players
+          with ["Unknown controls"] and buttons=0.
+        * If players == 0 (or unknown): per_player MUST be [] (no placeholders).
+    - If some rows exist but fewer than 'players', fill missing players (up to 'players')
+      with placeholders (buttons=0).
+
+    Returns: {"players": <int>, "per_player": [ {player, control_lines, buttons}, ... ]}
     """
+    # Normalise player count
     try:
         pcount = int(players) if players is not None else 0
     except Exception:
         pcount = 0
 
+    # Bucket rows by player index
     bucket: dict[int, list[dict]] = {}
     for row in (controls or []):
         try:
@@ -877,25 +885,45 @@ def _build_controls_section(players: int | None, controls: list[dict] | None) ->
             p = 1
         bucket.setdefault(p, []).append(row)
 
-    per_player = []
+    per_player: list[dict] = []
+
+    # Build concrete entries for players that have ≥1 raw row
     for p in sorted(bucket.keys()):
         rows = bucket[p]
-
-        # Build control lines and collapse duplicates with (Nx)
         raw_lines = [_control_line_from_row(r) for r in rows]
         counts = Counter(l.casefold() for l in raw_lines)
-        order = list(dict.fromkeys(raw_lines))  # preserve first-seen casing/order
-        control_lines = [(f"({counts[l.casefold()]}x) {l}" if counts[l.casefold()] > 1 else l)
-                         for l in order]
-
-        # Buttons: sum across rows; show 'No Buttons' if zero
-        btn_total = _buttons_count_from_rows(rows)
-
+        order = list(dict.fromkeys(raw_lines))  # preserve first-seen order/case
+        control_lines = [
+            (f"({counts[l.casefold()]}x) {l}" if counts[l.casefold()] > 1 else l)
+            for l in order
+        ]
+        btn_total = _buttons_count_from_rows(rows)  # integer
         per_player.append({
             "player": p,
             "control_lines": control_lines,
             "buttons": btn_total
         })
+
+    # Helper for placeholders (buttons must be int per schema)
+    def _placeholder(p: int) -> dict:
+        return {"player": p, "control_lines": ["Unknown controls"], "buttons": 0}
+
+    # If no rows at all:
+    if not per_player:
+        if pcount > 0:
+            per_player = [_placeholder(p) for p in range(1, pcount + 1)]
+        else:
+            # players == 0: leave empty (no controllers in partially emulated titles)
+            return {"players": 0, "per_player": []}
+        return {"players": pcount, "per_player": per_player}
+
+    # Some rows exist: fill gaps up to declared player count
+    if pcount > 0:
+        present = {e["player"] for e in per_player}
+        for p in range(1, pcount + 1):
+            if p not in present:
+                per_player.append(_placeholder(p))
+        per_player.sort(key=lambda e: e["player"])
 
     return {"players": pcount, "per_player": per_player}
 
@@ -2425,6 +2453,14 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if ports_obj is None:
             continue
 
+        # --- Ensure ports schema always has both keys, even when empty ---
+        # We keep behaviour the same (no new GH IDs introduced) by making
+        # `parent_source` an empty dict when the parent had no rows.
+        if not isinstance(ports_obj.get("clone_sources"), list):
+            ports_obj["clone_sources"] = []
+        if not isinstance(ports_obj.get("parent_source"), dict):
+            ports_obj["parent_source"] = {}
+
         # Accumulate summary tallies
         clones_with_ports_set.update(clones_with_ports_local)
         if parent_has_ports:
@@ -2435,7 +2471,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             systems_with_parent_clone_port_dupes_list.append(name)
 
         gh_ids = _gh_ids_from_ports_obj(ports_obj)
-
 
         record = {
             "wiki_page_name": wiki_page_name,
