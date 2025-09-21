@@ -64,11 +64,12 @@ log = setup_logger(log_level=LOG_LEVEL)
 
 # --- Schemas (bump only when shapes change) ---
 TRANSFORMER_SCHEMA = "0.8"   # used in data/transform_summary.json
-
-SCHEMA_ID_WIKI = "exotica_lit_wiki"
-SCHEMA_VER_WIKI = "1.1.0"
-SCHEMA_ID_RAW  = "exotica_lit_raw_data"
-SCHEMA_VER_RAW = "1.1.0"
+SCHEMA_ID_WIKI     = "exotica_lit_wiki"
+SCHEMA_VER_WIKI    = "1.1.0"
+SCHEMA_ID_RAW      = "exotica_lit_raw_data"
+SCHEMA_VER_RAW     = "1.1.0"
+SCHEMA_ID_PAGES    = "exotica_wiki_pages_and_redirects"
+SCHEMA_VER_PAGES    = "1.1.0"
 
 
 DATA_DIR   = Path("data")
@@ -2557,8 +2558,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "header": {
             "schema_id": SCHEMA_ID_WIKI,            # NEW
             "schema_version": SCHEMA_VER_WIKI,      # NEW
-            "versions": wiki_header_versions,
             "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "versions": wiki_header_versions,
         },
         "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()}
     }
@@ -2569,8 +2570,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "header": {
             "schema_id": SCHEMA_ID_RAW,             # NEW
             "schema_version": SCHEMA_VER_RAW,       # NEW
-            "versions": wiki_header_versions,
             "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "versions": wiki_header_versions,
         },
         "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()}
     }
@@ -2644,23 +2645,35 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                 })
 
     # Sort redirects for stability BEFORE embedding
-    redirects_map = dict(sorted(redirects_map.items(), key=lambda kv: kv[0].casefold()))
+    #redirects_map = dict(sorted(redirects_map.items(), key=lambda kv: kv[0].casefold()))
+
+    # Sort for stability
+    pages_map_sorted     = dict(sorted(pages_map.items(), key=lambda kv: kv[0].casefold()))
+    redirects_map_sorted = dict(sorted(redirects_map.items(), key=lambda kv: kv[0].casefold()))
+    page_names_list_sorted = sorted(page_names_list, key=str.casefold)
+
+    generated_at_iso = datetime.datetime.utcnow().isoformat() + "Z"
+
 
     # Assemble and write file (stats near the top)
     wiki_pages_redirects = {
-        "schema_version": 1,
-        "prefix": WIKI_PREFIX,
-        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "header": {
+            "schema_id": SCHEMA_ID_PAGES,
+            "schema_version": SCHEMA_VER_PAGES,
+            "generated_at": generated_at_iso,
+            #"versions": versions_block,
+        },
+        "prefix": WIKI_PREFIX,  # e.g. "Lost In Translation/"
         "stats": {
             "parents_total": len(out_map),
-            "page_names_total": len(page_names_list),
-            "redirects_total": len(redirects_map),
+            "page_names_total": len(page_names_list_sorted),
+            "redirects_total": len(redirects_map_sorted),
             "page_name_collisions": len(page_name_collisions),
             "redirect_conflicts": len(redirect_conflicts),
         },
-        "pages": pages_map,
-        "page_names": page_names_list,
-        "redirects": redirects_map,
+        "pages": pages_map_sorted,            # { machine -> full path }
+        "page_names": page_names_list_sorted, # [full path, ...]
+        "redirects": redirects_map_sorted,    # { from -> to }
         "conflicts": {
             "page_name_collisions": page_name_collisions,
             "redirect_conflicts": redirect_conflicts,

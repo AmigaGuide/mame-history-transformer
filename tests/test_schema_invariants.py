@@ -3,16 +3,42 @@ from jsonschema import Draft202012Validator
 
 CASES = [
     (
-        "raw_data",
-        "src/mht/contracts/exotica_lit_raw_data.schema.json",
+        "raw_data", 
+        "src/mht/contracts/exotica_lit_raw_data.schema.json", 
         "output/exotica_lit_raw_data.json",
     ),
     (
-        "wiki",
-        "src/mht/contracts/exotica_lit_wiki.schema.json",
+        "wiki",     
+        "src/mht/contracts/exotica_lit_wiki.schema.json",     
         "output/exotica_lit_wiki.json",
     ),
+    (
+        "wiki_pages", 
+        "src/mht/contracts/exotica_wiki_pages_and_redirects.schema.json",
+        "output/exotica_wiki_pages_and_redirects.json",
+    ),
+    (
+        "gh_ini",   
+        "src/mht/contracts/gh_ini_classifications.schema.json",
+        "output/gh_ini_classifications.json"
+    ),
+    (
+        "gh_ports", 
+        "src/mht/contracts/gh_system_ports.schema.json",       
+        "output/gh_system_ports.json"
+    ),
+    (
+        "mame_mach", 
+        "src/mht/contracts/mame_machines.schema.json",                        
+        "output/mame_machines.json",
+    ),
+    (
+        "parent_idx", 
+        "src/mht/contracts/mame_parent_index.schema.json",                    
+        "output/mame_parent_index.json"
+    ),
 ]
+
 
 @pytest.mark.parametrize("name,schema_path,doc_path", CASES)
 def test_output_validates_against_schema(name, schema_path, doc_path):

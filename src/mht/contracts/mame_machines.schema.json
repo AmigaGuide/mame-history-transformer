@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:exotica:schema:mame_machines:1.1.0",
+  "title": "MAME Machines (canonical dump)",
+  "description": "Canonical, unfiltered per-machine data parsed from MAME XML.",
+  "type": "object",
+  "additionalProperties": false,
+
+  "patternProperties": {
+    "^[a-z0-9_]+$": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "sourcefile",
+        "cloneof",
+        "isbios",
+        "isdevice",
+        "ismechanical",
+        "year",
+        "manufacturer",
+        "rom_count",
+        "rom_bytes_total",
+        "disk_required",
+        "disk_regions",
+        "disk_media_platforms_count",
+        "cpu_count",
+        "sound_chip_count",
+        "chips",
+        "sound_channels",
+        "device_ref",
+        "sampleof",
+        "display_count",
+        "displays",
+        "players",
+        "controls"
+      ],
+      "properties": {
+        "description":  { "type": "string" },
+        "sourcefile":   { "type": "string" },
+
+        "cloneof":      { "type": ["string", "null"] },
+
+        "isbios":       { "type": "string", "enum": ["yes", "no"] },
+        "isdevice":     { "type": "string", "enum": ["yes", "no"] },
+        "ismechanical": { "type": "string", "enum": ["yes", "no"] },
+
+        "year":         { "type": "string" },
+        "manufacturer": { "type": "string" },
+
+        "rom_count":       { "type": "integer", "minimum": 0 },
+        "rom_bytes_total": { "type": "integer", "minimum": 0 },
+
+        "disk_required": { "type": "string", "enum": ["yes", "no"] },
+        "disk_regions":  {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "disk_media_platforms_count": { "type": "integer", "minimum": 0 },
+
+        "cpu_count":         { "type": "integer", "minimum": 0 },
+        "sound_chip_count":  { "type": "integer", "minimum": 0 },
+
+        "chips": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "name", "tag", "clock_hz"],
+            "properties": {
+              "type":     { "type": "string", "enum": ["cpu", "audio"] },
+              "name":     { "type": "string" },
+              "tag":      { "type": ["string", "null"] },
+              "clock_hz": { "type": ["integer", "null"] }
+            }
+          }
+        },
+
+        "sound_channels": { "type": ["integer", "null"], "minimum": 0 },
+
+        "device_ref": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["samples", "speaker"],
+            "properties": {
+              "samples": { "type": "string", "enum": ["yes", "no"] },
+              "speaker": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+
+        "sampleof": { "type": ["string", "null"] },
+
+		"display_count": { "type": "integer", "minimum": 0 },
+		"displays": {
+		  "type": "array",
+		  "items": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["tag", "type", "rotate", "width", "height", "refresh_hz"],
+			"properties": {
+			  "tag":        { "type": ["string", "null"] },
+			  "type":       { "type": "string", "enum": ["raster", "vector", "lcd", "svg"] },
+			  "rotate":     { "type": ["integer", "null"] },
+			  "width":      { "type": ["integer", "null"], "minimum": 1 },
+			  "height":     { "type": ["integer", "null"], "minimum": 1 },
+			  "refresh_hz": { "type": ["number", "null"] }
+			}
+		  }
+		},
+
+        "players": { "type": ["integer", "null"], "minimum": 0 },
+
+        "controls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["player", "type", "buttons", "reqbuttons", "ways", "ways2", "ways3"],
+            "properties": {
+              "player":     { "type": ["integer", "null"], "minimum": 1 },
+              "type":       { "type": ["string", "null"] },
+              "buttons":    { "type": ["integer", "null"], "minimum": 0 },
+              "reqbuttons": { "type": ["integer", "null"], "minimum": 0 },
+              "ways":       { "type": ["string",  "null"] },
+              "ways2":      { "type": ["string",  "null"] },
+              "ways3":      { "type": ["string",  "null"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

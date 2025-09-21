@@ -1,78 +1,47 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://amigaguide.github.io/mht/schemas/exotica_lit_wiki.schema.json",
-  "title": "ExoticA Lost in Translation — Wiki JSON (v1.1.0)",
+  "$id": "urn:exotica:schema:exotica_lit_wiki:1.1.0",
+  "title": "ExoticA Lost in Translation - Wiki Data",
+  "description": "Schema for the condensed LiT output used to generate wiki pages.",
   "type": "object",
   "additionalProperties": false,
-
+  "required": ["header", "games"],
   "properties": {
     "header": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["schema_id", "schema_version", "generated_at", "versions"],
       "properties": {
         "schema_id":      { "type": "string", "const": "exotica_lit_wiki" },
-        "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "schema_version": { "type": "string", "const": "1.1.0" },
         "generated_at":   { "type": "string", "format": "date-time" },
 
         "versions": {
           "type": "object",
           "additionalProperties": false,
+          "required": ["mame_xml_version", "gaming_history_xml_version", "ini_versions"],
           "properties": {
             "mame_xml_version":           { "type": "string" },
             "gaming_history_xml_version": { "type": "string" },
             "ini_versions": {
               "type": "object",
+              "minProperties": 1,
               "additionalProperties": { "type": "string" }
             }
-          },
-          "required": ["mame_xml_version", "gaming_history_xml_version", "ini_versions"]
+          }
         }
-      },
-      "required": ["schema_id", "schema_version", "generated_at", "versions"]
+      }
     },
 
     "games": {
       "type": "object",
-      "additionalProperties": false,
       "description": "Map of MAME machine name -> game record",
+      "additionalProperties": false,
+      "minProperties": 1,
       "patternProperties": {
         "^[a-z0-9_]+$": {
           "type": "object",
           "additionalProperties": false,
-
-          "properties": {
-            "wiki_page_name":   { "type": "string", "minLength": 1 },
-            "wiki_redirects":   {
-              "type": "array",
-              "items": { "type": "string", "minLength": 1 },
-              "uniqueItems": true
-            },
-			"year":                { "type": "string", "pattern": "^[0-9?]{4}$" },
-            "manufacturer":        { "type": "string", "minLength": 1 },
-
-            "mame_titles_display": { "type": "array", "items": { "type": "string" } },
-            "roms_display":        { "type": "string" },
-            "chips_display":       { "type": "string" },
-            "displays_display":    { "type": "string" },
-            "controls_display":    { "type": "string" },
-
-            "ports_display": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "Consoles":   { "type": "array", "items": { "type": "string" } },
-                "Handhelds":  { "type": "array", "items": { "type": "string" } },
-                "Computers":  { "type": "array", "items": { "type": "string" } },
-                "Others":     { "type": "array", "items": { "type": "string" } }
-              }
-            },
-
-            "gh_ids": {
-              "type": "array",
-              "items": { "type": "integer", "minimum": 0 },
-              "uniqueItems": true
-            }
-          },
 
           "required": [
             "wiki_page_name",
@@ -86,11 +55,43 @@
             "controls_display",
             "ports_display",
             "gh_ids"
-          ]
+          ],
+          "properties": {
+            "wiki_page_name": { "type": "string", "minLength": 1 },
+            "wiki_redirects": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            },
+
+            "year":         { "type": "string", "pattern": "^[0-9?]{4}$" },
+            "manufacturer": { "type": "string", "minLength": 1 },
+
+            "mame_titles_display": { "type": "array", "items": { "type": "string" } },
+            "roms_display":        { "type": "string" },
+            "chips_display":       { "type": "string" },
+            "displays_display":    { "type": "string" },
+            "controls_display":    { "type": "string" },
+
+            "ports_display": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "Consoles":  { "type": "array", "items": { "type": "string" } },
+                "Handhelds": { "type": "array", "items": { "type": "string" } },
+                "Computers": { "type": "array", "items": { "type": "string" } },
+                "Others":    { "type": "array", "items": { "type": "string" } }
+              }
+            },
+
+            "gh_ids": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 0 },
+              "uniqueItems": true
+            }
+          }
         }
       }
     }
-  },
-
-  "required": ["header", "games"]
+  }
 }

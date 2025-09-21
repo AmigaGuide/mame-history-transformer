@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:exotica:schema:gh_system_ports:1.1.0",
+  "title": "Gaming-History Systems & Ports",
+  "description": "Canonical GH system entries keyed by MAME machine name, including aliases and platform-specific port lists.",
+  "type": "object",
+  "additionalProperties": false,
+
+  "patternProperties": {
+    "^[a-z0-9_]+$": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gh_id", "aliases", "port_overview", "ports"],
+      "properties": {
+        "gh_id": { "type": "integer", "minimum": 1 },
+
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+
+        "port_overview": { "type": "string" },
+
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "CONSOLES":  { "type": "array", "items": { "$ref": "#/$defs/PortsItem" } },
+            "HANDHELDS": { "type": "array", "items": { "$ref": "#/$defs/PortsItem" } },
+            "COMPUTERS": { "type": "array", "items": { "$ref": "#/$defs/PortsItem" } },
+            "OTHERS":    { "type": "array", "items": { "$ref": "#/$defs/PortsItem" } }
+          }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "Region2": {
+      "description": "Two-letter region or '??'.",
+      "type": "string",
+      "pattern": "^[A-Z?]{2}$"
+    },
+
+    "StringOrNull": { "type": ["string", "null"] },
+
+    "LooseDate": {
+      "description": "YYYY-MM-DD with unknowns allowed (X in year digits; XX for month/day), or null.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9X]{4}-(\\d{2}|XX)-(\\d{2}|XX)$"
+    },
+
+    "PortsItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regions", "platform", "model", "title", "date", "publisher", "comment", "additional_tags", "residue"],
+      "properties": {
+        "regions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Region2" }
+        },
+        "platform": { "type": "string", "minLength": 1 },
+        "model": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "title":     { "$ref": "#/$defs/StringOrNull" },
+        "date":      { "$ref": "#/$defs/LooseDate" },
+        "publisher": { "$ref": "#/$defs/StringOrNull" },
+        "comment":   { "$ref": "#/$defs/StringOrNull" },
+        "additional_tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "residue": {
+          "description": "Leftover fields captured during parsing; currently empty arrays in your output.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

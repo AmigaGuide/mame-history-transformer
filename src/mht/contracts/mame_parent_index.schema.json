@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:exotica:schema:mame_parent_index:1.1.0",
+  "title": "MAME Parent/Clone Index",
+  "description": "Derived parent→clones and clone→parent maps from MAME XML.",
+  "type": "object",
+  "additionalProperties": false,
+
+  "required": ["parents", "child_to_parent"],
+
+  "properties": {
+    "parents": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Parents that have at least one clone.",
+      "patternProperties": {
+        "^[a-z0-9_]+$": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+        }
+      }
+    },
+
+    "child_to_parent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Every clone mapped to its parent.",
+      "patternProperties": {
+        "^[a-z0-9_]+$": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+      }
+    }
+  }
+}

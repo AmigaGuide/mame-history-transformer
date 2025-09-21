@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:exotica:schema:exotica_wiki_pages_and_redirects:1.1.0",
+  "title": "ExoticA Lost in Translation - Wiki Pages and Redirects",
+  "description": "Canonical mapping of MAME machine names to wiki page slugs, with redirects and conflict diagnostics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["header", "prefix", "stats", "pages", "page_names", "redirects", "conflicts"],
+  "properties": {
+    
+	"header": {
+	  "type": "object",
+	  "additionalProperties": false,
+	  "required": ["schema_id", "schema_version", "generated_at"],
+	  "properties": {
+		"schema_id":      { "type": "string", "const": "exotica_wiki_pages_and_redirects" },
+		"schema_version": { "type": "string", "const": "1.1.0" },
+		"generated_at":   { "type": "string", "format": "date-time" },
+		"versions": {
+		  "type": "object",
+		  "additionalProperties": false,
+		  "required": ["mame_xml_version", "gaming_history_xml_version", "ini_versions"],
+		  "properties": {
+			"mame_xml_version":           { "type": "string" },
+			"gaming_history_xml_version": { "type": "string" },
+			"ini_versions": {
+			  "type": "object",
+			  "minProperties": 1,
+			  "additionalProperties": { "type": "string" }
+			}
+		  }
+		}
+	  }
+	},
+  
+    "prefix": { "type": "string", "minLength": 1 },
+
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parents_total", "page_names_total", "redirects_total", "page_name_collisions", "redirect_conflicts"],
+      "properties": {
+        "parents_total":        { "type": "integer", "minimum": 0 },
+        "page_names_total":     { "type": "integer", "minimum": 0 },
+        "redirects_total":      { "type": "integer", "minimum": 0 },
+        "page_name_collisions": { "type": "integer", "minimum": 0 },
+        "redirect_conflicts":   { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "pages": {
+      "type": "object",
+      "description": "Map of MAME machine name -> full wiki page path",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9_]+$": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "page_names": {
+      "type": "array",
+      "description": "Flat list of all unique wiki page paths",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+
+    "redirects": {
+      "type": "object",
+      "description": "Map of full source path -> full target path",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^.+$": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "conflicts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_name_collisions", "redirect_conflicts"],
+      "properties": {
+        "page_name_collisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["page", "machines"],
+            "properties": {
+              "page": { "type": "string", "minLength": 1 },
+              "machines": {
+                "type": "array",
+                "minItems": 2,
+                "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+              }
+            }
+          }
+        },
+        "redirect_conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "targets", "machines"],
+            "properties": {
+              "source":  { "type": "string", "minLength": 1 },
+              "targets": {
+                "type": "array",
+                "minItems": 2,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "machines": {
+                "type": "array",
+                "minItems": 2,
+                "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
