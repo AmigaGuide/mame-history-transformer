@@ -180,7 +180,9 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     display_tags_overall_ctr = Counter()
     disk_regions_overall_ctr = Counter()
     disk_media_platforms_per_machine_ctr = Counter()
-
+    dropped_displays_total = 0
+    dropped_displays_examples: list[dict[str, object]] = []
+    
     machines_out: Dict[str, Dict[str, Any]] = {}
 
     try:
@@ -352,6 +354,30 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                             d_refresh_hz = float(r_attr) if r_attr else None
                         except ValueError:
                             d_refresh_hz = None
+
+                        # --- VALIDATION: keep only sensible displays ---
+                        # Vector: allow unknown dimensions. Others must have positive width & height.
+                        valid = True
+                        if (d_type != "vector"):
+                            if (d_width is None or d_height is None or
+                                not isinstance(d_width, int) or not isinstance(d_height, int) or
+                                d_width <= 0 or d_height <= 0):
+                                valid = False
+
+                        if not valid:
+                            log.warning(f"[mame_parser::parse_mame_xml] Dropping invalid display on {mame_name}: "
+                                        f"type={d_type}, width={d_width}, height={d_height}, tag={d_tag}")
+                            # NEW: track count + a few examples
+                            dropped_displays_total += 1
+                            if len(dropped_displays_examples) < 10:
+                                dropped_displays_examples.append({
+                                    "machine": mame_name,
+                                    "type": d_type,
+                                    "width": d_width,
+                                    "height": d_height,
+                                    "tag": d_tag,
+                                })
+                            continue
 
                         displays_list.append({
                             "tag": d_tag,
@@ -665,7 +691,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     "distribution": _numdist(disk_media_platforms_per_machine_ctr),
                     "sum": sum(disk_media_platforms_per_machine_ctr.values()),
                     "examples": disk_media_examples  # keys "0", "1", ... each with up to 5 names
-                },                
+                },
+                # NEW: dropped/invalid display rows (non-vector with zero/invalid dims)
+                "invalid_displays_dropped": {
+                    "count": dropped_displays_total,
+                    "examples": dropped_displays_examples
+                },
             }
         }
 
@@ -793,5 +824,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
              f"{len(parent_index['child_to_parent'])} clones)")
 
     log.info(f"MAME XML parsing completed in {parse_seconds:.2f} seconds")
+    
+    log.info(f"Invalid display rows dropped: {dropped_displays_total}")
 
     return True
