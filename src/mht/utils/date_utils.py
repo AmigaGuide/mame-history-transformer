@@ -1,110 +1,224 @@
 """
 Filename: date_utils.py
-Version: 1.0.0
-Last modified: 2025-09-10
-Author: Jason (XtC) Skelly (Open University TM470, 2025)
-
-Project:
-"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+Version: 2.0.0
+Last modified: 2025-09-25
+Author: XtC
 
 Purpose:
-Parse and normalise fuzzy date strings from Gaming-History PORTS entries into
-canonical forms suitable for downstream processing and wiki rendering.
-
-Key behaviours:
-- Accepts free-form dates (e.g. "July 1991", "Dec. 6, 2007") and returns:
-  YYYY-MM-DD when day+month+year are present; YYYY-MM-XX for year+month;
-  YYYY-XX-XX for year-only.
-- Handles uncertain years (e.g. "198?", "19??") by converting '?' to 'X'
-  and returning YYYY-XX-XX.
-- Returns None when no valid date can be inferred and logs a DEBUG note
-  with calling context.
-
-Inputs:
-- Raw date substrings already extracted from parentheses in PORTS lines.
-
-Outputs:
-- Normalised date strings or None (no side effects beyond logging).
-
-Logging:
-- Uses logger.setup_logger() and debug_log(); verbosity governed by config.LOG_LEVEL.
-
-Licence:
-This file forms part of a student project and is not intended for commercial use.
-See repository LICENCE for details.
+Normalise free-form GH date snippets into 'YYYY[-MM[-DD]]' with 'XX' placeholders.
+Accepts: year-only, year+month (numeric or name), full dates (numeric or with month name),
+and fuzzy years like 19??/198?. Rejects weekdays, ranges, quarters/seasons, month-only.
 """
 
 from __future__ import annotations
 
 import re
-from dateutil import parser as date_parser
+from datetime import date
+from typing import Optional
 
-#from logger import setup_logger, debug_log
-from mht.utils.logger import setup_logger, debug_log
+from .logger import setup_logger, debug_log
 
 __all__ = ["parse_date_string"]
 
-logger = setup_logger()
+_logger = setup_logger()
+
+# --- Month name support (case-insensitive, optional trailing dot for abbreviations) ---
+_MONTHS = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
+_MONTH_TOKEN = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+_MONTH_TOKEN_DOT = rf"{_MONTH_TOKEN}\.?"  # allow trailing dot on abbreviations
+
+# --- Precompiled patterns (accept) ---
+FUZZY_YEAR = re.compile(r"^(?:\d\?\?\?|\d{2}\?\?|\d{3}\?)$")   # 1???, 19??, 198?
+YEAR_ONLY = re.compile(r"^\d{4}$")
+YEAR_MONTH_NUM = re.compile(r"^(\d{4})[-/](0?[1-9]|1[0-2])$")
+NUMERIC_FULL = re.compile(
+    r"^(?:"
+    r"(?P<y>\d{4})[-/](?P<m>0?[1-9]|1[0-2])[-/](?P<d>0?[1-9]|[12]\d|3[01])"   # ISO: YYYY-M-D
+    r"|"
+    r"(?P<a>\d{1,2})[-/](?P<b>\d{1,2})[-/](?P<y2>\d{4})"                       # D-M-YYYY or M-D-YYYY
+    r")$"
+)
+
+MONTH_NAME_YEAR = re.compile(
+    rf"^(?P<mon>{_MONTH_TOKEN_DOT})\s*(?P<year>\d{{4}})$",
+    re.IGNORECASE,
+)
+
+DAY_MONTH_NAME_YEAR = re.compile(
+    rf"^(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s*(?P<mon>{_MONTH_TOKEN_DOT})\s*,?\s*(?P<year>\d{{4}})$",
+    re.IGNORECASE,
+)
+
+MONTH_NAME_DAY_YEAR = re.compile(
+    rf"^(?P<mon>{_MONTH_TOKEN_DOT})\s*,?\s*(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s*,?\s*(?P<year>\d{{4}})$",
+    re.IGNORECASE,
+)
+
+MONTH_NAME_UNKNOWN_DAY_YEAR = re.compile(
+    rf"^(?P<mon>{_MONTH_TOKEN_DOT})\s*,?\s*\?\?\s*,?\s*(?P<year>\d{{4}})$",
+    re.IGNORECASE,
+)
+
+UNKNOWN_MONTH_UNKNOWN_DAY_YEAR = re.compile(
+    r"^(?:\?{3})\.?\s*,?\s*\?{2}\s*,?\s*(?P<year>\d{4})$",
+    re.IGNORECASE,
+)
+
+# --- Precompiled patterns (reject) ---
+WEEKDAY = re.compile(
+    r"\b(?:mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b",
+    re.IGNORECASE,
+)
+QUARTER_SEASON = re.compile(r"\bQ[1-4]\b|\b(?:spring|summer|autumn|fall|winter)\b", re.IGNORECASE)
+MONTH_ONLY = re.compile(rf"^(?:{_MONTH_TOKEN_DOT})$", re.IGNORECASE)
+
+# Helper: count distinct 4-digit years (reject ranges like 1991/1992)
+FOUR_DIGIT_YEAR = re.compile(r"\b\d{4}\b")
+
+
+def _month_num(mon_token: str) -> Optional[int]:
+    k = mon_token.rstrip(".").lower()
+    return _MONTHS.get(k)
+
+
+def _fmt(y: int, m: Optional[int] = None, d: Optional[int] = None) -> str:
+    if m is None:
+        return f"{y:04d}-XX-XX"
+    if d is None:
+        return f"{y:04d}-{m:02d}-XX"
+    return f"{y:04d}-{m:02d}-{d:02d}"
+
+
+def _validate_day(y: int, m: int, d: int) -> bool:
+    try:
+        date(y, m, d)
+        return True
+    except ValueError:
+        return False
 
 
 def parse_date_string(date_str: str | None, context: str = "") -> str | None:
-    """
-    Normalise a PORTS-style date substring.
-
-    Returns one of:
-      - "YYYY-MM-DD"  when day, month, and year are present
-      - "YYYY-MM-XX"  when month and year are present
-      - "YYYY-XX-XX"  when only year is present
-      - None          when no valid date can be inferred
-
-    Also handles fuzzy/uncertain years (e.g. "198?", "19??") by replacing
-    '?' with 'X' and returning "YYYY-XX-XX".
-
-    Assumptions:
-    - The input has already been extracted from parentheses in a PORTS row,
-      e.g. "(July 1991)" or "(19??)".
-
-    Parameters:
-        date_str: The raw date substring to interpret.
-        context:  Short identifier (e.g. system/machine) for debug logs.
-
-    Returns:
-        Normalised date string or None.
-    """
-    if not date_str or not isinstance(date_str, str):
+    """Return 'YYYY[-MM[-DD]]' (with 'XX' placeholders) or None on rejection; logs DEBUG on rejection."""
+    if not isinstance(date_str, str):
         return None
 
-    original = date_str.strip()
-    original = original.rstrip(",")
+    s = date_str.strip()
+    if not s:
+        return None
 
-    # Handle fuzzy years like 198?, 19??, 20?? (replace '?' with 'X')
-    if (
-        re.fullmatch(r"\d\?\?\?", original)
-        or re.fullmatch(r"\d{2}\?\?", original)
-        or re.fullmatch(r"\d{3}\?", original)
-    ):
-        cleaned = original.replace("?", "X")
-        return f"{cleaned}-XX-XX"
+    # strip any leading quotes
+    s = re.sub(r'^[\'"]+', '', s)
 
-    try:
-        # Parse with dateutil; missing components will default (e.g. day=1)
-        dt = date_parser.parse(original, fuzzy=True)
+    # strip trailing punctuation like commas/semicolons/quotes (possibly repeated)
+    s = re.sub(r'[,\.;:\'"]+\s*$', '', s).strip()
 
-        # Heuristics: detect whether month/day tokens actually appeared
-        month_match = re.search(
-            r"(?:\bjan|\bfeb|\bmar|\bapr|\bmay|\bjun|\bjul|\baug|\bsep|\boct|\bnov|\bdec|\b0?[1-9]\b|\b1[0-2]\b)",
-            original,
-            re.IGNORECASE,
-        )
-        day_match = re.search(r"\b[0-3]?\d\b(?:st|nd|rd|th)?", original, re.IGNORECASE)
+    # collapse internal runs of whitespace
+    s = re.sub(r'\s+', ' ', s)
 
-        if month_match and day_match:
-            return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"
-        elif month_match:
-            return f"{dt.year:04d}-{dt.month:02d}-XX"
+    # 1) Fuzzy year like 198? / 19??
+    if FUZZY_YEAR.fullmatch(s):
+        return f"{s.replace('?', 'X')}-XX-XX"
+
+    # 2) Rejectors: weekdays, quarters/seasons, month-only, multiple 4-digit years (ranges)
+    if WEEKDAY.search(s) or QUARTER_SEASON.search(s) or MONTH_ONLY.fullmatch(s):
+        debug_log(f"Unparsable date '{s}' (context: {context})")
+        return None
+    if len(FOUR_DIGIT_YEAR.findall(s)) >= 2:
+        debug_log(f"Unparsable date range/multi-year '{s}' (context: {context})")
+        return None
+
+    # 3) Year only
+    m = YEAR_ONLY.fullmatch(s)
+    if m:
+        return _fmt(int(s))
+
+    # 4) Year + month (numeric)
+    m = YEAR_MONTH_NUM.fullmatch(s)
+    if m:
+        y = int(m.group(1))
+        mm = int(m.group(2))
+        return _fmt(y, mm)
+
+    # 5) Month name + year
+    m = MONTH_NAME_YEAR.fullmatch(s)
+    if m:
+        mm = _month_num(m.group("mon"))
+        if mm:
+            return _fmt(int(m.group("year")), mm)
+        debug_log(f"Unparsable month token '{s}' (context: {context})")
+        return None
+
+    m = MONTH_NAME_UNKNOWN_DAY_YEAR.fullmatch(s)
+    if m:
+        mm = _month_num(m.group("mon"))
+        if mm:
+            return _fmt(int(m.group("year")), mm)
+        debug_log(f"Unparsable month token '{s}' (context: {context})")
+        return None
+
+    m = UNKNOWN_MONTH_UNKNOWN_DAY_YEAR.fullmatch(s)
+    if m:
+        return _fmt(int(m.group("year")))  # YYYY-XX-XX
+
+    # 6) Day MonthName Year  (UK style)
+    m = DAY_MONTH_NAME_YEAR.fullmatch(s)
+    if m:
+        dd = int(m.group("day"))
+        mm = _month_num(m.group("mon"))
+        yy = int(m.group("year"))
+        if not mm or not _validate_day(yy, mm, dd):
+            debug_log(f"Invalid calendar date '{s}' (context: {context})")
+            return None
+        return _fmt(yy, mm, dd)
+
+    # 7) MonthName Day Year  (US style with name)
+    m = MONTH_NAME_DAY_YEAR.fullmatch(s)
+    if m:
+        dd = int(m.group("day"))
+        mm = _month_num(m.group("mon"))
+        yy = int(m.group("year"))
+        if not mm or not _validate_day(yy, mm, dd):
+            debug_log(f"Invalid calendar date '{s}' (context: {context})")
+            return None
+        return _fmt(yy, mm, dd)
+
+    # 8) Full numeric dates (ISO or D/M/Y or M/D/Y) with UK bias on ambiguity
+    m = NUMERIC_FULL.fullmatch(s)
+    if m:
+        if m.group("y"):  # ISO-like: YYYY-M-D
+            yy = int(m.group("y"))
+            mm = int(m.group("m"))
+            dd = int(m.group("d"))
         else:
-            return f"{dt.year:04d}-XX-XX"
+            a = int(m.group("a"))
+            b = int(m.group("b"))
+            yy = int(m.group("y2"))
+            # If one token > 12, that must be the day
+            if a > 12 and b <= 12:
+                dd, mm = a, b
+            elif b > 12 and a <= 12:
+                dd, mm = b, a
+            else:
+                # Ambiguous: UK bias (day-first)
+                dd, mm = a, b
+        if not _validate_day(yy, mm, dd):
+            debug_log(f"Invalid calendar date '{s}' (context: {context})")
+            return None
+        return _fmt(yy, mm, dd)
 
-    except (ValueError, OverflowError):
-        debug_log(f"Unparsable date '{original}' (context: {context})")
-        return None
+    # 9) No match → reject
+    debug_log(f"Unparsable date '{s}' (context: {context})")
+    return None
