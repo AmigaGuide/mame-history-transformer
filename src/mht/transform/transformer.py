@@ -2813,14 +2813,32 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     }
 
 
+    # Header-first, additive only
+    header_versions = dict(versions)  # reuse whatever you already collect (mame_build, gh_version, etc.)
+    # If/when you add a code version, do: header_versions["transformer_version"] = TRANSFORMER_VERSION
+
     summary = {
+        # --- Unified header (new, canonical) ---
+        "header": {
+            "schema_id": "mht.transform.summary",
+            "schema_version": "1.0.1",
+            "generated_at": finished_utc,      # canonical: use the end time as "generated_at"
+            "started_utc": started_utc,        # duplicated here for convenience
+            "finished_utc": finished_utc,      # duplicated here for convenience
+            "duration_seconds": duration,      # duplicated here for convenience
+            "versions": header_versions,       # your existing versions dict
+        },
+
+        # --- Legacy/top-level fields retained for one cycle (unchanged) ---
         "transformer_schema": TRANSFORMER_SCHEMA,
         "started_utc": started_utc,
         "finished_utc": finished_utc,
         "duration_seconds": duration,
+
         "inputs": inputs_map,
         "outputs": outputs_map,
         "versions": versions,
+
         "counts": {
             "mame_total": len(mame),
             "parents_total": parents_total,
@@ -2829,48 +2847,54 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "final_included": len(out_map),
             "parents_with_clones": parents_with_clones,
             "total_clones_linked": total_clones_linked,
-            "parents_without_clones": len(eligible_parents)-parents_with_clones,
+            "parents_without_clones": len(eligible_parents) - parents_with_clones,
             "parents_with_any_media": parents_with_any_media,
             "media_label_counts": media_label_counts_sorted,
             "audio": {
                 "machines_reporting_channels": audio_total_with_channels,
                 "channel_speaker_mismatches": audio_channel_speaker_mismatch,
                 "mismatch_examples": audio_mismatch_examples,
-                "machines_requiring_samples": audio_samples_required_count
+                "machines_requiring_samples": audio_samples_required_count,
             },
         },
+
         "excluded_parents_by_reason": excluded_reasons,
         "included_flags": included_flags,
+
         "title_anomaly_counts": title_anomaly_counts,
         "title_anomalies": title_anomalies,
+
         "title_overrides": {
             "stats": overrides_stats,
-            "applied": overrides_applied
-        },        
+            "applied": overrides_applied,
+        },
+
         "ports": summary_ports,
+
         "notes": {
             "ports_attached": True,
-             "export_scope": "Parents are exported only if INI says Arcade/Game AND the parent or any clone has ≥1 valid GH port row (platform present).",
+            "export_scope": "Parents are exported only if INI says Arcade/Game AND the parent or any clone has ≥1 valid GH port row (platform present).",
             "filter_rules": {
                 "game_status_equals": "game",
                 "category_must_include": "Arcade",
                 "ignore_coin_op_games": True,
                 "ignore_type_for_filter": True,
-                "ignore_isbios_isdevice_ismechanical_for_filter": True
+                "ignore_isbios_isdevice_ismechanical_for_filter": True,
             },
             "title_parsing": {
                 "numbered_fields": True,
                 "global_version_is_single_string": True,
                 "only_top_level_groups": True,
-                "nested_preserved_inside": True
+                "nested_preserved_inside": True,
             },
             "clones_list_title_source": "raw MAME 'description' (no overrides)",
             "ignored_media_devices": {
                 "total_ignored_entries": ignored_total,
                 "unique_ignored": len(ignored_device_counts),
                 "top_ignored": ignored_top,
-            },                        
+            },
         },
+
         "errors": [] if ok_out and not missing_in_mame else (
             [{"missing_in_mame": missing_in_mame}] if missing_in_mame else []
         ),

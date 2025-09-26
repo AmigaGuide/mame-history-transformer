@@ -990,17 +990,41 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         },
     }
 
+    
+    # Build a single timestamp so header.generated_at matches history.generated_at
+    generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
+
     summary = {
-        "history": {
-        "history_parser_schema": HISTORY_PARSER_SCHEMA,
-        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
-        "version": history_version,
-        "date": history_date,
+        # --- Unified header FIRST ---
+        "header": {
+            "schema_id": "mht.history.summary",
+            "schema_version": "1.0.1",
+            "generated_at": generated_at_utc,
+            "versions": {
+                "gh_version": history_version,  # e.g. "2.80"
+                "gh_date": history_date,        # e.g. "2025-08-31"
+            },
         },
+
+        # --- Your legacy block (kept for this cycle) ---
+        "history": {
+            "history_parser_schema": HISTORY_PARSER_SCHEMA,
+            "generated_at": generated_at_utc,
+            "version": history_version,
+            "date": history_date,
+        },
+
+        # --- Totals, with additive canonical aliases ---
         "totals": {
             "systems_total": systems_count,
             "software_total": software_count,
             "entries_total": systems_count + software_count,
+
+            # Canonical aliases (additive; keep originals above)
+            "total_systems": systems_count,
+            "total_software": software_count,
+            "total_entries": systems_count + software_count,
+
             "systems_with_ports": systems_with_ports,
             "systems_with_aliases": systems_with_aliases,
             "port_lines_parsed": total_port_lines_all,
@@ -1011,6 +1035,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             "ports_with_comments": parsing_state["ports_with_comments"],
             "systems_with_port_overview": port_overview_block["count"],
         },
+
+        # --- Unchanged blocks ---
         "found": {
             "section_headings_found": section_headings_block,
             "platform_categories_found": platform_categories_block,
@@ -1024,6 +1050,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             "disk_size_quotes": disk_size_quotes_block,
             "port_overview_texts": port_overview_block,
         },
+
         "anomalies": {
             "unexpected_platform_categories": unexpected_platform_categories_block,
             "odd_number_of_quotes": odd_number_of_quotes_block,
@@ -1040,7 +1067,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                     for sys, counter in sorted(parsing_state["platform_banners_by_system"].items())
                 }
             },
-            # Ports that still have null platform after inheritance (ideally 0)
             "null_platform_ports": {
                 "count": parsing_state["null_platform_ports_total"],
                 "systems_affected": len(parsing_state["null_platform_ports_by_system"]),
@@ -1051,12 +1077,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                 "by_system_lines": {k: v for k, v in parsing_state["null_platform_examples"].items()}
             }
         },
+
         "residue_flags": {
             "unparsable_dates": unparsable_dates_block,
-            "systems_with_residue": systems_with_residue_block,            
-            
+            "systems_with_residue": systems_with_residue_block,
         },
     }
+
 
     summary_path = Path("data/history_parsing_summary.json")
     try:

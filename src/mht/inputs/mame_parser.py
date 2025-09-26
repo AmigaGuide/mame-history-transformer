@@ -511,50 +511,17 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     parse_seconds = time.perf_counter() - start
     generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
+
     def _build_summary():
-        """
-        Build the totals/metrics summary block for the parsed MAME dataset.
-
-        Draws on the counters and derived values accumulated in parse_mame_xml()
-        (years, manufacturers, players, controls, chips, audio, displays, disk
-        regions/media, etc.) and returns a deterministic, JSON-serialisable dict
-        with:
-          - "mame": parser schema/version and MAME header attributes
-          - "totals": overall counts plus per-field distributions and sums
-                      (each distribution is normalised/sorted for readability)
-
-        Notes:
-        - Uses local helpers such as _sorted_numeric_keys_with_unknown_last(),
-          _sorted_alpha_with_unknown_last(), and _sort_numeric_str() to provide
-          stable ordering and to place "unknown" last where applicable.
-        - Includes small illustrative examples for disk media platform buckets.
-        - Intended solely for reporting/sanity checking; does not alter primary data.
-
-        Returns:
-            dict: Summary document ready for JSON output.
-        """
+        """Build the totals/metrics summary block for the parsed MAME dataset."""
         # Core distributions
         years_dist  = _sorted_numeric_keys_with_unknown_last(dict(years_ctr))
         manuf_dist  = _sorted_alpha_with_unknown_last(dict(manuf_ctr))
         display_types_overall_dist = _sorted_alpha_with_unknown_last(dict(display_types_overall_ctr))
         display_tags_overall_dist  = _sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
 
-
-
         def _numdist(counter):
-            """
-            Convenience normaliser for per-machine histograms.
-
-            Converts a Counter/dict whose keys are numeric strings (plus optional
-            "unknown") into an ascending, string-keyed dict using _sort_numeric_str().
-            If "unknown" exists in the source, it is appended as the final key.
-
-            Args:
-                counter (Mapping[str, int]): Source histogram.
-
-            Returns:
-                dict[str, int]: Sorted distribution with "unknown" last if present.
-            """
+            """Normalise numeric-string keyed histograms (append 'unknown' last if present)."""
             dist = _sort_numeric_str(dict(counter))
             if "unknown" in counter:
                 dist["unknown"] = counter["unknown"]
@@ -581,25 +548,47 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         control_reqbuttons_overall_dist = _numdist(control_reqbuttons_overall_ctr)
 
         # Convenience sums (sanity checks)
-        years_sum         = sum(years_dist.values())
-        manufacturers_sum = sum(manuf_dist.values())
-        players_sum       = sum(players_dist.values())
-        cpus_sum          = sum(cpus_dist.values())
-        sounds_sum        = sum(sounds_dist.values())
-        displays_sum      = sum(displays_dist.values())
-        speakers_sum      = sum(speakers_dist.values())
-        sound_channels_sum = sum(sound_channels_dist.values())
-        display_types_overall_sum = sum(display_types_overall_dist.values())
-        display_tags_overall_sum  = sum(display_tags_overall_dist.values())
-        disk_regions_overall_sum  = sum(disk_regions_overall_dist.values())
-        control_type_overall_sum  = sum(control_type_overall_dist.values())
-        control_ways_overall_sum  = sum(control_ways_overall_dist.values())
-        control_ways2_overall_sum = sum(control_ways2_overall_dist.values())
-        control_ways3_overall_sum = sum(control_ways3_overall_dist.values())
-        control_buttons_overall_sum    = sum(control_buttons_overall_dist.values())
+        years_sum                   = sum(years_dist.values())
+        manufacturers_sum           = sum(manuf_dist.values())
+        players_sum                 = sum(players_dist.values())
+        cpus_sum                    = sum(cpus_dist.values())
+        sounds_sum                  = sum(sounds_dist.values())
+        displays_sum                = sum(displays_dist.values())
+        speakers_sum                = sum(speakers_dist.values())
+        sound_channels_sum          = sum(sound_channels_dist.values())
+        display_types_overall_sum   = sum(display_types_overall_dist.values())
+        display_tags_overall_sum    = sum(display_tags_overall_dist.values())
+        disk_regions_overall_sum    = sum(disk_regions_overall_dist.values())
+        control_type_overall_sum    = sum(control_type_overall_dist.values())
+        control_ways_overall_sum    = sum(control_ways_overall_dist.values())
+        control_ways2_overall_sum   = sum(control_ways2_overall_dist.values())
+        control_ways3_overall_sum   = sum(control_ways3_overall_dist.values())
+        control_buttons_overall_sum = sum(control_buttons_overall_dist.values())
         control_reqbuttons_overall_sum = sum(control_reqbuttons_overall_dist.values())
 
-        return {
+        # --- derive versions for header ---
+        mame_build_str = mame_build  # already set above
+        mame_xml_version = (
+            mame_build_str.split(" ", 1)[0]
+            if isinstance(mame_build_str, str) and mame_build_str.strip()
+            else None
+        )
+        versions_block = {}
+        if mame_xml_version:
+            versions_block["mame_xml_version"] = mame_xml_version
+        if mame_build_str:
+            versions_block["mame_build"] = mame_build_str
+        if mame_mameconfig is not None:
+            versions_block["mameconfig"] = mame_mameconfig
+
+        # --- build doc with HEADER FIRST ---
+        doc = {
+            "header": {
+                "schema_id": "mht.mame.summary",
+                "schema_version": "1.0.1",
+                "generated_at": generated_at_utc,
+                "versions": versions_block,
+            },
             "mame": {
                 "mame_parser_schema": MAME_PARSER_SCHEMA,
                 "generated_at": generated_at_utc,
@@ -614,7 +603,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 "total_isdevice": total_isdevice,
                 "total_ismechanical": total_ismechanical,
                 "total_requires_samples": total_requires_samples,
-
                 "years": {
                     "unique": len([k for k in years_dist.keys() if k != "unknown"]),
                     "distribution": years_dist,
@@ -625,80 +613,48 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     "distribution": manuf_dist,
                     "sum": manufacturers_sum,
                 },
-                "players": {
-                    "distribution": players_dist,
-                    "sum": players_sum,
-                },
+                "players": {"distribution": players_dist, "sum": players_sum},
                 "controls": {
-                    "types_overall": {
-                        "distribution": control_type_overall_dist,
-                        "sum": control_type_overall_sum
-                    },
-                    "ways_overall": {
-                        "distribution": control_ways_overall_dist,
-                        "sum": control_ways_overall_sum
-                    },
-                    "ways2_overall": {
-                        "distribution": control_ways2_overall_dist,
-                        "sum": control_ways2_overall_sum
-                    },
-                    "ways3_overall": {
-                        "distribution": control_ways3_overall_dist,
-                        "sum": control_ways3_overall_sum
-                    },
-                    "buttons_overall": {
-                        "distribution": control_buttons_overall_dist,
-                        "sum": control_buttons_overall_sum
-                    },
-                    "reqbuttons_overall": {
-                        "distribution": control_reqbuttons_overall_dist,
-                        "sum": control_reqbuttons_overall_sum
-                    }
+                    "types_overall": {"distribution": control_type_overall_dist, "sum": control_type_overall_sum},
+                    "ways_overall":  {"distribution": control_ways_overall_dist,  "sum": control_ways_overall_sum},
+                    "ways2_overall": {"distribution": control_ways2_overall_dist, "sum": control_ways2_overall_sum},
+                    "ways3_overall": {"distribution": control_ways3_overall_dist, "sum": control_ways3_overall_sum},
+                    "buttons_overall":    {"distribution": control_buttons_overall_dist,    "sum": control_buttons_overall_sum},
+                    "reqbuttons_overall": {"distribution": control_reqbuttons_overall_dist, "sum": control_reqbuttons_overall_sum},
                 },
-                "cpus_per_machine": {
-                    "distribution": cpus_dist,
-                    "sum": cpus_sum,
-                },
-                "sound_devices_per_machine": {
-                    "distribution": sounds_dist,
-                    "sum": sounds_sum,
-                },
-                "displays_per_machine": {
-                    "distribution": displays_dist,
-                    "sum": displays_sum,
-                },
-                "display_types_overall": {
-                    "distribution": display_types_overall_dist,
-                    "sum": display_types_overall_sum,
-                },
-                "display_tags_overall": {
-                    "distribution": display_tags_overall_dist,
-                    "sum": display_tags_overall_sum,
-                },
-                "sound_channels_per_machine": {
-                    "distribution": sound_channels_dist,
-                    "sum": sound_channels_sum,
-                },
-                "speakers_per_machine": {
-                    "distribution": speakers_dist,
-                    "sum": speakers_sum,
-                },
-                "disk_regions_overall": {
-                    "distribution": disk_regions_overall_dist,
-                    "sum": disk_regions_overall_sum,
-                },               
+                "cpus_per_machine": {"distribution": cpus_dist, "sum": cpus_sum},
+                "sound_devices_per_machine": {"distribution": sounds_dist, "sum": sounds_sum},
+                "displays_per_machine": {"distribution": displays_dist, "sum": displays_sum},
+                "display_types_overall": {"distribution": display_types_overall_dist, "sum": display_types_overall_sum},
+                "display_tags_overall": {"distribution": display_tags_overall_dist, "sum": display_tags_overall_sum},
+                "sound_channels_per_machine": {"distribution": sound_channels_dist, "sum": sound_channels_sum},
+                "speakers_per_machine": {"distribution": speakers_dist, "sum": speakers_sum},
+                "disk_regions_overall": {"distribution": disk_regions_overall_dist, "sum": disk_regions_overall_sum},
                 "disk_media_platforms_per_machine": {
                     "distribution": _numdist(disk_media_platforms_per_machine_ctr),
                     "sum": sum(disk_media_platforms_per_machine_ctr.values()),
-                    "examples": disk_media_examples  # keys "0", "1", ... each with up to 5 names
+                    "examples": disk_media_examples
                 },
-                # NEW: dropped/invalid display rows (non-vector with zero/invalid dims)
                 "invalid_displays_dropped": {
                     "count": dropped_displays_total,
                     "examples": dropped_displays_examples
                 },
-            }
+            },
         }
+
+        # --- additive aliases + anomalies mirror ---
+        totals = doc["totals"]
+        if "total_is_bios" not in totals:
+            totals["total_is_bios"] = totals["total_isbios"]
+        if "total_is_device" not in totals:
+            totals["total_is_device"] = totals["total_isdevice"]
+
+        legacy_drop = totals.get("invalid_displays_dropped")
+        if legacy_drop:
+            doc.setdefault("anomalies", {}).setdefault("dropped_displays", legacy_drop)
+
+        return doc
+
 
     summary = _build_summary()
 

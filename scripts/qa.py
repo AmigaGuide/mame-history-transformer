@@ -35,6 +35,24 @@ SECTIONS = [
     }),
 ]
 
+def _get_path(d: Dict[str, Any], path: tuple[str, ...]) -> Any | None:
+    cur = d
+    for k in path:
+        if not isinstance(cur, dict) or k not in cur:
+            return None
+        cur = cur[k]
+    return cur
+
+def _sum_anomaly_counts(anoms: Dict[str, Any] | None) -> int:
+    if not isinstance(anoms, dict):
+        return 0
+    total = 0
+    for v in anoms.values():
+        if isinstance(v, dict) and "count" in v and isinstance(v["count"], int):
+            total += v["count"]
+    return total
+
+
 def project_root(start: Path) -> Path:
     """Find the repo root by walking up until we see expected markers."""
     p = start.resolve()
@@ -67,13 +85,59 @@ def load_json(path: Path) -> Dict[str, Any] | None:
         return None
 
 def val(d: Dict[str, Any], key: str, default: Any) -> Any:
-    """Fetch a top-level key; if absent, try some common alternates, else default."""
+    """Fetch a value for the dashboard. Tries top-level, common nested paths, and simple derivations."""
     if d is None:
         return "n/a"
     if key in d:
         return d.get(key, default)
 
-    # Common alternates / older names:
+    # Common nested paths across our four summaries
+    nested_paths: dict[str, tuple[tuple[str, ...], ...]] = {
+        # MAME summary
+        "total_machines": (("totals", "total_machines"),),
+        "parents":        (("totals", "total_parents"), ("counts", "parents_total")),
+        "clones":         (("totals", "total_clones"), ("counts", "clones_total")),
+        "requires_samples": (("totals", "total_requires_samples"),),
+        "dropped_displays": (
+            ("anomalies", "dropped_displays", "count"),
+            ("invalid_displays_dropped", "count"),                # legacy alias
+            ("totals", "invalid_displays_dropped", "count"),      # older placement
+        ),
+
+        # GH summary
+        "systems_total":  (("totals", "systems_total"), ("totals", "total_systems")),
+        "ports_total":    (("totals", "systems_with_ports"),),    # treat "systems with ports" as ports_total
+        # anomalies_total handled as a special case below
+
+        # INI summary
+        "machines_classified": (("totals", "with_game_status"),),
+        "unknowns":            (("totals", "missing_in_category"),),
+
+        # Transform summary
+        "parents_included": (("counts", "final_included"),),
+        # parents_dropped handled as a special case below
+        "wiki_pages": (("outputs", "wiki_pages_and_redirects"),),  # path string (no counting here)
+        "ports_duplicate_systems": (("ports", "parent_clone_duplicate_ports", "systems_count"),),
+    }
+
+    # Special derived values
+    if key == "anomalies_total":
+        return _sum_anomaly_counts(d.get("anomalies"))
+
+    if key == "parents_dropped":
+        eligible = _get_path(d, ("counts", "eligible_parents"))
+        included = _get_path(d, ("counts", "final_included"))
+        if isinstance(eligible, int) and isinstance(included, int):
+            return max(0, eligible - included)
+        return default
+
+    # Try known nested paths
+    for path in nested_paths.get(key, ()):
+        v = _get_path(d, path)
+        if v is not None:
+            return v
+
+    # Fall back to historical alternates (top-level only)
     alternates = {
         "parents": ("total_parents", "parents_total"),
         "clones": ("total_clones", "clones_total"),
@@ -93,6 +157,7 @@ def val(d: Dict[str, Any], key: str, default: Any) -> Any:
     for alt in alternates:
         if alt in d:
             return d.get(alt, default)
+
     return default
 
 def main() -> int:
@@ -109,10 +174,10 @@ def main() -> int:
         if "no tests ran" in out.lower():
             print("\n(no tests ran — check working directory and test file names)")
     # Optional: uncomment to see details when needed
-    # print(out.strip())
-    # if err.strip():
-    #     print("\n[stderr]")
-    #     print(err.strip())
+    print(out.strip())
+    if err.strip():
+        print("\n[stderr]")
+        print(err.strip())
 
     # Summaries
     for title, relpath, keys in SECTIONS:

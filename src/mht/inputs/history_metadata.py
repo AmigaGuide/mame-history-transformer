@@ -431,7 +431,34 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
         "missing_in_type": len(union_names) - len(_parsed.get("type", {}).get("machine_sections", {})),
     }
 
+    # --- build unified header versions (consensus across INIs if possible) ---
+    header_versions: Dict[str, str] = {"ini_generated_at": now}
+
+    # Try to surface a single mame_version/mame_build if all INIs agree
+    mame_versions = {
+        v.get("mame_version")
+        for v in (files_block[k]["version"] for k in files_block)
+        if v and v.get("mame_version")
+    }
+    if len(mame_versions) == 1:
+        header_versions["mame_xml_version"] = next(iter(mame_versions))
+
+    mame_builds = {
+        v.get("mame_build")
+        for v in (files_block[k]["version"] for k in files_block)
+        if v and v.get("mame_build")
+    }
+    if len(mame_builds) == 1:
+        header_versions["mame_build"] = next(iter(mame_builds))
+
+    # --- summary (header FIRST), rest unchanged ---
     summary = {
+        "header": {
+            "schema_id": "mht.ini.summary",
+            "schema_version": "1.0.1",
+            "generated_at": now,
+            "versions": header_versions,
+        },
         "ini": {
             "ini_parser_schema": "1.1",
             "generated_at": now,
