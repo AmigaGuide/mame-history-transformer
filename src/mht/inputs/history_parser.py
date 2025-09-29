@@ -53,14 +53,11 @@ import html
 from collections import Counter, defaultdict
 import datetime
 
-#from config import LOG_LEVEL
 from mht.utils.config import LOG_LEVEL
-
-#from logger import setup_logger, debug_log
 from mht.utils.logger import setup_logger, debug_log
-
-#from date_utils import parse_date_string
 from mht.utils.date_utils import parse_date_string
+from mht.versions import SCHEMA_IDS, schema_version, tool_version
+
 
 __all__ = [
     "HISTORY_PARSER_SCHEMA",
@@ -994,26 +991,17 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     # Build a single timestamp so header.generated_at matches history.generated_at
     generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
-    summary = {
-        # --- Unified header FIRST ---
+    summary = {    
         "header": {
-            "schema_id": "mht.history.summary",
-            "schema_version": "1.0.1",
+            "schema_id": SCHEMA_IDS["history"],                         # was "mht.history.summary"
+            "schema_version": schema_version(SCHEMA_IDS["history"]),    # was "1.0.1"
             "generated_at": generated_at_utc,
             "versions": {
-                "gh_version": history_version,  # e.g. "2.80"
-                "gh_date": history_date,        # e.g. "2025-08-31"
+                "gh_version": history_version,
+                "gh_date": history_date,
+                "history_parser_version": tool_version("history_parser"),  # optional, but handy for traceability
             },
-        },
-
-        # --- Your legacy block (kept for this cycle) ---
-        "history": {
-            "history_parser_schema": HISTORY_PARSER_SCHEMA,
-            "generated_at": generated_at_utc,
-            "version": history_version,
-            "date": history_date,
-        },
-
+        },        
         # --- Totals, with additive canonical aliases ---
         "totals": {
             "systems_total": systems_count,
@@ -1035,8 +1023,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             "ports_with_comments": parsing_state["ports_with_comments"],
             "systems_with_port_overview": port_overview_block["count"],
         },
-
-        # --- Unchanged blocks ---
         "found": {
             "section_headings_found": section_headings_block,
             "platform_categories_found": platform_categories_block,
@@ -1050,7 +1036,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             "disk_size_quotes": disk_size_quotes_block,
             "port_overview_texts": port_overview_block,
         },
-
         "anomalies": {
             "unexpected_platform_categories": unexpected_platform_categories_block,
             "odd_number_of_quotes": odd_number_of_quotes_block,
@@ -1077,7 +1062,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                 "by_system_lines": {k: v for k, v in parsing_state["null_platform_examples"].items()}
             }
         },
-
         "residue_flags": {
             "unparsable_dates": unparsable_dates_block,
             "systems_with_residue": systems_with_residue_block,

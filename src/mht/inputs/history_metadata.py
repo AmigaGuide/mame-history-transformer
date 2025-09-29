@@ -37,11 +37,10 @@ import time
 import datetime
 import re
 
-#from config import LOG_LEVEL
 from mht.utils.config import LOG_LEVEL
-
-#from logger import setup_logger, debug_log
 from mht.utils.logger import setup_logger, debug_log
+from mht.versions import SCHEMA_IDS, schema_version, tool_version
+
 
 __all__ = [
     "parse_history_inis",
@@ -451,23 +450,26 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
     if len(mame_builds) == 1:
         header_versions["mame_build"] = next(iter(mame_builds))
 
-    # --- summary (header FIRST), rest unchanged ---
-    summary = {
+
+    summary = {   
         "header": {
-            "schema_id": "mht.ini.summary",
-            "schema_version": "1.0.1",
+            "schema_id": SCHEMA_IDS["ini"],                          # was "mht.ini.summary"
+            "schema_version": schema_version(SCHEMA_IDS["ini"]),     # was "1.0.1"
             "generated_at": now,
-            "versions": header_versions,
-        },
+            "versions": {
+                **header_versions,                                   # keep ini_generated_at + any consensus mame_* you set
+                "ini_summary_version": tool_version("ini_summary"),  # optional, for traceability
+            },
+        },        
         "ini": {
             "ini_parser_schema": "1.1",
             "generated_at": now,
-            "files": files_block,
+            "files": files_block,                   # ← unchanged, still here
         },
-        "totals": coverage,
-        "errors": errors,
+        "totals": coverage,                         # ← unchanged
+        "errors": errors,                           # ← unchanged
     }
-
+    
     out_path = data_dir / "ini_parsing_summary.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:

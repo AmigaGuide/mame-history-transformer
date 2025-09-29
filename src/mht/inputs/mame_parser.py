@@ -31,11 +31,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict
 
-#from config import LOG_LEVEL
 from mht.utils.config import LOG_LEVEL
-
-#from logger import setup_logger
 from mht.utils.logger import setup_logger
+from mht.versions import SCHEMA_IDS, schema_version, tool_version
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -582,18 +581,16 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             versions_block["mameconfig"] = mame_mameconfig
 
         # --- build doc with HEADER FIRST ---
-        doc = {
+        doc = {        
             "header": {
-                "schema_id": "mht.mame.summary",
-                "schema_version": "1.0.1",
+                "schema_id": SCHEMA_IDS["mame"],                     # was "mht.mame.summary"
+                "schema_version": schema_version(SCHEMA_IDS["mame"]),# was "1.0.1"
                 "generated_at": generated_at_utc,
-                "versions": versions_block,
-            },
-            "mame": {
-                "mame_parser_schema": MAME_PARSER_SCHEMA,
-                "generated_at": generated_at_utc,
-                "build": mame_build,
-                "mameconfig": mame_mameconfig,
+                "versions": {
+                    **versions_block,                                # your existing mame_xml_version/mame_build/mameconfig
+                    # optional: include tool version for traceability
+                    "mame_parser_version": tool_version("mame_parser"),
+                },
             },
             "totals": {
                 "total_machines": total_machines,

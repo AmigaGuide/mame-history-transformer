@@ -54,23 +54,26 @@ import time
 import re
 from collections import Counter
 
-#from config import LOG_LEVEL
 from mht.utils.config import LOG_LEVEL
-
-#from logger import setup_logger, debug_log
 from mht.utils.logger import setup_logger, debug_log
+from mht.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-# --- Schemas (bump only when shapes change) ---
-TRANSFORMER_SCHEMA = "0.8"   # used in data/transform_summary.json
-SCHEMA_ID_WIKI     = "exotica_lit_wiki"
-SCHEMA_VER_WIKI    = "1.1.0"
-SCHEMA_ID_RAW      = "exotica_lit_raw_data"
-SCHEMA_VER_RAW     = "1.1.0"
-SCHEMA_ID_PAGES    = "exotica_wiki_pages_and_redirects"
-SCHEMA_VER_PAGES    = "1.1.0"
 
+# Legacy field to keep for one cycle, but derive from the canonical summary schema now:
+TRANSFORMER_SCHEMA = schema_version(SCHEMA_IDS["transform"])  # was "0.8"
+
+# Output dataset schemas (IDs + versions) now from one source of truth:
+SCHEMA_ID_WIKI  = output_schema("wiki")["id"]
+SCHEMA_VER_WIKI = output_schema("wiki")["version"]
+
+SCHEMA_ID_RAW   = output_schema("raw")["id"]
+SCHEMA_VER_RAW  = output_schema("raw")["version"]
+
+SCHEMA_ID_PAGES  = output_schema("pages")["id"]
+SCHEMA_VER_PAGES = output_schema("pages")["version"]
 
 DATA_DIR   = Path("data")
 OUTPUT_DIR = Path("output")
@@ -2169,7 +2172,7 @@ def _parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[D
 # ----------------------------
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
-    """End-to-end transform: load artefacts, build parent-centric records, write wiki/raw JSON."""    
+    """End-to-end transform: load artefacts, build parent-centric records, write wiki/raw JSON."""
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     t0 = time.perf_counter()
 
@@ -2186,11 +2189,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     have_overrides = isinstance(overrides, dict) and bool(overrides)
 
     overrides_applied: list[dict[str, str]] = []
-    overrides_stats = {
-        "configured": len(overrides),
-        "eligible": 0,
-        "applied": 0
-    }
+    overrides_stats = {"configured": len(overrides), "eligible": 0, "applied": 0}
 
     # Load required inputs
     mame = _read_json(MAME_MACHINES_PATH)
@@ -2210,18 +2209,34 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     hist_sum = _read_json(DATA_DIR / "history_parsing_summary.json") or {}
     ini_sum  = _read_json(DATA_DIR / "ini_parsing_summary.json") or {}
 
-    # Raw versions for the transform summary (audit only)
+    # Small helper for nested dict access (header-first fallbacks)
+    def _get(d, *path, default=None):
+        cur = d
+        for k in path:
+            if not isinstance(cur, dict) or k not in cur:
+                return default
+            cur = cur[k]
+        return cur
+
+    # Prefer new header.versions; fall back to legacy blocks for compatibility
+    mame_build_val       = _get(mame_sum, "header", "versions", "mame_build")       or _get(mame_sum, "mame", "build")
+    history_version_val  = _get(hist_sum, "header", "versions", "gh_version")       or _get(hist_sum, "history", "version")
+    history_date_val     = _get(hist_sum, "header", "versions", "gh_date")          or _get(hist_sum, "history", "date")
+    ini_generated_at_val = _get(ini_sum,  "header", "generated_at")                  or _get(ini_sum,  "ini", "generated_at")
+
+    # Raw versions for the transform summary (audit-only echo)
     versions = {
-        "mame_build":      (mame_sum.get("mame")    or {}).get("build"),
-        "history_version":  (hist_sum.get("history") or {}).get("version"),
-        "history_date":     (hist_sum.get("history") or {}).get("date"),
-        "ini_generated_at": (ini_sum.get("ini")      or {}).get("generated_at"),
+        "mame_build":       mame_build_val,
+        "history_version":  history_version_val,
+        "history_date":     history_date_val,
+        "ini_generated_at": ini_generated_at_val,
     }
 
     # --- Build wiki header versions using creators' schemes (no mismatch reporting here) ---
-    mame_build_raw   = (mame_sum.get("mame")    or {}).get("build")    # e.g. "0.279 (mame0279)"
-    mame_core        = _core(mame_build_raw)                           # -> "0.279" or None
-    hist_version_raw = (hist_sum.get("history") or {}).get("version")  # e.g. "2.79" / "2.79a"
+    # e.g. mame_build_raw: "0.281 (mame0281)" -> mame_core: "0.281"
+    mame_build_raw   = mame_build_val
+    mame_core        = _core(mame_build_raw) or _get(mame_sum, "header", "versions", "mame_xml_version")
+    hist_version_raw = history_version_val
 
     # Per-INI versions: tolerate current and older shapes
     ini_versions_raw: dict[str, str] = {}
@@ -2238,7 +2253,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     # Fallbacks for older/alternative shapes
     if not ini_versions_raw:
-        # shape: { "files": [ {...}, {...} ] }
         files_list = ini_sum.get("files")
         if isinstance(files_list, list):
             for item in files_list:
@@ -2249,7 +2263,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                     ini_versions_raw[fn] = ver
 
     if not ini_versions_raw:
-        # stage-style: { "inputs": [ {...}, ... ] }
         for item in (ini_root.get("inputs") or ini_sum.get("inputs") or []):
             fn = (item.get("filename") or item.get("path") or "").strip()
             v  = item.get("version") or {}
@@ -2813,23 +2826,20 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     }
 
 
-    # Header-first, additive only
-    header_versions = dict(versions)  # reuse whatever you already collect (mame_build, gh_version, etc.)
-    # If/when you add a code version, do: header_versions["transformer_version"] = TRANSFORMER_VERSION
+    header_versions = dict(versions)
+    header_versions["transformer_version"] = tool_version("transformer")
 
     summary = {
-        # --- Unified header (new, canonical) ---
         "header": {
-            "schema_id": "mht.transform.summary",
-            "schema_version": "1.0.1",
-            "generated_at": finished_utc,      # canonical: use the end time as "generated_at"
-            "started_utc": started_utc,        # duplicated here for convenience
-            "finished_utc": finished_utc,      # duplicated here for convenience
-            "duration_seconds": duration,      # duplicated here for convenience
-            "versions": header_versions,       # your existing versions dict
+            "schema_id": SCHEMA_IDS["transform"],
+            "schema_version": schema_version(SCHEMA_IDS["transform"]),
+            "generated_at": finished_utc,
+            "started_utc": started_utc,
+            "finished_utc": finished_utc,
+            "duration_seconds": duration,
+            "versions": header_versions,
         },
-
-        # --- Legacy/top-level fields retained for one cycle (unchanged) ---
+        
         "transformer_schema": TRANSFORMER_SCHEMA,
         "started_utc": started_utc,
         "finished_utc": finished_utc,
