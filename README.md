@@ -41,6 +41,7 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 | `main.py` | Entry point; orchestrates pipeline, validates encodings/versions, builds per-run manifest |
 | `mame_parser.py` | Streams MAME XML; extracts machines, years, manufacturers, ROM stats, disk/media flags, displays, controls, and parent/clone relations |
 | `transformer.py` | Final stage: applies selection rules, parses titles, formats manufacturers, chips, ROM/media/controls/displays, merges GH ports, and emits wiki-ready JSON |
+| `versions.py` | Centralised schema IDs/versions (summaries and outputs) and tool versions |
 
 ---
 
@@ -95,6 +96,49 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 
 ---
 
+### Summary JSON header (v1.0.1)
+
+All four summary files include a unified header:
+
+```json
+"header": {
+  "schema_id": "mht.<module>.summary",
+  "schema_version": "1.0.1",
+  "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "versions": { /* data-source + tool versions; varies by file */ }
+}
+```
+
+* **MAME** (`mht.mame.summary`): `versions.mame_xml_version`, `mame_build`, `mameconfig`, *(optionally)* `mame_parser_version`.
+* **History** (`mht.history.summary`): `versions.gh_version`, `gh_date`, *(optionally)* `history_parser_version`.
+* **INI** (`mht.ini.summary`): `versions.ini_generated_at` (+ consensus `mame_*` if present), *(optionally)* `ini_summary_version`.
+* **Transform** (`mht.transform.summary`): timings duplicated in header (`started_utc`, `finished_utc`, `duration_seconds`) and `versions.transformer_version`.
+
+Back-compat:
+
+* We keep legacy blocks/keys for one cycle (e.g. MAME `invalid_displays_dropped` mirrored at `anomalies.dropped_displays`).
+* Aliases are additive (e.g. History `total_systems` mirrors `systems_total`).
+
+### Versioning
+
+We use semantic versioning independently for **tools** and **schemas**:
+
+* **Tools (code):** `MAJOR.MINOR.PATCH` (e.g. `transformer 1.0.1`).
+
+  * PATCH: fixes/non-breaking behaviour
+  * MINOR: new features, still backward compatible
+  * MAJOR: breaking CLI/behaviour
+
+* **Summary schemas:** `MAJOR.MINOR.PATCH` (current: **1.0.1**).
+
+  * PATCH: additive fields/aliases (no removals)
+  * MINOR: larger additive sections, still compatible
+  * MAJOR: breaking (rename/remove without alias)
+
+**Data-source versions** (MAME, Gaming-History, INIs) are always read from the artefacts, not hardcoded.
+
+---
+
 ## Schemas
 
 Schemas live in `src/mht/contracts/` and are versioned using semantic versions:
@@ -106,6 +150,31 @@ Schemas live in `src/mht/contracts/` and are versioned using semantic versions:
 - `gh_system_ports.schema.json` (`gh_system_ports`, **1.1.0**)  
 - `mame_machines.schema.json` (`mame_machines`, **1.1.0**)  
 - `mame_parent_index.schema.json` (`mame_parent_index`, **1.1.0**)
+
+---
+
+### Centralised versions
+
+`src/mht/versions.py` is the single source of truth for:
+
+* **Summary schema IDs/versions:** `SCHEMA_IDS`, `SCHEMA_INFO`
+* **Tool versions:** `TOOL_VERSIONS`
+* **Output dataset schemas:** `OUTPUT_SCHEMAS`
+
+Usage example:
+
+```python
+from mht.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
+
+header = {
+    "schema_id": SCHEMA_IDS["transform"],
+    "schema_version": schema_version(SCHEMA_IDS["transform"]),
+    "versions": {"transformer_version": tool_version("transformer")},
+}
+
+SCHEMA_ID_WIKI  = output_schema("wiki")["id"]
+SCHEMA_VER_WIKI = output_schema("wiki")["version"]
+```
 
 ---
 
