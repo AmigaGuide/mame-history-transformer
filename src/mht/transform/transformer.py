@@ -56,7 +56,7 @@ from collections import Counter
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
-from mht.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
+from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
 
 
 log = setup_logger(log_level=LOG_LEVEL)

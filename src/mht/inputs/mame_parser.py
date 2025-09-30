@@ -33,7 +33,7 @@ from typing import Any, Dict
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger
-from mht.versions import SCHEMA_IDS, schema_version, tool_version
+from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 
 
 log = setup_logger(log_level=LOG_LEVEL)

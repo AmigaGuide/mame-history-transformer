@@ -39,7 +39,7 @@ import re
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
-from mht.versions import SCHEMA_IDS, schema_version, tool_version
+from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 
 
 __all__ = [
