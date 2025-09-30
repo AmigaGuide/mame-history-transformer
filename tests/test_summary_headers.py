@@ -3,7 +3,7 @@ import json
 import pytest
 
 # Use the central truth
-from mht.versions import SCHEMA_IDS, schema_version
+from mht.utils.versions import SCHEMA_IDS, schema_version
 
 DATA = Path("data")
 

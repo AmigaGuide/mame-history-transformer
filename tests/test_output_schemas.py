@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import pytest
 
-from mht.versions import output_schema
+from mht.utils.versions import output_schema
 
 OUT = Path("output")
 
