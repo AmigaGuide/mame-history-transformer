@@ -1,7 +1,7 @@
 """
 Filename: main.py
-Version: 1.0.0
-Last modified: 2025-09-11
+Version: 1.0.1
+Last modified: 2025-09-20
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
 Project:

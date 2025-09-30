@@ -1,7 +1,7 @@
 """
 Filename: mame_parser.py
-Version: 1.0.0
-Last modified: 2025-09-10
+Version: 1.0.2
+Last modified: 2025-09-30
 Author: Jason (XtC) Skelly (Open University TM470, 2025)
 
 Project:
@@ -15,10 +15,6 @@ Parse the full MAME XML and write:
 
 No classification or filtering is applied here. Downstream modules will handle
 selection (using .ini metadata) and the join with Gaming-History.
-
-Licence:
-This file forms part of a student project and is not intended for commercial use.
-See repository LICENCE for details.
 """
 
 from __future__ import annotations
@@ -34,6 +30,12 @@ from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
+from mht.utils.paths import (
+    STAMPS_DIR,
+    MAME_MACHINES_PATH,
+    PARENT_INDEX_PATH,
+    MAME_SUMMARY,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -41,17 +43,7 @@ __all__ = ["MAME_PARSER_SCHEMA", "parse_mame_xml"]
 
 
 def _build_parent_index(machines: dict[str, dict]) -> dict:
-    """
-    Build a minimal parent/clone index from the parsed MAME machines.
-
-    Output shape:
-    {
-      "parents": { parent: [sorted, unique clones], ... },
-      "child_to_parent": { clone: parent, ... }
-    }
-
-    Only parents that actually have >= 1 clone are included.
-    """
+    """Build a minimal parent/clone index from the parsed MAME machines."""
     parents: dict[str, list[str]] = {}
     child_to_parent: dict[str, str] = {}
 
@@ -59,21 +51,14 @@ def _build_parent_index(machines: dict[str, dict]) -> dict:
         parent = info.get("cloneof")
         if not parent:
             continue
-        # Record reverse map
         child_to_parent[mname] = parent
-        # Record forward map
-        lst = parents.setdefault(parent, [])
-        lst.append(mname)
+        parents.setdefault(parent, []).append(mname)
 
-    # Deduplicate + sort clone lists; sort parent keys for stable diffs
     parents_sorted: dict[str, list[str]] = {
         p: sorted(set(clones)) for p, clones in parents.items() if clones
     }
     parents_sorted = {p: parents_sorted[p] for p in sorted(parents_sorted.keys())}
-
-    # Sort reverse map by clone name for deterministic output
     child_to_parent_sorted = {c: child_to_parent[c] for c in sorted(child_to_parent.keys())}
-
     return {"parents": parents_sorted, "child_to_parent": child_to_parent_sorted}
 
 
@@ -97,6 +82,7 @@ def _sorted_numeric_keys_with_unknown_last(counter: Dict[str, int]) -> Dict[str,
         out["unknown"] = unknown
     return out
 
+
 def _sorted_alpha_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
     """Case-insensitive A–Z; 'unknown' last."""
     items = [(k, v) for k, v in counter.items() if k != "unknown"]
@@ -106,11 +92,13 @@ def _sorted_alpha_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
         out["unknown"] = counter["unknown"]
     return out
 
+
 def _sort_numeric_str(counter: Dict[str, int]) -> Dict[str, int]:
     """Numeric-string keys ascending; caller appends 'unknown' if needed."""
     items = [(int(k), v) for k, v in counter.items() if k.isdigit()]
     items.sort(key=lambda t: t[0])
     return {str(k): v for k, v in items}
+
 
 def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
     """
@@ -119,30 +107,30 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
       - data/mame_parsing_summary.json
       - output/mame_parent_index.json
 
-    Args:
-        file_path: Path to data/mame.xml.
-        encodings: Mapping of filename -> encoding (expects 'mame.xml' key).
-        max_records: Optional cap for debugging; 0 means no limit.
-
     Returns:
         bool: True on success, False if XML parse error occurs.
-
-    Notes:
-        - Uses ElementTree.iterparse to keep memory bounded.
-        - Emits progress every 5,000 machines.
-        - Keeps distributions and invariants for quick sanity checks in the summary.
     """
     start = time.perf_counter()
-    log.info(f"Starting full MAME XML parsing: {file_path.name}" +
-             (f" (max {max_records} records)" if max_records else " (no limit)"))
+    log.info(
+        f"Starting full MAME XML parsing: {file_path.name}"
+        + (f" (max {max_records} records)" if max_records else " (no limit)")
+    )
 
-    # Work out dirs relative to the given data file
-    data_dir = file_path.parent
-    output_dir = data_dir.parent / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
-
+    # Inputs / encoding
     mame_encoding = encodings["mame.xml"]
+
+    # Stage stamp (skip-unchanged)
+    STAMPS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp_path = STAMPS_DIR / "mame.json"
+    current_stamp = make_stamp(
+        schema_id="mht.stage.mame",
+        tool_version=tool_version("mame_parser"),
+        inputs=[file_path],
+    )
+    prev = load_stamp(stamp_path)
+    if is_fresh(current_stamp, prev):
+        log.info("MAME stage up-to-date (stamp matched) — skipping parse")
+        return True
 
     # Root attributes (if present)
     mame_build = None
@@ -161,12 +149,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     years_ctr = Counter()
     manuf_ctr = Counter()
     players_ctr = Counter()
-    control_type_overall_ctr  = Counter()
-    control_ways_overall_ctr  = Counter()
+    control_type_overall_ctr = Counter()
+    control_ways_overall_ctr = Counter()
     control_ways2_overall_ctr = Counter()
     control_ways3_overall_ctr = Counter()
-    control_buttons_overall_ctr     = Counter()
-    control_reqbuttons_overall_ctr  = Counter()
+    control_buttons_overall_ctr = Counter()
+    control_reqbuttons_overall_ctr = Counter()
     cpus_per_machine_ctr = Counter()
     sound_devices_per_machine_ctr = Counter()
     displays_per_machine_ctr = Counter()
@@ -178,33 +166,13 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     disk_media_platforms_per_machine_ctr = Counter()
     dropped_displays_total = 0
     dropped_displays_examples: list[dict[str, object]] = []
-    
+
+    # Examples per bucket for disk_media_platforms_per_machine
+    disk_media_examples: Dict[str, list[str]] = {}
+
     machines_out: Dict[str, Dict[str, Any]] = {}
 
-    # --- Stage stamp: skip unchanged ---
-    stamp_dir = data_dir / ".stamps"
-    stamp_dir.mkdir(parents=True, exist_ok=True)
-    stamp_path = stamp_dir / "mame.json"
-
-    # Inputs that affect the MAME parse artefacts
-    stamp_inputs = [
-        file_path,   # <-- your source MAME XML Path
-        # add any other config/side inputs here if they change output
-    ]
-
-    current_stamp = make_stamp(
-        schema_id="mht.stage.mame",
-        tool_version=tool_version("mame_parser"),
-        inputs=stamp_inputs,
-        #extra={"parser_logic": "v1"},  # bump this text if you change parsing rules
-    )
-    prev = load_stamp(stamp_path)
-    if is_fresh(current_stamp, prev):
-        log.info("MAME stage up-to-date (stamp matched) — skipping parse")
-        # If your function normally returns (ok, out_path) for the summary, mirror that:
-        return True, str((data_dir / "mame_parsing_summary.json")).replace("\\", "/")
-
-
+    # Parse
     try:
         with open(file_path, encoding=mame_encoding) as f:
             it = ET.iterparse(f, events=("start", "end"))
@@ -218,7 +186,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 if event == "start" and elem.tag == "machine":
                     current_machine = elem
 
-                # --- MACHINE: START/END HANDLING ------------------------------------------------
                 if event == "end" and elem.tag == "machine" and current_machine is elem:
                     mame_name = elem.attrib.get("name")
                     if not mame_name:
@@ -226,16 +193,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         current_machine = None
                         continue
 
-                    # --- CORE ATTRIBUTES (name/cloneof/isbios/isdevice/ismechanical/sourcefile/...) ---
                     cloneof = elem.attrib.get("cloneof")
                     isbios = elem.attrib.get("isbios", "no")
                     isdevice = elem.attrib.get("isdevice", "no")
                     ismechanical = elem.attrib.get("ismechanical", "no")
                     sampleof = elem.attrib.get("sampleof")
                     sourcefile = elem.attrib.get("sourcefile")
-                    romof = elem.attrib.get("romof")
+                    romof = elem.attrib.get("romof")  # present but not used in summary
 
-                    # --- CHILD FIELDS: description/year/manufacturer ---------------------------------
+                    # CHILD FIELDS
                     desc_el = elem.find("description")
                     description = (desc_el.text or "").strip() if desc_el is not None else ""
 
@@ -245,23 +211,22 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     manuf_el = elem.find("manufacturer")
                     manufacturer_raw = (manuf_el.text or "").strip() if manuf_el is not None else ""
 
-                    # Normalise for distributions
+                    # normalised keys for dists
                     year_key = "unknown"
                     if year_raw and len(year_raw) == 4 and year_raw.isdigit():
                         year_key = year_raw
-
                     manufacturer_key = manufacturer_raw if manufacturer_raw else "unknown"
                     if manufacturer_key.strip().strip("-.,;:/()[]{}") == "":
                         manufacturer_key = "unknown"
 
-                    # --- INPUT: players + controls ---------------------------------------------------
+                    # INPUT
                     players_key = "unknown"
                     input_el = elem.find("input")
                     if input_el is not None:
                         players_attr = (input_el.attrib.get("players") or "").strip()
                         if players_attr.isdigit():
                             players_key = players_attr
-                                                        
+
                     controls_list = []
                     if input_el is not None:
                         for ctrl in input_el.findall("control"):
@@ -276,11 +241,10 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                             reqbuttons_attr = (ctrl.attrib.get("reqbuttons") or "").strip()
                             c_reqbuttons = int(reqbuttons_attr) if reqbuttons_attr.isdigit() else None
 
-                            c_ways  = (ctrl.attrib.get("ways")  or "").strip() or None
+                            c_ways = (ctrl.attrib.get("ways") or "").strip() or None
                             c_ways2 = (ctrl.attrib.get("ways2") or "").strip() or None
                             c_ways3 = (ctrl.attrib.get("ways3") or "").strip() or None
 
-                            # Per-control output (player first for readability)
                             controls_list.append({
                                 "player": c_player,
                                 "type": c_type,
@@ -291,29 +255,22 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                                 "ways3": c_ways3,
                             })
 
-                            # ---- Summary counters (overall, across all controls) ----
                             control_type_overall_ctr[(c_type or "unknown")] += 1
-                            control_ways_overall_ctr[(c_ways or "unknown").lower()]   += 1
+                            control_ways_overall_ctr[(c_ways or "unknown").lower()] += 1
                             control_ways2_overall_ctr[(c_ways2 or "unknown").lower()] += 1
                             control_ways3_overall_ctr[(c_ways3 or "unknown").lower()] += 1
                             control_buttons_overall_ctr[str(c_buttons) if c_buttons is not None else "unknown"] += 1
                             control_reqbuttons_overall_ctr[str(c_reqbuttons) if c_reqbuttons is not None else "unknown"] += 1
-                            
 
-                    # --- SOUND: channels + device_ref(speaker/samples) -------------------------------
+                    # SOUND
                     sound_channels = None
                     sound_el = elem.find("sound")
                     if sound_el is not None:
                         channels_attr = (sound_el.attrib.get("channels") or "").strip()
                         if channels_attr.isdigit():
                             sound_channels = int(channels_attr)
+                    sound_channels_per_machine_ctr[str(sound_channels) if sound_channels is not None else "unknown"] += 1
 
-                    # update channels distribution
-                    sound_channels_per_machine_ctr[
-                        str(sound_channels) if sound_channels is not None else "unknown"
-                    ] += 1
-
-                    # DEVICE_REF summary: samples present? how many speakers?
                     has_samples_device_ref = False
                     speaker_ref_count = 0
                     for dref in elem.findall("device_ref"):
@@ -322,23 +279,17 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                             has_samples_device_ref = True
                         elif name == "speaker":
                             speaker_ref_count += 1
-
-                    device_ref_summary = {
-                        "samples": "yes" if has_samples_device_ref else "no",
-                        "speaker": speaker_ref_count,
-                    }
-
+                    device_ref_summary = {"samples": "yes" if has_samples_device_ref else "no", "speaker": speaker_ref_count}
                     speakers_per_machine_ctr[str(speaker_ref_count)] += 1
 
-
-                    # --- CHIPS -----------------------------------------------------------------------
+                    # CHIPS
                     cpu_count = 0
                     audio_count = 0
-                    chips_list = []   # NEW: collect per-chip details
+                    chips_list = []
                     for chip in elem.findall("chip"):
                         ctype = (chip.attrib.get("type") or "").strip().lower()
-                        chip_name  = (chip.attrib.get("name") or "").strip()
-                        tag   = chip.attrib.get("tag")  # may be None
+                        chip_name = (chip.attrib.get("name") or "").strip()
+                        tag = chip.attrib.get("tag")
                         clock_attr = (chip.attrib.get("clock") or "").strip()
                         clock_hz = int(clock_attr) if clock_attr.isdigit() else None
 
@@ -347,26 +298,20 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         elif ctype == "audio":
                             audio_count += 1
 
-                        chips_list.append({
-                            "type": ctype,
-                            "name": chip_name,
-                            "tag": tag,
-                            "clock_hz": clock_hz,
-                        })
+                        chips_list.append({"type": ctype, "name": chip_name, "tag": tag, "clock_hz": clock_hz})
 
-
-                    # --- DISPLAYS --------------------------------------------------------------------
+                    # DISPLAYS
                     displays_list = []
                     for d in elem.findall("display"):
                         d_type = (d.attrib.get("type") or "").strip().lower() or None
-                        d_tag  = (d.attrib.get("tag") or "").strip() or None
+                        d_tag = (d.attrib.get("tag") or "").strip() or None
 
                         rot_attr = (d.attrib.get("rotate") or "").strip()
                         d_rotate = int(rot_attr) if rot_attr.isdigit() else None
 
                         w_attr = (d.attrib.get("width") or "").strip()
                         h_attr = (d.attrib.get("height") or "").strip()
-                        d_width  = int(w_attr) if w_attr.isdigit() else None
+                        d_width = int(w_attr) if w_attr.isdigit() else None
                         d_height = int(h_attr) if h_attr.isdigit() else None
 
                         r_attr = (d.attrib.get("refresh") or "").strip()
@@ -375,19 +320,18 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         except ValueError:
                             d_refresh_hz = None
 
-                        # --- VALIDATION: keep only sensible displays ---
-                        # Vector: allow unknown dimensions. Others must have positive width & height.
                         valid = True
-                        if (d_type != "vector"):
+                        if d_type != "vector":
                             if (d_width is None or d_height is None or
                                 not isinstance(d_width, int) or not isinstance(d_height, int) or
                                 d_width <= 0 or d_height <= 0):
                                 valid = False
 
                         if not valid:
-                            log.warning(f"[mame_parser::parse_mame_xml] Dropping invalid display on {mame_name}: "
-                                        f"type={d_type}, width={d_width}, height={d_height}, tag={d_tag}")
-                            # NEW: track count + a few examples
+                            log.warning(
+                                f"[mame_parser::parse_mame_xml] Dropping invalid display on {mame_name}: "
+                                f"type={d_type}, width={d_width}, height={d_height}, tag={d_tag}"
+                            )
                             dropped_displays_total += 1
                             if len(dropped_displays_examples) < 10:
                                 dropped_displays_examples.append({
@@ -407,20 +351,19 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                             "height": d_height,
                             "refresh_hz": d_refresh_hz,
                         })
-                       
-                        # Overall counters (types/tags)
+
                         display_types_overall_ctr[d_type or "unknown"] += 1
                         display_tags_overall_ctr[d_tag or "unknown"] += 1
 
                     display_count = len(displays_list)
 
-                    # --- SAMPLES: presence-only (sampleof or <sample>) --------------------------------
+                    # SAMPLES flags
                     sample_children = elem.findall("sample")
                     requires_samples = bool(sampleof or sample_children)
                     if requires_samples:
                         total_requires_samples += 1
 
-                    # --- ROMS ------------------------------------------------------------------------
+                    # ROMS
                     rom_elems = elem.findall("rom")
                     rom_count = len(rom_elems)
                     rom_bytes_total = 0
@@ -429,7 +372,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         if sz.isdigit():
                             rom_bytes_total += int(sz)
 
-                    # --- DISK: regions only ----------------------------------------------------------
+                    # DISKS (regions only)
                     disk_elems = elem.findall("disk")
                     disk_required = "yes" if disk_elems else "no"
 
@@ -440,21 +383,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         disk_regions_set.add(region_key)
                         disk_regions_overall_ctr[region_key] += 1
 
-                    # Unique, sorted list of regions per machine (e.g. ["cdrom"], ["laserdisc","ldsound"])
                     disk_regions = sorted(disk_regions_set)
-                    disk_media_platforms_count = len(disk_regions)  # 0 for ROM-only machines
+                    disk_media_platforms_count = len(disk_regions)
                     disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
-
-                    # Keep a few illustrative examples per bucket (0..N) for the summary
-                    disk_media_examples = locals().setdefault("disk_media_examples", {})  # create once in function scope
                     examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
                     if len(examples) < 5:
                         examples.append(mame_name)
 
-
-                    # Totals and distributions
+                    # Totals
                     total_machines += 1
-                    
                     if (total_machines % 5000) == 0:
                         log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
 
@@ -476,46 +413,32 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     sound_devices_per_machine_ctr[str(audio_count)] += 1
                     displays_per_machine_ctr[str(display_count)] += 1
 
-                    # --- PER-MACHINE RECORD ----------------------------------------------------------
+                    # Per-machine record
                     machines_out[mame_name] = {
-                        # Identity & lineage
                         "description": description,
                         "sourcefile": sourcefile,
                         "cloneof": cloneof,
                         "isbios": isbios,
                         "isdevice": isdevice,
                         "ismechanical": ismechanical,
-
-                        # Publication
                         "year": year_raw,
                         "manufacturer": manufacturer_raw,
-
-                        # Storage / media
                         "rom_count": rom_count,
                         "rom_bytes_total": rom_bytes_total if rom_count else 0,
-                        "disk_required": disk_required,         # "yes" | "no"
-                        "disk_regions": disk_regions,           # list (can be [])
+                        "disk_required": disk_required,
+                        "disk_regions": disk_regions,
                         "disk_media_platforms_count": disk_media_platforms_count,
-
-                        # Chips
                         "cpu_count": cpu_count,
                         "sound_chip_count": audio_count,
-                        "chips": chips_list,                    # list of {type,name,tag,clock_hz}
-
-                        # Audio
-                        "sound_channels": sound_channels,       # int or None
-                        "device_ref": [device_ref_summary],     # [{"samples":"yes|no","speaker": N}]
-                        "sampleof": sampleof,                   # string or None
-
-                        # Video / display
+                        "chips": chips_list,
+                        "sound_channels": sound_channels,
+                        "device_ref": [device_ref_summary],
+                        "sampleof": sampleof,
                         "display_count": display_count,
-                        "displays": displays_list,               # list of {tag,type,rotate,width,height,refresh_hz}
-                        
-                        # Input / controls
+                        "displays": displays_list,
                         "players": None if players_key == "unknown" else int(players_key),
-                        "controls": controls_list,              # list of {player,type,buttons,reqbuttons,ways,ways2,ways3}
+                        "controls": controls_list,
                     }
-
 
                     if max_records and total_machines >= max_records:
                         elem.clear()
@@ -531,63 +454,44 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     parse_seconds = time.perf_counter() - start
     generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
-
+    # ----------------------------
+    # Build summary
+    # ----------------------------
     def _build_summary():
-        """Build the totals/metrics summary block for the parsed MAME dataset."""
-        # Core distributions
-        years_dist  = _sorted_numeric_keys_with_unknown_last(dict(years_ctr))
-        manuf_dist  = _sorted_alpha_with_unknown_last(dict(manuf_ctr))
+        years_dist = _sorted_numeric_keys_with_unknown_last(dict(years_ctr))
+        manuf_dist = _sorted_alpha_with_unknown_last(dict(manuf_ctr))
         display_types_overall_dist = _sorted_alpha_with_unknown_last(dict(display_types_overall_ctr))
-        display_tags_overall_dist  = _sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
+        display_tags_overall_dist = _sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
 
         def _numdist(counter):
-            """Normalise numeric-string keyed histograms (append 'unknown' last if present)."""
             dist = _sort_numeric_str(dict(counter))
             if "unknown" in counter:
                 dist["unknown"] = counter["unknown"]
             return dist
 
-        players_dist         = _numdist(players_ctr)
-        cpus_dist            = _numdist(cpus_per_machine_ctr)
-        sounds_dist          = _numdist(sound_devices_per_machine_ctr)
-        displays_dist        = _numdist(displays_per_machine_ctr)
-        speakers_dist        = _numdist(speakers_per_machine_ctr)
-        sound_channels_dist  = _numdist(sound_channels_per_machine_ctr)
+        players_dist = _numdist(players_ctr)
+        cpus_dist = _numdist(cpus_per_machine_ctr)
+        sounds_dist = _numdist(sound_devices_per_machine_ctr)
+        displays_dist = _numdist(displays_per_machine_ctr)
+        speakers_dist = _numdist(speakers_per_machine_ctr)
+        sound_channels_dist = _numdist(sound_channels_per_machine_ctr)
 
-        # Disks (regions only)
         disk_regions_overall_dist = _sorted_alpha_with_unknown_last(dict(disk_regions_overall_ctr))
-        disk_media_platforms_dist = _numdist(disk_media_platforms_per_machine_ctr)
-        disk_media_platforms_sum  = sum(disk_media_platforms_dist.values())
 
-        # Controls
-        control_type_overall_dist  = _sorted_alpha_with_unknown_last(dict(control_type_overall_ctr))
-        control_ways_overall_dist  = _sorted_alpha_with_unknown_last(dict(control_ways_overall_ctr))
-        control_ways2_overall_dist = _sorted_alpha_with_unknown_last(dict(control_ways2_overall_ctr))
-        control_ways3_overall_dist = _sorted_alpha_with_unknown_last(dict(control_ways3_overall_ctr))
-        control_buttons_overall_dist    = _numdist(control_buttons_overall_ctr)
-        control_reqbuttons_overall_dist = _numdist(control_reqbuttons_overall_ctr)
+        years_sum = sum(years_dist.values())
+        manufacturers_sum = sum(manuf_dist.values())
+        players_sum = sum(players_dist.values())
+        cpus_sum = sum(cpus_dist.values())
+        sounds_sum = sum(sounds_dist.values())
+        displays_sum = sum(displays_dist.values())
+        speakers_sum = sum(speakers_dist.values())
+        sound_channels_sum = sum(sound_channels_dist.values())
+        display_types_overall_sum = sum(display_types_overall_dist.values())
+        display_tags_overall_sum = sum(display_tags_overall_dist.values())
+        disk_regions_overall_sum = sum(disk_regions_overall_dist.values())
 
-        # Convenience sums (sanity checks)
-        years_sum                   = sum(years_dist.values())
-        manufacturers_sum           = sum(manuf_dist.values())
-        players_sum                 = sum(players_dist.values())
-        cpus_sum                    = sum(cpus_dist.values())
-        sounds_sum                  = sum(sounds_dist.values())
-        displays_sum                = sum(displays_dist.values())
-        speakers_sum                = sum(speakers_dist.values())
-        sound_channels_sum          = sum(sound_channels_dist.values())
-        display_types_overall_sum   = sum(display_types_overall_dist.values())
-        display_tags_overall_sum    = sum(display_tags_overall_dist.values())
-        disk_regions_overall_sum    = sum(disk_regions_overall_dist.values())
-        control_type_overall_sum    = sum(control_type_overall_dist.values())
-        control_ways_overall_sum    = sum(control_ways_overall_dist.values())
-        control_ways2_overall_sum   = sum(control_ways2_overall_dist.values())
-        control_ways3_overall_sum   = sum(control_ways3_overall_dist.values())
-        control_buttons_overall_sum = sum(control_buttons_overall_dist.values())
-        control_reqbuttons_overall_sum = sum(control_reqbuttons_overall_dist.values())
-
-        # --- derive versions for header ---
-        mame_build_str = mame_build  # already set above
+        # versions for header
+        mame_build_str = mame_build
         mame_xml_version = (
             mame_build_str.split(" ", 1)[0]
             if isinstance(mame_build_str, str) and mame_build_str.strip()
@@ -601,15 +505,13 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         if mame_mameconfig is not None:
             versions_block["mameconfig"] = mame_mameconfig
 
-        # --- build doc with HEADER FIRST ---
-        doc = {        
+        doc = {
             "header": {
-                "schema_id": SCHEMA_IDS["mame"],                     # was "mht.mame.summary"
-                "schema_version": schema_version(SCHEMA_IDS["mame"]),# was "1.0.1"
+                "schema_id": SCHEMA_IDS["mame"],
+                "schema_version": schema_version(SCHEMA_IDS["mame"]),
                 "generated_at": generated_at_utc,
                 "versions": {
-                    **versions_block,                                # your existing mame_xml_version/mame_build/mameconfig
-                    # optional: include tool version for traceability
+                    **versions_block,
                     "mame_parser_version": tool_version("mame_parser"),
                 },
             },
@@ -633,12 +535,18 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 },
                 "players": {"distribution": players_dist, "sum": players_sum},
                 "controls": {
-                    "types_overall": {"distribution": control_type_overall_dist, "sum": control_type_overall_sum},
-                    "ways_overall":  {"distribution": control_ways_overall_dist,  "sum": control_ways_overall_sum},
-                    "ways2_overall": {"distribution": control_ways2_overall_dist, "sum": control_ways2_overall_sum},
-                    "ways3_overall": {"distribution": control_ways3_overall_dist, "sum": control_ways3_overall_sum},
-                    "buttons_overall":    {"distribution": control_buttons_overall_dist,    "sum": control_buttons_overall_sum},
-                    "reqbuttons_overall": {"distribution": control_reqbuttons_overall_dist, "sum": control_reqbuttons_overall_sum},
+                    "types_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_type_overall_ctr)),
+                                      "sum": sum(dict(control_type_overall_ctr).values())},
+                    "ways_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_ways_overall_ctr)),
+                                     "sum": sum(dict(control_ways_overall_ctr).values())},
+                    "ways2_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_ways2_overall_ctr)),
+                                      "sum": sum(dict(control_ways2_overall_ctr).values())},
+                    "ways3_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_ways3_overall_ctr)),
+                                      "sum": sum(dict(control_ways3_overall_ctr).values())},
+                    "buttons_overall": {"distribution": _numdist(control_buttons_overall_ctr),
+                                        "sum": sum(control_buttons_overall_ctr.values())},
+                    "reqbuttons_overall": {"distribution": _numdist(control_reqbuttons_overall_ctr),
+                                           "sum": sum(control_reqbuttons_overall_ctr.values())},
                 },
                 "cpus_per_machine": {"distribution": cpus_dist, "sum": cpus_sum},
                 "sound_devices_per_machine": {"distribution": sounds_dist, "sum": sounds_sum},
@@ -649,9 +557,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 "speakers_per_machine": {"distribution": speakers_dist, "sum": speakers_sum},
                 "disk_regions_overall": {"distribution": disk_regions_overall_dist, "sum": disk_regions_overall_sum},
                 "disk_media_platforms_per_machine": {
-                    "distribution": _numdist(disk_media_platforms_per_machine_ctr),
+                    "distribution": _sort_numeric_str(dict(disk_media_platforms_per_machine_ctr)) | (
+                        {"unknown": disk_media_platforms_per_machine_ctr["unknown"]}
+                        if "unknown" in disk_media_platforms_per_machine_ctr else {}
+                    ),
                     "sum": sum(disk_media_platforms_per_machine_ctr.values()),
-                    "examples": disk_media_examples
+                    "examples": disk_media_examples,
                 },
                 "invalid_displays_dropped": {
                     "count": dropped_displays_total,
@@ -660,37 +571,25 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             },
         }
 
-        # --- additive aliases + anomalies mirror ---
+        # additive aliases + anomalies mirror
         totals = doc["totals"]
         if "total_is_bios" not in totals:
             totals["total_is_bios"] = totals["total_isbios"]
         if "total_is_device" not in totals:
             totals["total_is_device"] = totals["total_isdevice"]
-
         legacy_drop = totals.get("invalid_displays_dropped")
         if legacy_drop:
             doc.setdefault("anomalies", {}).setdefault("dropped_displays", legacy_drop)
-
         return doc
-
 
     summary = _build_summary()
 
-
-    # --- INVARIANTS & CONSISTENCY CHECKS (warnings only) -------------------------
+    # ----------------------------
+    # Invariants (warnings only)
+    # ----------------------------
     def _sum(counter):
-        """
-        Lightweight helper to sum the values in a count mapping.
-
-        Args:
-            counter (Mapping[Any, int]): Histogram or dict of counts.
-
-        Returns:
-            int: Sum of all count values.
-        """
         return sum(counter.values())
 
-    # Per-machine counters should sum to total machines
     checks_equal_total = [
         ("years_ctr", _sum(years_ctr)),
         ("manuf_ctr", _sum(manuf_ctr)),
@@ -704,24 +603,19 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     ]
     for name, val in checks_equal_total:
         if val != total_machines:
-            log.warning(f"[mame_parser::parse_mame_xml] Invariant: sum({name})={val} "
-                        f"!= total_machines={total_machines}")
+            log.warning(f"[mame_parser::parse_mame_xml] Invariant: sum({name})={val} != total_machines={total_machines}")
 
-    # Display totals: overall type/tag counters should equal total number of display entries
     expected_total_displays = sum(int(k) * v for k, v in displays_per_machine_ctr.items() if k.isdigit())
     types_sum = _sum(display_types_overall_ctr)
-    tags_sum  = _sum(display_tags_overall_ctr)
+    tags_sum = _sum(display_tags_overall_ctr)
     if types_sum != expected_total_displays:
-        log.warning(f"[mame_parser::parse_mame_xml] Display types total {types_sum} "
-                    f"!= expected_total_displays {expected_total_displays}")
+        log.warning(f"[mame_parser::parse_mame_xml] Display types total {types_sum} != expected {expected_total_displays}")
     if tags_sum != expected_total_displays:
-        log.warning(f"[mame_parser::parse_mame_xml] Display tags total {tags_sum} "
-                    f"!= expected_total_displays {expected_total_displays}")
+        log.warning(f"[mame_parser::parse_mame_xml] Display tags total {tags_sum} != expected {expected_total_displays}")
 
-    # Disk consistency: disk_required vs disk_regions emptiness
     disk_flag_yes_empty = 0
     disk_flag_no_nonempty = 0
-    for name, m in machines_out.items():
+    for m in machines_out.values():
         dr = m.get("disk_required")
         regs = m.get("disk_regions") or []
         if dr == "yes" and not regs:
@@ -729,78 +623,70 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         elif dr == "no" and regs:
             disk_flag_no_nonempty += 1
     if disk_flag_yes_empty or disk_flag_no_nonempty:
-        log.warning(f"[mame_parser::parse_mame_xml] Disk consistency: "
-                    f"yes+empty={disk_flag_yes_empty}, no+nonempty={disk_flag_no_nonempty}")
+        log.warning(f"[mame_parser::parse_mame_xml] Disk consistency: yes+empty={disk_flag_yes_empty}, no+nonempty={disk_flag_no_nonempty}")
 
-    # Controls consistency: all control-related histograms should agree on entry count
     total_controls_entries = sum(len(m.get("controls") or []) for m in machines_out.values())
-    ctrl_type_sum   = _sum(control_type_overall_ctr)
-    ctrl_ways_sum   = _sum(control_ways_overall_ctr)
-    ctrl_ways2_sum  = _sum(control_ways2_overall_ctr)
-    ctrl_ways3_sum  = _sum(control_ways3_overall_ctr)
-    ctrl_btns_sum   = _sum(control_buttons_overall_ctr)
-    ctrl_req_sum    = _sum(control_reqbuttons_overall_ctr)
-    for label, val in [
-        ("control_type_overall", ctrl_type_sum),
-        ("control_ways_overall", ctrl_ways_sum),
-        ("control_ways2_overall", ctrl_ways2_sum),
-        ("control_ways3_overall", ctrl_ways3_sum),
-        ("control_buttons_overall", ctrl_btns_sum),
-        ("control_reqbuttons_overall", ctrl_req_sum),
-    ]:
+    ctrl_sums = [
+        ("control_type_overall", _sum(control_type_overall_ctr)),
+        ("control_ways_overall", _sum(control_ways_overall_ctr)),
+        ("control_ways2_overall", _sum(control_ways2_overall_ctr)),
+        ("control_ways3_overall", _sum(control_ways3_overall_ctr)),
+        ("control_buttons_overall", _sum(control_buttons_overall_ctr)),
+        ("control_reqbuttons_overall", _sum(control_reqbuttons_overall_ctr)),
+    ]
+    for label, val in ctrl_sums:
         if val != total_controls_entries:
-            log.warning(f"[mame_parser::parse_mame_xml] Controls total mismatch: {label}={val} "
-                        f"!= total_controls_entries={total_controls_entries}")
+            log.warning(f"[mame_parser::parse_mame_xml] Controls total mismatch: {label}={val} != {total_controls_entries}")
 
-    # Chip counts per machine: cpu_count vs chips list, audio_count vs chips list
     cpu_mismatch = audio_mismatch = 0
-    for name, m in machines_out.items():
+    for m in machines_out.values():
         chips = m.get("chips") or []
-        cpus   = sum(1 for c in chips if (c.get("type") or "").lower() == "cpu")
+        cpus = sum(1 for c in chips if (c.get("type") or "").lower() == "cpu")
         audios = sum(1 for c in chips if (c.get("type") or "").lower() == "audio")
         if cpus != (m.get("cpu_count") or 0):
             cpu_mismatch += 1
         if audios != (m.get("sound_chip_count") or 0):
             audio_mismatch += 1
     if cpu_mismatch or audio_mismatch:
-        log.warning(f"[mame_parser::parse_mame_xml] Chip count mismatches: "
-                    f"cpu={cpu_mismatch}, audio={audio_mismatch}")
-
-
-    # Deterministic order for machines output
-    machines_sorted = {k: machines_out[k] for k in sorted(machines_out.keys())}
-
-    # Write files
-    machines_path = (data_dir.parent / "output" / "mame_machines.json")
-    summary_path = (data_dir / "mame_parsing_summary.json")
-
-    with open(machines_path, "w", encoding="utf-8") as f:
-        json.dump(machines_sorted, f, ensure_ascii=False, indent=2)
-    log.info(f"Wrote canonical machines: {machines_path}")
-
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
-    log.info(f"Wrote MAME totals summary: {summary_path}")
-
+        log.warning(f"[mame_parser::parse_mame_xml] Chip count mismatches: cpu={cpu_mismatch}, audio={audio_mismatch}")
 
     # ----------------------------
-    # Also write parent/clone index
+    # Write outputs
     # ----------------------------
-    parent_index = _build_parent_index(machines_out) # machines_out vs machines_sorted: content identical
-    parent_index_path = (data_dir.parent / "output" / "mame_parent_index.json")
-    parent_index_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        MAME_MACHINES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(MAME_MACHINES_PATH, "w", encoding="utf-8") as f:
+            json.dump({k: machines_out[k] for k in sorted(machines_out)}, f, ensure_ascii=False, indent=2)
+        log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
+    except Exception as e:
+        log.error(f"Failed to write machines JSON: {e}")
+        return False
 
-    with open(parent_index_path, "w", encoding="utf-8") as f:
-        json.dump(parent_index, f, ensure_ascii=False, indent=2)
+    try:
+        with open(MAME_SUMMARY, "w", encoding="utf-8") as f:
+            json.dump(summary, f, ensure_ascii=False, indent=2)
+        log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
+    except Exception as e:
+        log.error(f"Failed to write MAME summary: {e}")
+        return False
 
+    try:
+        PARENT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+        parent_index = _build_parent_index(machines_out)
+        with open(PARENT_INDEX_PATH, "w", encoding="utf-8") as f:
+            json.dump(parent_index, f, ensure_ascii=False, indent=2)
+        log.info(
+            f"Wrote {PARENT_INDEX_PATH} "
+            f"({len(parent_index['parents'])} parents-with-clones, "
+            f"{len(parent_index['child_to_parent'])} clones)"
+        )
+    except Exception as e:
+        log.error(f"Failed to write parent index: {e}")
+        return False
+
+    # All good → persist the stamp
     save_stamp(stamp_path, current_stamp)
 
-    log.info(f"Wrote {parent_index_path} "
-             f"({len(parent_index['parents'])} parents-with-clones, "
-             f"{len(parent_index['child_to_parent'])} clones)")
-
     log.info(f"MAME XML parsing completed in {parse_seconds:.2f} seconds")
-    
     log.info(f"Invalid display rows dropped: {dropped_displays_total}")
-
     return True
