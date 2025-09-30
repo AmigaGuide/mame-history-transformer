@@ -26,6 +26,8 @@ This v2 branch focuses on **schema-first, test-driven** correctness. I’ve used
 
 Some tests are intentionally strict: they surface real upstream data anomalies (e.g. impossible display dimensions, `null` platform names) so they act as prompts for manual review rather than being silently normalised.
 
+**Stamps (skip-unchanged):** stages now write a small JSON “stamp” under `data/.stamps/` capturing input file signatures and the tool version. When inputs and tool versions are unchanged, the stage is skipped. This keeps dev iterations fast while preserving reproducibility.
+
 ---
 
 ## Data flow (modules)
@@ -41,7 +43,9 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 | `main.py` | Entry point; orchestrates pipeline, validates encodings/versions, builds per-run manifest |
 | `mame_parser.py` | Streams MAME XML; extracts machines, years, manufacturers, ROM stats, disk/media flags, displays, controls, and parent/clone relations |
 | `transformer.py` | Final stage: applies selection rules, parses titles, formats manufacturers, chips, ROM/media/controls/displays, merges GH ports, and emits wiki-ready JSON |
-| `versions.py` | Centralised schema IDs/versions (summaries and outputs) and tool versions |
+| `utils/versions.py` | Centralised schema IDs/versions (summaries and outputs) and tool versions |
+| `utils/stamps.py`   | Stamp helpers for skip-unchanged execution (pretty JSON + stable digest)  |
+
 
 ---
 
@@ -136,6 +140,38 @@ We use semantic versioning independently for **tools** and **schemas**:
   * MAJOR: breaking (rename/remove without alias)
 
 **Data-source versions** (MAME, Gaming-History, INIs) are always read from the artefacts, not hardcoded.
+
+---
+
+### Build caching (stamps)
+
+Each stage writes a human-friendly stamp JSON under `data/.stamps/`, then compares it on the next run:
+
+* `data/.stamps/mame.json` — for `mame_parser.py`
+* `data/.stamps/history.json` — for `history_parser.py`
+* `data/.stamps/ini.json` — for `history_metadata.py` (INI coverage)
+* `data/.stamps/transform.json` — for `transformer.py`
+
+**Stamp fields (pretty-printed):**
+
+```json
+{
+  "schema_id": "mht.stage.stamp",
+  "schema_version": "1.0.0",
+  "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "stage_id": "mht.stage.<name>",
+  "tool_version": "1.0.1",
+  "inputs": [
+    {"path": "data/mame.xml", "size": 303629308, "size_h": "289.6 MiB",
+     "mtime_ns": 1759160055721273900, "mtime_iso": "2025-09-29T15:34:15.721274Z"}
+  ],
+  "digest": "<sha256>"
+}
+```
+
+* **Freshness rule:** a stage is skipped when the new digest matches the saved one.
+* **What changes the digest?** input path/size/mtime, and the stage’s `tool_version` (from `src/mht/utils/versions.py`).
+* **Housekeeping:** stamps are ignored by Git; delete a stamp file to force a rebuild of that stage.
 
 ---
 

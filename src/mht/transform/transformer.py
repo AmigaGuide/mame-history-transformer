@@ -57,10 +57,9 @@ from collections import Counter
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
-
+from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
 
 log = setup_logger(log_level=LOG_LEVEL)
-
 
 # Legacy field to keep for one cycle, but derive from the canonical summary schema now:
 TRANSFORMER_SCHEMA = schema_version(SCHEMA_IDS["transform"])  # was "0.8"
@@ -2175,6 +2174,36 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     """End-to-end transform: load artefacts, build parent-centric records, write wiki/raw JSON."""
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     t0 = time.perf_counter()
+        
+    # --- Stage stamp: skip unchanged ---
+    stamp_dir = DATA_DIR / ".stamps"
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+    stamp_path = stamp_dir / "transform.json"
+
+    # Inputs that determine transform outputs (tweak if your flow changes)
+    stamp_inputs = [
+        MAME_MACHINES_PATH,
+        INI_CLASS_PATH,
+        PARENT_INDEX_PATH,
+        GH_SYSTEM_PORTS_PATH,
+        DATA_DIR / "mame_parsing_summary.json",
+        DATA_DIR / "history_parsing_summary.json",
+        DATA_DIR / "ini_parsing_summary.json",
+        DATA_DIR / "title_overrides.json",
+    ]
+
+    current_stamp = make_stamp(
+        schema_id="mht.stage.transform",
+        tool_version=tool_version("transformer"),
+        inputs=stamp_inputs,
+        # Optional knobs that should invalidate the cache when logic changes:
+        #extra={"selection_rules": "v1", "title_parser": "v1"},
+    )
+
+    prev = load_stamp(stamp_path)
+    if is_fresh(current_stamp, prev):
+        log.info("Transform stage up-to-date (stamp matched) — skipping transform")
+        return True    
 
     # Safe default for header; will be populated from summaries below
     wiki_header_versions = {
@@ -2943,6 +2972,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
 
     ok_sum = _write_json(TRANS_SUMMARY_PATH, summary)
+    
+    save_stamp(stamp_path, current_stamp)
+    
     log.info(f"Transformer completed in {duration:.2f}s "
              f"(eligible_parents={len(eligible_parents)}, included={len(out_map)})")
     return bool(ok_out and ok_sum)

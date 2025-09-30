@@ -40,6 +40,7 @@ import re
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
+from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
 
 
 __all__ = [
@@ -385,6 +386,30 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
     files_block = {}
     errors: List[str] = []
 
+    # --- Stage stamp: skip unchanged ---
+    stamp_dir = data_dir / ".stamps"
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+    stamp_path = stamp_dir / "ini.json"
+
+    # Inputs that affect this stage’s output
+    ini_paths = list(INI_FILES.values())
+
+    current_stamp = make_stamp(
+        schema_id="mht.stage.ini",
+        tool_version=tool_version("ini_summary"),
+        inputs=ini_paths,
+        # Optional: include anything config-ish that should invalidate cache if it changes
+        #extra={"encodings_keys": sorted((encodings or {}).keys())},
+    )
+
+    prev = load_stamp(stamp_path)
+    if is_fresh(current_stamp, prev):
+        # Up-to-date: skip rebuild, return existing path so callers log nicely
+        out_path = data_dir / "ini_parsing_summary.json"
+        log.info("INI stage up-to-date (stamp matched) — skipping rebuild")
+        return True, str(out_path).replace("\\", "/")
+
+
     # Union over all INIs (for lean coverage figures)
     union_names: Set[str] = set()
 
@@ -476,6 +501,9 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2, ensure_ascii=False)
         log.info(f"Wrote {out_path}")
+        
+        save_stamp(stamp_path, current_stamp)
+
         return True, str(out_path).replace("\\", "/") # normalise for log readability across OSes
     except Exception as e:
         log.error(f"Failed to write INI summary: {e}")

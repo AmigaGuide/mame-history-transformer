@@ -44,6 +44,7 @@ This file forms part of a student project and is not intended for commercial use
 See repository LICENCE for details.
 """
 
+from __future__ import annotations
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import time
@@ -57,6 +58,7 @@ from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.date_utils import parse_date_string
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
+from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
 
 
 __all__ = [
@@ -69,8 +71,7 @@ __all__ = [
 ]
 
 log = setup_logger(log_level=LOG_LEVEL)
-
-HISTORY_PARSER_SCHEMA = "1.0"
+#HISTORY_PARSER_SCHEMA = "1.0"
 
 # Headings like '----- PORTS -----' (case-insensitive). Captures the name between dashes.
 # Note: GH content sometimes uses mixed case, hence re.IGNORECASE.
@@ -613,6 +614,22 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     # Read <history> root attributes for the summary header
     history_version, history_date = None, None
+
+    # --- Stage stamp: skip unchanged (relative to the input file) ---
+    stamp_dir = file_path.parent / ".stamps"
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+    stamp_path = stamp_dir / "history.json"
+
+    current_stamp = make_stamp(
+        schema_id="mht.stage.history",
+        tool_version=tool_version("history_parser"),
+        inputs=[file_path],  # source Gaming-History XML
+    )
+    prev = load_stamp(stamp_path)
+    if is_fresh(current_stamp, prev):
+        log.info("History stage up-to-date (stamp matched) — skipping parse")
+        return True  # keep existing bool signature    
+    
     try:
         for event, elem in ET.iterparse(file_path, events=("start",)):
             if elem.tag.lower() == "history":
@@ -793,7 +810,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(systems_sorted, f, indent=2, ensure_ascii=False)
         log.info(f"Saved parsed GH metadata (sorted) to {output_file} "
-                 f"({len(systems_sorted)} systems)")
+                 f"({len(systems_sorted)} systems)")                 
+        save_stamp(stamp_path, current_stamp)                                  
     except Exception as e:
         log.error(f"Failed to write GH systems JSON: {e}")
 

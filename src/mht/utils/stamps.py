@@ -46,7 +46,7 @@ def file_signatures(paths: Iterable[Path]) -> list[Dict[str, Any]]:
             st = p.stat()
             mtime = st.st_mtime
             sigs.append({
-                "path": str(p),
+                "path": p.as_posix(),
                 "size": st.st_size,
                 "size_h": _size_human(st.st_size),
                 "mtime_ns": st.st_mtime_ns,
@@ -54,7 +54,7 @@ def file_signatures(paths: Iterable[Path]) -> list[Dict[str, Any]]:
             })
         except FileNotFoundError:
             sigs.append({
-                "path": str(p),
+                "path": p.as_posix(),
                 "size": -1,
                 "size_h": "unknown",
                 "mtime_ns": -1,

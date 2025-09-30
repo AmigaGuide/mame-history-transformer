@@ -22,7 +22,6 @@ See repository LICENCE for details.
 """
 
 from __future__ import annotations
-
 import datetime
 import json
 import time
@@ -34,13 +33,11 @@ from typing import Any, Dict
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
-
+from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
 
 log = setup_logger(log_level=LOG_LEVEL)
 
 __all__ = ["MAME_PARSER_SCHEMA", "parse_mame_xml"]
-
-MAME_PARSER_SCHEMA = "1.0"
 
 
 def _build_parent_index(machines: dict[str, dict]) -> dict:
@@ -183,6 +180,30 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     dropped_displays_examples: list[dict[str, object]] = []
     
     machines_out: Dict[str, Dict[str, Any]] = {}
+
+    # --- Stage stamp: skip unchanged ---
+    stamp_dir = data_dir / ".stamps"
+    stamp_dir.mkdir(parents=True, exist_ok=True)
+    stamp_path = stamp_dir / "mame.json"
+
+    # Inputs that affect the MAME parse artefacts
+    stamp_inputs = [
+        file_path,   # <-- your source MAME XML Path
+        # add any other config/side inputs here if they change output
+    ]
+
+    current_stamp = make_stamp(
+        schema_id="mht.stage.mame",
+        tool_version=tool_version("mame_parser"),
+        inputs=stamp_inputs,
+        #extra={"parser_logic": "v1"},  # bump this text if you change parsing rules
+    )
+    prev = load_stamp(stamp_path)
+    if is_fresh(current_stamp, prev):
+        log.info("MAME stage up-to-date (stamp matched) — skipping parse")
+        # If your function normally returns (ok, out_path) for the summary, mirror that:
+        return True, str((data_dir / "mame_parsing_summary.json")).replace("\\", "/")
+
 
     try:
         with open(file_path, encoding=mame_encoding) as f:
@@ -771,6 +792,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     with open(parent_index_path, "w", encoding="utf-8") as f:
         json.dump(parent_index, f, ensure_ascii=False, indent=2)
+
+    save_stamp(stamp_path, current_stamp)
 
     log.info(f"Wrote {parent_index_path} "
              f"({len(parent_index['parents'])} parents-with-clones, "
