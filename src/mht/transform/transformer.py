@@ -1,8 +1,6 @@
 """
 Filename: transformer.py
-Version: 1.0.2
-Last modified: 2025-09-30
-Author: Jason (XtC) Skelly (Open University TM470, 2025)
+Author: XtC
 
 Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
@@ -68,6 +66,8 @@ from mht.utils.paths import (
     # helpers
     ensure_dirs,
 )
+from mht.utils.headers import build_summary_header
+from mht.utils.io import write_json
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -1129,17 +1129,6 @@ def _read_json(path: Path):
         log.error(f"Failed to read {path}: {e}")
         return None
 
-def _write_json(path: Path, obj: Any) -> bool:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(obj, f, ensure_ascii=False, indent=2)
-        log.info(f"Wrote {path}")
-        return True
-    except Exception as e:
-        log.error(f"Failed to write {path}: {e}")
-        return False
-
 def _project_for_wiki(rec: dict) -> dict:
     out = {}
     if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
@@ -1742,28 +1731,32 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if _truthy_flag(minfo.get("ismechanical")): included_flags["ismechanical"] += 1
         out_map[name] = record
 
-    wiki_doc = {
-        "header": {
-            "schema_id": SCHEMA_ID_WIKI,
-            "schema_version": SCHEMA_VER_WIKI,
-            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "versions": wiki_header_versions,
-        },
-        "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()}
-    }
-    ok_out_wiki = _write_json(EXOTICA_WIKI, wiki_doc)
 
-    raw_doc = {
-        "header": {
-            "schema_id": SCHEMA_ID_RAW,
-            "schema_version": SCHEMA_VER_RAW,
-            "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "versions": wiki_header_versions,
-        },
-        "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()}
+
+    wiki_header = build_summary_header(
+        schema_id=SCHEMA_ID_WIKI,
+        schema_version=SCHEMA_VER_WIKI,
+        versions=wiki_header_versions,
+    )
+    wiki_doc = {
+        "header": wiki_header,
+        "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()},
     }
-    ok_out_raw  = _write_json(EXOTICA_RAW,  raw_doc)
-    
+    #ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc)
+    ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc, sort_keys=False)
+
+    raw_header = build_summary_header(
+        schema_id=SCHEMA_ID_RAW,
+        schema_version=SCHEMA_VER_RAW,
+        versions=wiki_header_versions,
+    )
+    raw_doc = {
+        "header": raw_header,
+        "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()},
+    }
+    #ok_out_raw = write_json(EXOTICA_RAW, raw_doc)
+    ok_out_raw = write_json(EXOTICA_RAW, raw_doc, sort_keys=False)
+
     ok_out = ok_out_wiki and ok_out_raw
 
     parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
@@ -1809,13 +1802,16 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     pages_map_sorted     = dict(sorted(pages_map.items(), key=lambda kv: kv[0].casefold()))
     redirects_map_sorted = dict(sorted(redirects_map.items(), key=lambda kv: kv[0].casefold()))
     page_names_list_sorted = sorted(page_names_list, key=str.casefold)
-    generated_at_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    
+    pages_header = build_summary_header(
+        schema_id=SCHEMA_ID_PAGES,
+        schema_version=SCHEMA_VER_PAGES,
+        #versions={},  # pages has no extra versions; leave empty
+        versions=wiki_header_versions,  # include mame_xml_version, gaming_history_xml_version, ini_versions
+    )
+    
     wiki_pages_redirects = {
-        "header": {
-            "schema_id": SCHEMA_ID_PAGES,
-            "schema_version": SCHEMA_VER_PAGES,
-            "generated_at": generated_at_iso,
-        },
+        "header": pages_header,
         "prefix": WIKI_PREFIX,
         "stats": {
             "parents_total": len(out_map),
@@ -1832,7 +1828,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "redirect_conflicts": redirect_conflicts,
         },
     }
-    _write_json(EXOTICA_PAGES, wiki_pages_redirects)
+    write_json(EXOTICA_PAGES, wiki_pages_redirects)
 
     finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     duration = round(time.perf_counter() - t0, 3)
@@ -1920,16 +1916,16 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     })
     header_versions["transformer_version"] = tool_version("transformer")
 
+
+
+    summary_header = build_summary_header(
+        schema_id=SCHEMA_IDS["transform"],
+        schema_version=schema_version(SCHEMA_IDS["transform"]),
+        versions=header_versions,
+    )
+    
     summary = {
-        "header": {
-            "schema_id": SCHEMA_IDS["transform"],
-            "schema_version": schema_version(SCHEMA_IDS["transform"]),
-            "generated_at": finished_utc,
-            "started_utc": started_utc,
-            "finished_utc": finished_utc,
-            "duration_seconds": duration,
-            "versions": header_versions,
-        },
+        "header": summary_header,
         "transformer_schema": TRANSFORMER_SCHEMA,
         "started_utc": started_utc,
         "finished_utc": finished_utc,
@@ -2021,7 +2017,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     if not set(summary_ports["gh_arcade_entries_with_ports_excluded_by_ini"]["list"]).issubset(set(gh_keys_with_ports)):
         log.warning("[ports] Excluded-by-INI list contains entries not in gh_keys_with_ports.")
 
-    ok_sum = _write_json(TRANSFORM_SUMMARY, summary)
+    ok_sum = write_json(TRANSFORM_SUMMARY, summary)
 
     save_stamp(stamp_path, current_stamp)
     log.info(f"Transformer completed in {duration:.2f}s "

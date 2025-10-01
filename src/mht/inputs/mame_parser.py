@@ -1,8 +1,6 @@
 """
 Filename: mame_parser.py
-Version: 1.0.2
-Last modified: 2025-09-30
-Author: Jason (XtC) Skelly (Open University TM470, 2025)
+Author: XtC
 
 Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
@@ -36,6 +34,8 @@ from mht.utils.paths import (
     PARENT_INDEX_PATH,
     MAME_SUMMARY,
 )
+from mht.utils.headers import build_summary_header
+from mht.utils.io import write_json
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -452,7 +452,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         return False
 
     parse_seconds = time.perf_counter() - start
-    generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
+    #generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
     # ----------------------------
     # Build summary
@@ -505,16 +505,18 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         if mame_mameconfig is not None:
             versions_block["mameconfig"] = mame_mameconfig
 
-        doc = {
-            "header": {
-                "schema_id": SCHEMA_IDS["mame"],
-                "schema_version": schema_version(SCHEMA_IDS["mame"]),
-                "generated_at": generated_at_utc,
-                "versions": {
-                    **versions_block,
-                    "mame_parser_version": tool_version("mame_parser"),
-                },
+
+        header = build_summary_header(
+            schema_id=SCHEMA_IDS["mame"],
+            schema_version=schema_version(SCHEMA_IDS["mame"]),
+            versions={
+                **versions_block,
+                "mame_parser_version": tool_version("mame_parser"),
             },
+        )
+        
+        doc = {
+            "header": header,
             "totals": {
                 "total_machines": total_machines,
                 "total_parents": total_parents,
@@ -655,16 +657,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     # ----------------------------
     try:
         MAME_MACHINES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(MAME_MACHINES_PATH, "w", encoding="utf-8") as f:
-            json.dump({k: machines_out[k] for k in sorted(machines_out)}, f, ensure_ascii=False, indent=2)
+        canon = {k: machines_out[k] for k in sorted(machines_out)}
+        write_json(MAME_MACHINES_PATH, canon)
         log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
     except Exception as e:
         log.error(f"Failed to write machines JSON: {e}")
         return False
 
     try:
-        with open(MAME_SUMMARY, "w", encoding="utf-8") as f:
-            json.dump(summary, f, ensure_ascii=False, indent=2)
+        write_json(MAME_SUMMARY, summary)
         log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
     except Exception as e:
         log.error(f"Failed to write MAME summary: {e}")
@@ -673,8 +674,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     try:
         PARENT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
         parent_index = _build_parent_index(machines_out)
-        with open(PARENT_INDEX_PATH, "w", encoding="utf-8") as f:
-            json.dump(parent_index, f, ensure_ascii=False, indent=2)
+        write_json(PARENT_INDEX_PATH, parent_index)
         log.info(
             f"Wrote {PARENT_INDEX_PATH} "
             f"({len(parent_index['parents'])} parents-with-clones, "

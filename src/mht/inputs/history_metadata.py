@@ -1,7 +1,6 @@
 """
 Filename: history_metadata.py
-Version: 1.0.2
-Last modified: 2025-09-30
+Author: XtC
 
 Purpose:
 Parse classification metadata from three Gaming-History INI files:
@@ -32,6 +31,8 @@ from mht.utils.paths import (
     INI_GAME, INI_CATEGORY, INI_TYPE,
     INI_SUMMARY, INI_CLASS_PATH,
 )
+from mht.utils.headers import build_summary_header
+from mht.utils.io import write_json
 
 __all__ = ["parse_history_inis", "classify_machine", "INI_FILES"]
 
@@ -296,19 +297,22 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
     if len(mame_builds) == 1:
         header_versions["mame_build"] = next(iter(mame_builds))
 
-    summary = {
-        "header": {
-            "schema_id": SCHEMA_IDS["ini"],
-            "schema_version": schema_version(SCHEMA_IDS["ini"]),
-            "generated_at": now,
-            "versions": {
-                **header_versions,
-                "ini_summary_version": tool_version("ini_summary"),
-            },
+    header = build_summary_header(
+        schema_id=SCHEMA_IDS["ini"],
+        schema_version=schema_version(SCHEMA_IDS["ini"]),
+        versions={
+            **header_versions,
+            "ini_summary_version": tool_version("ini_summary"),
         },
+    )
+
+    summary = {
+        "header": header,
         "ini": {
             "ini_parser_schema": "1.1",
-            "generated_at": now,
+            "ini_parser_schema": schema_version(SCHEMA_IDS["ini"]),
+            # reuse the same timestamp we stamped into the header
+            "generated_at": header["generated_at"],
             "files": files_block,
         },
         "totals": coverage,
@@ -318,10 +322,8 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
     out_path = INI_SUMMARY
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
+        write_json(out_path, summary)               
         log.info(f"Wrote {out_path}")
-
         # Write the stamp only after successful output
         save_stamp(stamp_path, current_stamp)
 
@@ -346,8 +348,7 @@ def _write_machine_centric_output(output_dir: Path, encodings: Dict[str, str]) -
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = INI_CLASS_PATH
     try:
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(out_map, f, indent=2, ensure_ascii=False)
+        write_json(out_path, out_map)
         log.info(f"Wrote {out_path}")
         return True, str(out_path).replace("\\", "/")
     except Exception as e:

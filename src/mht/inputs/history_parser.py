@@ -1,8 +1,6 @@
 """
 Filename: history_parser.py
-Version: 1.0.2
-Last modified: 2025-09-30
-Author: Jason (XtC) Skelly (Open University TM470, 2025)
+Author: XtC
 
 Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
@@ -42,6 +40,9 @@ from mht.utils.paths import (
     GH_SYSTEM_PORTS_PATH,
     HISTORY_SUMMARY,
 )
+from mht.utils.headers import build_summary_header
+from mht.utils.io import write_json
+
 
 __all__ = [
     "HISTORY_PARSER_SCHEMA",
@@ -592,8 +593,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     # ----------------------------
     systems_sorted = {k: gh_systems[k] for k in sorted(gh_systems.keys(), key=str.lower)}
     try:
-        with open(GH_SYSTEM_PORTS_PATH, "w", encoding="utf-8") as f:
-            json.dump(systems_sorted, f, indent=2, ensure_ascii=False)
+        write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False)  # keep your case-insensitive order                     
         log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")
     except Exception as e:
         log.error(f"Failed to write GH systems JSON: {e}")
@@ -721,19 +721,20 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         },
     }
 
-    generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
+    #generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
+
+    header = build_summary_header(
+        schema_id=SCHEMA_IDS["history"],
+        schema_version=schema_version(SCHEMA_IDS["history"]),
+        versions={
+            "gh_version": history_version,
+            "gh_date": history_date,
+            "history_parser_version": tool_version("history_parser"),
+        },
+    )
 
     summary = {
-        "header": {
-            "schema_id": SCHEMA_IDS["history"],
-            "schema_version": schema_version(SCHEMA_IDS["history"]),
-            "generated_at": generated_at_utc,
-            "versions": {
-                "gh_version": history_version,
-                "gh_date": history_date,
-                "history_parser_version": tool_version("history_parser"),
-            },
-        },
+        "header": header,
         "totals": {
             "systems_total": systems_count,
             "software_total": software_count,
@@ -791,8 +792,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     }
 
     try:
-        with open(HISTORY_SUMMARY, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2, ensure_ascii=False)
+        write_json(HISTORY_SUMMARY, summary)  # sorted keys are fine for summaries
         debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
     except Exception as e:
         log.warning(f"Could not write parsing summary: {e}")

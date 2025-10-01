@@ -28,6 +28,8 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 
 **Stamps (skip-unchanged):** stages now write a small JSON “stamp” under `data/.stamps/` capturing input file signatures and the tool version. When inputs and tool versions are unchanged, the stage is skipped. This keeps dev iterations fast while preserving reproducibility.
 
+**JSON writes:** `utils.io.write_json` pretty-prints and sorts keys by default for stable diffs. Pass `sort_keys=False` when you need to preserve insertion order (e.g. specific displays you already control via sorted inserts).
+
 ---
 
 ## Data flow (modules)
@@ -43,9 +45,10 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 | `main.py` | Entry point; orchestrates pipeline, validates encodings/versions, builds per-run manifest |
 | `mame_parser.py` | Streams MAME XML; extracts machines, years, manufacturers, ROM stats, disk/media flags, displays, controls, and parent/clone relations |
 | `transformer.py` | Final stage: applies selection rules, parses titles, formats manufacturers, chips, ROM/media/controls/displays, merges GH ports, and emits wiki-ready JSON |
+| `utils/headers.py` | Builds unified JSON summary headers (schema_id, schema_version, generated_at, versions) |
+| `utils/io.py` | Safe JSON writer: atomic, pretty, sorted by default (pass sort_keys=False to preserve insertion order) |
 | `utils/versions.py` | Centralised schema IDs/versions (summaries and outputs) and tool versions |
 | `utils/stamps.py`   | Stamp helpers for skip-unchanged execution (pretty JSON + stable digest)  |
-
 
 ---
 
@@ -116,7 +119,7 @@ All four summary files include a unified header:
 * **MAME** (`mht.mame.summary`): `versions.mame_xml_version`, `mame_build`, `mameconfig`, *(optionally)* `mame_parser_version`.
 * **History** (`mht.history.summary`): `versions.gh_version`, `gh_date`, *(optionally)* `history_parser_version`.
 * **INI** (`mht.ini.summary`): `versions.ini_generated_at` (+ consensus `mame_*` if present), *(optionally)* `ini_summary_version`.
-* **Transform** (`mht.transform.summary`): timings duplicated in header (`started_utc`, `finished_utc`, `duration_seconds`) and `versions.transformer_version`.
+* **Transform** (`mht.transform.summary`): timings are **top-level** (`started_utc`, `finished_utc`, `duration_seconds`). `versions.transformer_version` is in the header.
 
 Back-compat:
 
@@ -200,7 +203,7 @@ Schemas live in `src/mht/contracts/` and are versioned using semantic versions:
 Usage example:
 
 ```python
-from mht.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
+from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
 
 header = {
     "schema_id": SCHEMA_IDS["transform"],
