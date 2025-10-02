@@ -207,6 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 # Project data (input and output files)
+.older_runs
 # Ignore everything in the data folder...
 data/*
 # ...except the following
