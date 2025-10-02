@@ -655,34 +655,53 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     # ----------------------------
     # Write outputs
     # ----------------------------
-    try:
-        MAME_MACHINES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        canon = {k: machines_out[k] for k in sorted(machines_out)}
-        write_json(MAME_MACHINES_PATH, canon)
-        log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
-    except Exception as e:
-        log.error(f"Failed to write machines JSON: {e}")
+    
+    
+    if not write_json(MAME_MACHINES_PATH, {k: machines_out[k] for k in sorted(machines_out)}, sort_keys=False):
         return False
+    log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
 
-    try:
-        write_json(MAME_SUMMARY, summary)
-        log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
-    except Exception as e:
-        log.error(f"Failed to write MAME summary: {e}")
+    if not write_json(MAME_SUMMARY, summary):  # summaries fine with sorted keys (default)
         return False
+    log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
 
-    try:
-        PARENT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-        parent_index = _build_parent_index(machines_out)
-        write_json(PARENT_INDEX_PATH, parent_index)
-        log.info(
-            f"Wrote {PARENT_INDEX_PATH} "
-            f"({len(parent_index['parents'])} parents-with-clones, "
-            f"{len(parent_index['child_to_parent'])} clones)"
-        )
-    except Exception as e:
-        log.error(f"Failed to write parent index: {e}")
+    parent_index = _build_parent_index(machines_out)
+    if not write_json(PARENT_INDEX_PATH, parent_index):
         return False
+    log.info(
+        f"Wrote {PARENT_INDEX_PATH} "
+        f"({len(parent_index['parents'])} parents-with-clones, "
+        f"{len(parent_index['child_to_parent'])} clones)"
+    )
+    
+    #try:
+    #    MAME_MACHINES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    #    canon = {k: machines_out[k] for k in sorted(machines_out)}
+    #    write_json(MAME_MACHINES_PATH, canon)
+    #    log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
+    #except Exception as e:
+    #    log.error(f"Failed to write machines JSON: {e}")
+    #    return False
+
+    #try:
+    #    write_json(MAME_SUMMARY, summary)
+    #    log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
+    #except Exception as e:
+    #    log.error(f"Failed to write MAME summary: {e}")
+    #    return False
+
+    #try:
+    #    PARENT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    #    parent_index = _build_parent_index(machines_out)
+    #    write_json(PARENT_INDEX_PATH, parent_index)
+    #    log.info(
+    #        f"Wrote {PARENT_INDEX_PATH} "
+    #        f"({len(parent_index['parents'])} parents-with-clones, "
+    #        f"{len(parent_index['child_to_parent'])} clones)"
+    #    )
+    #except Exception as e:
+    #    log.error(f"Failed to write parent index: {e}")
+    #    return False
 
     # All good → persist the stamp
     save_stamp(stamp_path, current_stamp)

@@ -1,17 +1,24 @@
-"""
-Filename: history_metadata.py
-Author: XtC
-
-Purpose:
-Parse classification metadata from three Gaming-History INI files:
-- [GAMING HISTORY] Game Or No Game.ini
-- [GAMING HISTORY] Machine Category.ini
-- [GAMING HISTORY] Machine Type.ini
-
-Outputs:
-1) data/ini_parsing_summary.json       (diagnostic summary for audit)
-2) output/gh_ini_classifications.json  (machine-centric parsed map)
-"""
+# Filename: history_metadata.py
+# Author: XtC
+#
+# Purpose:
+# Parse classification metadata from three Gaming-History INI files:
+# - [GAMING HISTORY] Game Or No Game.ini
+# - [GAMING HISTORY] Machine Category.ini
+# - [GAMING HISTORY] Machine Type.ini
+#
+# Pure workers (no I/O, no stamps):
+#   - load_ini_classifications(encodings) -> parsed bundle
+#   - build_ini_summary(parsed, now_iso)  -> summary dict for data/ini_parsing_summary.json
+#   - build_machine_classifications(parsed) -> map for output/gh_ini_classifications.json
+#
+# Orchestrator (I/O + stamps only):
+#   - parse_history_inis(data_dir, encodings) -> bool
+#
+# Outputs (unchanged):
+#   1) data/ini_parsing_summary.json       (diagnostic summary for audit)
+#   2) output/gh_ini_classifications.json  (machine-centric parsed map)
+#
 
 from __future__ import annotations
 from pathlib import Path
@@ -34,9 +41,16 @@ from mht.utils.paths import (
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
 
-__all__ = ["parse_history_inis", "classify_machine", "INI_FILES"]
-
 log = setup_logger(log_level=LOG_LEVEL)
+
+__all__ = [
+    "parse_history_inis",
+    "classify_machine",
+    "load_ini_classifications",
+    "build_ini_summary",
+    "build_machine_classifications",
+    "INI_FILES",
+]
 
 # INI input locations (centralised)
 INI_FILES = {
@@ -45,17 +59,13 @@ INI_FILES = {
     "type":        INI_TYPE,
 }
 
-# Internal cache of parsed structures (per INI key)
-_parsed: Dict[str, dict] = {}
-_ini_parsed = False
-
 # Output normalisation
 GAME_STATUS_MAP = {"Game": "game", "No Game": "no_game"}
 UNKNOWN = "unknown"
 
-# ----------------------------
-# Helpers
-# ----------------------------
+# --------------------------------------------------------------------------------------
+# Helpers (pure)
+# --------------------------------------------------------------------------------------
 
 def _to_iso_date(s: str) -> str | None:
     for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
@@ -101,6 +111,7 @@ def _is_not_available_label(label: str | None) -> bool:
     return re.fullmatch(r"\s*<\s*not\s+available\s*>\s*", label, flags=re.IGNORECASE) is not None
 
 def _parse_ini_file_extended(path: Path, encoding: str) -> dict:
+    """Return extended structure: machine_sections + per-section counts/uniques & duplicate stats."""
     current_section = None
     machine_sections: Dict[str, Set[str]] = defaultdict(set)
     section_listed_counts: Dict[str, int] = defaultdict(int)
@@ -136,19 +147,30 @@ def _parse_ini_file_extended(path: Path, encoding: str) -> dict:
         "duplicates_within_section": duplicates_within_section,
     }
 
-def _load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
-    """Load all classification INIs into the internal cache (idempotent)."""
-    global _ini_parsed
-    if _ini_parsed:
-        return _parsed
+def _sorted_counts_from_listed(d: Dict[str, int]) -> Dict[str, int]:
+    return {k: d[k] for k in sorted(d.keys())}
 
+def _sorted_counts_from_unique_sets(d: Dict[str, Set[str]]) -> Dict[str, int]:
+    return {k: len(d[k]) for k in sorted(d.keys())}
+
+# --------------------------------------------------------------------------------------
+# Public pure workers
+# --------------------------------------------------------------------------------------
+
+def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
+    """
+    Load and parse all three INIs. No file writes, no stamps.
+    Returns a dict keyed by {"game_status","category","type"} with extended stats.
+    """
     t0 = time.perf_counter()
+    parsed: Dict[str, dict] = {}
+
     for key, path in INI_FILES.items():
         enc = encodings.get(path.name, "utf-8")
         debug_log(f"[history_metadata] Parsing {path.name} with encoding {enc}...")
         if not path.exists():
             log.warning(f"Missing INI: {path.name}")
-            _parsed[key] = {
+            parsed[key] = {
                 "machine_sections": defaultdict(set),
                 "section_listed_counts": defaultdict(int),
                 "section_unique_sets": defaultdict(set),
@@ -160,24 +182,105 @@ def _load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
                 "encoding": enc,
             }
             continue
+
         ext = _parse_ini_file_extended(path, enc)
         ext["version"] = _ini_version_info(path, encoding=enc)
         ext["encoding"] = enc
-        _parsed[key] = ext
+        parsed[key] = ext
 
-    _ini_parsed = True
     log.info(f"INI classification data loaded in {time.perf_counter() - t0:.2f} seconds")
-    return _parsed
+    return parsed
 
-# ----------------------------
-# Public lookups
-# ----------------------------
 
-def classify_machine(machine_name: str, encodings: Dict[str, str]) -> Dict[str, object]:
-    _load_ini_classifications(encodings)
+def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
+    """
+    Build the summary object for data/ini_parsing_summary.json from a parsed bundle.
+    """
+    files_block: Dict[str, dict] = {}
+    errors: List[str] = []
 
-    # Game status
-    gs_set = _parsed["game_status"]["machine_sections"].get(machine_name, set())
+    # Union of machine names across all INIs
+    union_names: Set[str] = set()
+    for key, path in INI_FILES.items():
+        info = parsed.get(key, {}) or {}
+        ms: Dict[str, Set[str]] = info.get("machine_sections", {})
+        slc: Dict[str, int]      = info.get("section_listed_counts", {})
+        sus: Dict[str, Set[str]] = info.get("section_unique_sets", {})
+        union_names |= set(ms.keys())
+
+        files_block[key] = {
+            "filename": path.name,
+            "encoding": info.get("encoding", "utf-8"),
+            "version": info.get("version", {}) or {},
+            "entries_listed": info.get("entries_listed", 0),
+            "entries_indexed": len(ms),
+            "sections_total": len((slc or {}).keys() | (sus or {}).keys()),
+            "section_counts_listed": _sorted_counts_from_listed(slc or {}),
+            "section_counts_unique": _sorted_counts_from_unique_sets(sus or {}),
+            "machines_with_multiple_sections": info.get("machines_with_multiple_sections", 0),
+            "duplicate_assignments": info.get("duplicates_across_sections", 0),
+        }
+
+        # If the original file was missing when parsed was built
+        try:
+            if not INI_FILES[key].exists():
+                errors.append(f"Missing INI: {path.name}")
+        except Exception:
+            # Very defensive; should not happen
+            errors.append(f"Missing INI: {path.name}")
+
+    coverage = {
+        "unique_machine_names_union": len(union_names),
+        "with_game_status": len((parsed.get("game_status", {}) or {}).get("machine_sections", {})),
+        "missing_in_game_status": len(union_names) - len((parsed.get("game_status", {}) or {}).get("machine_sections", {})),
+        "with_category": len((parsed.get("category", {}) or {}).get("machine_sections", {})),
+        "missing_in_category": len(union_names) - len((parsed.get("category", {}) or {}).get("machine_sections", {})),
+        "with_type": len((parsed.get("type", {}) or {}).get("machine_sections", {})),
+        "missing_in_type": len(union_names) - len((parsed.get("type", {}) or {}).get("machine_sections", {})),
+    }
+
+    # Header versions (consensus if possible)
+    header_versions: Dict[str, str] = {"ini_generated_at": now_iso}
+    mame_versions = {
+        (v or {}).get("mame_version")
+        for v in (files_block[k]["version"] for k in files_block)
+        if v and (v.get("mame_version"))
+    }
+    if len(mame_versions) == 1:
+        header_versions["mame_xml_version"] = next(iter(mame_versions))
+    mame_builds = {
+        (v or {}).get("mame_build")
+        for v in (files_block[k]["version"] for k in files_block)
+        if v and (v.get("mame_build"))
+    }
+    if len(mame_builds) == 1:
+        header_versions["mame_build"] = next(iter(mame_builds))
+
+    header = build_summary_header(
+       schema_id=SCHEMA_IDS["ini"],
+       schema_version=schema_version(SCHEMA_IDS["ini"]),
+       versions={**header_versions, "ini_summary_version": tool_version("ini_summary")},
+       generated_at=now_iso,
+    )
+
+    summary = {
+        "header": header,
+        "ini": {
+            # Historically this field existed; keep it if your schema relies on it.
+            # If not needed, it can be removed without affecting the header contract.
+            # "ini_parser_schema": <optional>,
+            "generated_at": now_iso,
+            "files": files_block,
+        },
+        "totals": coverage,
+        "errors": errors,
+    }
+    return summary
+
+
+def classify_machine(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, object]:
+    """Pure classification lookup using the parsed INI bundle."""
+    gs_set = (parsed.get("game_status", {}) or {}).get("machine_sections", {}).get(machine_name, set())
     if _is_not_available_label(next(iter(gs_set), None)) and len(gs_set) == 1:
         game_status = UNKNOWN
     elif "Game" in gs_set:
@@ -190,7 +293,7 @@ def classify_machine(machine_name: str, encodings: Dict[str, str]) -> Dict[str, 
         game_status = UNKNOWN
 
     # Category (array)
-    cat_set = _parsed["category"]["machine_sections"].get(machine_name, set()).copy()
+    cat_set = (parsed.get("category", {}) or {}).get("machine_sections", {}).get(machine_name, set()).copy()
     cat_labels = []
     for c in cat_set:
         cat_labels.append(UNKNOWN if _is_not_available_label(c) else c)
@@ -201,7 +304,7 @@ def classify_machine(machine_name: str, encodings: Dict[str, str]) -> Dict[str, 
     category_list = sorted(set(cat_labels))
 
     # Type (single)
-    type_set = _parsed["type"]["machine_sections"].get(machine_name, set())
+    type_set = (parsed.get("type", {}) or {}).get("machine_sections", {}).get(machine_name, set())
     if not type_set:
         machine_type = UNKNOWN
     elif any(_is_not_available_label(t) for t in type_set):
@@ -211,27 +314,33 @@ def classify_machine(machine_name: str, encodings: Dict[str, str]) -> Dict[str, 
 
     return {"game_status": game_status, "category": category_list, "type": machine_type}
 
-# ----------------------------
-# Summary helpers
-# ----------------------------
 
-def _sorted_counts_from_listed(d: Dict[str, int]) -> Dict[str, int]:
-    return {k: d[k] for k in sorted(d.keys())}
-
-def _sorted_counts_from_unique_sets(d: Dict[str, Set[str]]) -> Dict[str, int]:
-    return {k: len(d[k]) for k in sorted(d.keys())}
-
-# ----------------------------
-# Writers
-# ----------------------------
-
-def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool, str]:
+def build_machine_classifications(parsed: Dict[str, dict]) -> Dict[str, dict]:
     """
-    Build and write data/ini_parsing_summary.json
+    Build the machine-centric map for output/gh_ini_classifications.json
+    from the parsed bundle. Pure (no I/O).
     """
-    now = datetime.datetime.utcnow().isoformat() + "Z"
-    files_block = {}
-    errors: List[str] = []
+    union_names: Set[str] = set()
+    for key in ("game_status", "category", "type"):
+        union_names |= set((parsed.get(key, {}) or {}).get("machine_sections", {}).keys())
+
+    names_sorted = sorted(union_names)
+    out_map: Dict[str, dict] = {}
+    for name in names_sorted:
+        out_map[name] = classify_machine(name, parsed)
+    return out_map
+
+# --------------------------------------------------------------------------------------
+# Orchestrator (I/O + stamps)
+# --------------------------------------------------------------------------------------
+
+def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
+    """
+    Entry point expected by main.py.
+    Performs stamp check, delegates to pure workers, writes files, and saves stamp.
+    """
+    t0 = time.perf_counter()
+    now_iso = datetime.datetime.utcnow().isoformat() + "Z"
 
     # --- Stage stamp: skip unchanged ---
     STAMPS_DIR.mkdir(parents=True, exist_ok=True)
@@ -244,131 +353,28 @@ def _write_ini_summary(data_dir: Path, encodings: Dict[str, str]) -> Tuple[bool,
     )
     prev = load_stamp(stamp_path)
     if is_fresh(current_stamp, prev):
-        out_path = INI_SUMMARY
         log.info("INI stage up-to-date (stamp matched) — skipping rebuild")
-        return True, str(out_path).replace("\\", "/")
+        return True
 
-    # Union over all INIs (for lean coverage figures)
-    union_names: Set[str] = set()
+    # 1) Parse INIs (pure)
+    parsed = load_ini_classifications(encodings)
 
-    for key, path in INI_FILES.items():
-        enc = _parsed.get(key, {}).get("encoding", encodings.get(path.name, "utf-8"))
-        version = _parsed.get(key, {}).get("version", {})
-        ms: Dict[str, Set[str]] = _parsed.get(key, {}).get("machine_sections", {})
-        slc: Dict[str, int]      = _parsed.get(key, {}).get("section_listed_counts", {})
-        sus: Dict[str, Set[str]] = _parsed.get(key, {}).get("section_unique_sets", {})
-        union_names |= set(ms.keys())
-        entries_listed = _parsed.get(key, {}).get("entries_listed", 0)
-        entries_indexed = len(ms)
-        sections_total = len(slc.keys() | sus.keys())
+    # 2) Build summary (pure)
+    summary = build_ini_summary(parsed, now_iso)
 
-        files_block[key] = {
-            "filename": path.name,
-            "encoding": enc,
-            "version": version if version else {},
-            "entries_listed": entries_listed,
-            "entries_indexed": entries_indexed,
-            "sections_total": sections_total,
-            "section_counts_listed": _sorted_counts_from_listed(slc),
-            "section_counts_unique": _sorted_counts_from_unique_sets(sus),
-            "machines_with_multiple_sections": _parsed.get(key, {}).get("machines_with_multiple_sections", 0),
-            "duplicate_assignments": _parsed.get(key, {}).get("duplicates_across_sections", 0),
-        }
+    # 3) Build machine-centric map (pure)
+    class_map = build_machine_classifications(parsed)
 
-        if not path.exists():
-            errors.append(f"Missing INI: {path.name}")
+    # 4) Write outputs (I/O only here)
+    ok_summary = write_json(INI_SUMMARY, summary, sort_keys=True)
+    ok_output  = write_json(INI_CLASS_PATH, class_map, sort_keys=True)
 
-    coverage = {
-        "unique_machine_names_union": len(union_names),
-        "with_game_status": len(_parsed.get("game_status", {}).get("machine_sections", {})),
-        "missing_in_game_status": len(union_names) - len(_parsed.get("game_status", {}).get("machine_sections", {})),
-        "with_category": len(_parsed.get("category", {}).get("machine_sections", {})),
-        "missing_in_category": len(union_names) - len(_parsed.get("category", {}).get("machine_sections", {})),
-        "with_type": len(_parsed.get("type", {}).get("machine_sections", {})),
-        "missing_in_type": len(union_names) - len(_parsed.get("type", {}).get("machine_sections", {})),
-    }
-
-    # Header versions (consensus if possible)
-    header_versions: Dict[str, str] = {"ini_generated_at": now}
-    mame_versions = {v.get("mame_version") for v in (files_block[k]["version"] for k in files_block) if v and v.get("mame_version")}
-    if len(mame_versions) == 1:
-        header_versions["mame_xml_version"] = next(iter(mame_versions))
-    mame_builds = {v.get("mame_build") for v in (files_block[k]["version"] for k in files_block) if v and v.get("mame_build")}
-    if len(mame_builds) == 1:
-        header_versions["mame_build"] = next(iter(mame_builds))
-
-    header = build_summary_header(
-        schema_id=SCHEMA_IDS["ini"],
-        schema_version=schema_version(SCHEMA_IDS["ini"]),
-        versions={
-            **header_versions,
-            "ini_summary_version": tool_version("ini_summary"),
-        },
-    )
-
-    summary = {
-        "header": header,
-        "ini": {
-            "ini_parser_schema": "1.1",
-            "ini_parser_schema": schema_version(SCHEMA_IDS["ini"]),
-            # reuse the same timestamp we stamped into the header
-            "generated_at": header["generated_at"],
-            "files": files_block,
-        },
-        "totals": coverage,
-        "errors": errors,
-    }
-
-    out_path = INI_SUMMARY
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        write_json(out_path, summary)               
-        log.info(f"Wrote {out_path}")
-        # Write the stamp only after successful output
+    # 5) Only persist the stamp if both writes were successful
+    if ok_summary and ok_output:
         save_stamp(stamp_path, current_stamp)
+        duration = time.perf_counter() - t0
+        log.info(f"INI parsing completed in {duration:.2f}s; ok_summary={ok_summary}, ok_output={ok_output}")
+        return True
 
-        return True, str(out_path).replace("\\", "/")
-    except Exception as e:
-        log.error(f"Failed to write INI summary: {e}")
-        return False, str(out_path).replace("\\", "/")
-
-def _write_machine_centric_output(output_dir: Path, encodings: Dict[str, str]) -> Tuple[bool, str]:
-    """
-    Build and write output/gh_ini_classifications.json
-    """
-    union_names: Set[str] = set()
-    for key in ("game_status", "category", "type"):
-        union_names |= set(_parsed.get(key, {}).get("machine_sections", {}).keys())
-
-    names_sorted = sorted(union_names)
-    out_map: Dict[str, dict] = {}
-    for name in names_sorted:
-        out_map[name] = classify_machine(name, encodings)
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = INI_CLASS_PATH
-    try:
-        write_json(out_path, out_map)
-        log.info(f"Wrote {out_path}")
-        return True, str(out_path).replace("\\", "/")
-    except Exception as e:
-        log.error(f"Failed to write INI classifications: {e}")
-        return False, str(out_path).replace("\\", "/")
-
-# ----------------------------
-# Entry point for main.py
-# ----------------------------
-
-def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
-    """
-    Entry point expected by main.py.
-    """
-    t0 = time.perf_counter()
-    _load_ini_classifications(encodings)
-
-    ok_summary, _ = _write_ini_summary(DATA_DIR, encodings)
-    ok_output, _  = _write_machine_centric_output(OUTPUT_DIR, encodings)
-
-    duration = time.perf_counter() - t0
-    log.info(f"INI parsing completed in {duration:.2f}s; ok_summary={ok_summary}, ok_output={ok_output}")
-    return bool(ok_summary and ok_output)
+    log.error("Failed to write one or more INI outputs; not saving stamp.")
+    return False

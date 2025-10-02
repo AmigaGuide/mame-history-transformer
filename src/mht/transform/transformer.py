@@ -1743,7 +1743,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()},
     }
     #ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc)
-    ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc, sort_keys=False)
+    #ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc, sort_keys=False)
+    ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc)
+
 
     raw_header = build_summary_header(
         schema_id=SCHEMA_ID_RAW,
@@ -1755,9 +1757,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()},
     }
     #ok_out_raw = write_json(EXOTICA_RAW, raw_doc)
-    ok_out_raw = write_json(EXOTICA_RAW, raw_doc, sort_keys=False)
-
-    ok_out = ok_out_wiki and ok_out_raw
+    #ok_out_raw = write_json(EXOTICA_RAW, raw_doc, sort_keys=False)
+    ok_out_raw  = write_json(EXOTICA_RAW,  raw_doc)
 
     parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
     clones_total  = sum(1 for v in mame.values() if v.get("cloneof"))
@@ -1828,7 +1829,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             "redirect_conflicts": redirect_conflicts,
         },
     }
-    write_json(EXOTICA_PAGES, wiki_pages_redirects)
+    #write_json(EXOTICA_PAGES, wiki_pages_redirects)
+    ok_pages = write_json(EXOTICA_PAGES, wiki_pages_redirects)
+
+    #ok_out = ok_out_wiki and ok_out_raw
+    ok_out = ok_out_wiki and ok_out_raw and ok_pages
 
     finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     duration = round(time.perf_counter() - t0, 3)

@@ -592,12 +592,17 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     # Write parsed per-system output (sorted)
     # ----------------------------
     systems_sorted = {k: gh_systems[k] for k in sorted(gh_systems.keys(), key=str.lower)}
-    try:
-        write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False)  # keep your case-insensitive order                     
-        log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")
-    except Exception as e:
-        log.error(f"Failed to write GH systems JSON: {e}")
+    
+    if not write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False):  # preserve your explicit order
         return False
+    log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")        
+    
+    #try:
+    #    write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False)  # keep your case-insensitive order                     
+    #    log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")
+    #except Exception as e:
+    #    log.error(f"Failed to write GH systems JSON: {e}")
+    #    return False
 
     # ----------------------------
     # Build summary JSON
@@ -791,12 +796,16 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         },
     }
 
-    try:
-        write_json(HISTORY_SUMMARY, summary)  # sorted keys are fine for summaries
-        debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
-    except Exception as e:
-        log.warning(f"Could not write parsing summary: {e}")
+    if not write_json(HISTORY_SUMMARY, summary):  # sorted keys are fine for summaries (default True)
         return False
+    debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
+
+    #try:
+    #    write_json(HISTORY_SUMMARY, summary)  # sorted keys are fine for summaries
+    #    debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
+    #except Exception as e:
+    #    log.warning(f"Could not write parsing summary: {e}")
+    #    return False
 
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
