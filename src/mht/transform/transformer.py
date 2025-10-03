@@ -69,6 +69,13 @@ from mht.utils.paths import (
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
 from mht.title.parser import parse_description
+from mht.utils.media import (
+    normalise_device_to_media,
+    normalise_device_list_to_media,
+    order_media_labels,
+    bytes_to_binary_human,
+    join_with_ampersand,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -901,70 +908,6 @@ def _format_chips_and_audio_block(chips: list[dict] | None,
         lines.append(f"({speaker_count}x) Speaker")
     return "\n".join(lines)
 
-def _order_media_labels(labels: list[str]) -> list[str]:
-    labels = list(dict.fromkeys(labels))
-    return sorted(labels, key=lambda s: (-_MEDIA_ORDER.get(s, -1), s.casefold()))
-
-def _normalise_device_to_media(raw: str) -> str | None:
-    s = (raw or "").lower()
-    tokens = set(re.findall(r"[a-z0-9_]+", s))
-    if (
-        "laserdisc" in tokens
-        or any(t.startswith("laserdisc") for t in tokens)
-        or re.search(r"\b(ld_)?(ldv1000|pr7820|pr8210a?|22vp932)\b", s)
-    ):
-        return "LaserDisc"
-    if "ced_videodisc" in tokens:
-        return "Capacitance Electronic Disc (CED)"
-    if "gdrom" in tokens:
-        return "GD-ROM"
-    if {"dvdrom", "dvd"} & tokens or any(t.startswith("dvdrom") for t in tokens):
-        return "DVD-ROM"
-    if (
-        {"cdrom", "cd", "audiocd", "cdxa", "xm3301", "cr589", "stvcd"} & tokens
-        or any(t.startswith("cdrom") for t in tokens)
-    ):
-        return "CD-ROM"
-    if {"hdd", "harddisk", "scsi_hdd_image"} & tokens or ":hdd" in s:
-        return "Hard disk"
-    if {"cf", "cfcard", "cflash", "ataflash", "taitocf", "taitopccard1", "taitopccard2", "pccard"} & tokens:
-        return "CompactFlash card"
-    if {"sdcard", "internalsd"} & tokens:
-        return "Secure Digital card"
-    if "nand" in tokens:
-        return "NAND flash"
-    if "usb" in tokens:
-        return "USB storage"
-    if "vhs" in tokens:
-        return "VHS tape"
-    return None
-
-def _normalise_device_list_to_media(devs: Iterable[str] | str | None) -> list[str]:
-    if devs is None:
-        return []
-    seq = devs if isinstance(devs, (list, tuple)) else [devs]
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in seq:
-        label = _normalise_device_to_media(str(raw))
-        if not label:
-            continue
-        key = label.casefold()
-        if key not in seen:
-            seen.add(key)
-            out.append(label)
-    return out
-
-def join_with_ampersand(items: Sequence[str]) -> str:
-    n = len(items)
-    if n == 0:
-        return ""
-    if n == 1:
-        return items[0]
-    if n == 2:
-        return f"{items[0]} & {items[1]}"
-    return f"{', '.join(items[:-1])} & {items[-1]}"
-
 def _split_outside_parens(s: str) -> list[str]:
     parts, buf, depth = [], [], 0
     for ch in s or "":
@@ -992,40 +935,26 @@ def _format_rom_block(rom_count: int,
                       disk_regions) -> str:
     line1 = f"{rom_count:,} ROM" + ("" if rom_count == 1 else "s")
     total_bytes = int(rom_bytes_total or 0)
-    human = _bytes_to_binary_human(total_bytes)
+    human = bytes_to_binary_human(total_bytes)
     line2 = f"{total_bytes:,} bytes" + (f" ({human[0]:.2f} {human[1]})" if human else "")
     line3 = None
     if (disk_required or "").lower() == "yes":
         seq = disk_regions if isinstance(disk_regions, (list, tuple)) else ([disk_regions] if disk_regions else [])
         all_labels: list[str] = []
         for raw in seq:
-            lab = _normalise_device_to_media(str(raw))
+            lab = normalise_device_to_media(str(raw))
             if lab:
                 all_labels.append(lab)
         if all_labels:
             counts = Counter(l.casefold() for l in all_labels)
             first_seen_unique = list(dict.fromkeys(all_labels))
-            ordered_unique = _order_media_labels(first_seen_unique)
+            ordered_unique = order_media_labels(first_seen_unique)
             display_labels = []
             for lab in ordered_unique:
                 n = counts[lab.casefold()]
                 display_labels.append(f"({n}x) {lab}" if n > 1 else lab)
             line3 = f"Plus: {join_with_ampersand(display_labels)}"
     return "\n".join([line1, line2] + ([line3] if line3 else []))
-
-def _bytes_to_binary_human(n: int) -> tuple[float, str] | None:
-    if n is None:
-        return None
-    KB = 1024
-    MB = 1024 ** 2
-    GB = 1024 ** 3
-    if n >= GB:
-        return (n / GB, "GiB")
-    if n >= MB:
-        return (n / MB, "MiB")
-    if n >= KB:
-        return (n / KB, "KiB")
-    return None
 
 def format_manufacturers_for_wiki(raw: str | None) -> str:
     parts = [p.strip() for p in _split_outside_parens(raw or "") if p.strip()]
@@ -1430,14 +1359,14 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         disk_regions  = minfo.get("disk_regions")
         roms_display = _format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
         if (str(disk_required or "").lower() == "yes"):
-            labels_for_counts = _normalise_device_list_to_media(disk_regions)
+            labels_for_counts = normalise_device_list_to_media(disk_regions)
             if labels_for_counts:
                 parents_with_any_media += 1
                 for lab in dict.fromkeys(labels_for_counts):
                     media_label_counts[lab] = media_label_counts.get(lab, 0) + 1
             seq = disk_regions if isinstance(disk_regions, (list, tuple)) else ([disk_regions] if disk_regions else [])
             for raw in seq:
-                if _normalise_device_to_media(str(raw)) is None:
+                if normalise_device_to_media(str(raw)) is None:
                     ignored_device_counts[str(raw)] = ignored_device_counts.get(str(raw), 0) + 1
         chips_section = _build_chips_section(
             minfo.get("chips"),
