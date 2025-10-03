@@ -117,6 +117,8 @@ from mht.utils.titles import (
     unit_count_from_desc       as _unit_count_from_desc,
     collapse_ws                as _collapse_ws,
 )
+from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
+from mht.utils.wiki_pages import compute_pages_and_redirects
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -425,27 +427,6 @@ def _format_chips_and_audio_block(chips: list[dict] | None,
         lines.append(f"({speaker_count}x) Speaker")
     return "\n".join(lines)
 
-def _split_outside_parens(s: str) -> list[str]:
-    parts, buf, depth = [], [], 0
-    for ch in s or "":
-        if ch == "(":
-            depth += 1
-            buf.append(ch)
-        elif ch == ")":
-            depth = max(0, depth - 1)
-            buf.append(ch)
-        elif ch == "/" and depth == 0:
-            part = "".join(buf).strip()
-            if part:
-                parts.append(part)
-            buf = []
-        else:
-            buf.append(ch)
-    last = "".join(buf).strip()
-    if last:
-        parts.append(last)
-    return parts
-
 def _format_rom_block(rom_count: int,
                       rom_bytes_total: int,
                       disk_required: str | None,
@@ -472,16 +453,6 @@ def _format_rom_block(rom_count: int,
                 display_labels.append(f"({n}x) {lab}" if n > 1 else lab)
             line3 = f"Plus: {join_with_ampersand(display_labels)}"
     return "\n".join([line1, line2] + ([line3] if line3 else []))
-
-def format_manufacturers_for_wiki(raw: str | None) -> str:
-    parts = [p.strip() for p in _split_outside_parens(raw or "") if p.strip()]
-    if not parts:
-        return ""
-    if len(parts) == 1:
-        return parts[0]
-    if len(parts) == 2:
-        return f"{parts[0]} & {parts[1]}"
-    return f"{', '.join(parts[:-1])} & {parts[-1]}"
 
 def _pref(name: str, prefix: str = WIKI_PREFIX) -> str:
     return f"{prefix}{name}"
@@ -827,7 +798,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         desc_fields, _ = parse_description(raw_desc)
         wiki_page_name = _wiki_page_name_from_desc(desc_fields)
         raw_man = minfo.get("manufacturer") or ""
-        manufacturer_display = join_with_ampersand(_split_outside_parens(raw_man))
+        manufacturer_display = join_with_ampersand(split_outside_parens(raw_man))
         rom_count       = int(minfo.get("rom_count") or 0)
         rom_bytes_total = int(minfo.get("rom_bytes_total") or 0)
         disk_required = minfo.get("disk_required")
@@ -966,8 +937,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "header": wiki_header,
         "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()},
     }
-    #ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc)
-    #ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc, sort_keys=False)
     ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc)
 
 
@@ -980,83 +949,31 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "header": raw_header,
         "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()},
     }
-    #ok_out_raw = write_json(EXOTICA_RAW, raw_doc)
-    #ok_out_raw = write_json(EXOTICA_RAW, raw_doc, sort_keys=False)
     ok_out_raw  = write_json(EXOTICA_RAW,  raw_doc)
 
     parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
     clones_total  = sum(1 for v in mame.values() if v.get("cloneof"))
 
-    pairs: list[tuple[str, str]] = [(_pref(rec.get("wiki_page_name") or ""), machine)
-                                    for machine, rec in out_map.items()]
-    pairs.sort(key=lambda t: t[0].casefold())
-    pages_map: dict[str, str] = {machine: page for page, machine in pairs}
-    page_to_machines: dict[str, list[str]] = {}
-    for page, machine in pairs:
-        page_to_machines.setdefault(page, []).append(machine)
-    page_names_list: list[str] = list(page_to_machines.keys())
-    page_name_collisions: list[dict] = [
-        {"page": page, "machines": sorted(machines)}
-        for page, machines in page_to_machines.items()
-        if len(machines) > 1
-    ]
-    redirects_map: dict[str, str] = {}
-    redirect_conflicts: list[dict] = []
-    sources_seen: dict[str, str] = {}
-    for machine, rec in out_map.items():
-        target = pages_map[machine]
-        wiki_name = rec.get("wiki_page_name") or ""
-        sources = rec.get("wiki_redirects")
-        if not sources:
-            desc = rec.get("description") or {}
-            sources = _build_redirect_sources(desc, wiki_name)
-        for src in (sources or []):
-            psrc = _pref(src)
-            key = psrc.casefold()
-            prev = sources_seen.get(key)
-            if prev is None:
-                sources_seen[key] = target
-                redirects_map[psrc] = target
-            elif prev != target:
-                owners = [m for m, p in pages_map.items() if p in {prev, target}]
-                redirect_conflicts.append({
-                    "source": psrc,
-                    "targets": sorted({prev, target}),
-                    "machines": sorted(set(owners)),
-                })
-    pages_map_sorted     = dict(sorted(pages_map.items(), key=lambda kv: kv[0].casefold()))
-    redirects_map_sorted = dict(sorted(redirects_map.items(), key=lambda kv: kv[0].casefold()))
-    page_names_list_sorted = sorted(page_names_list, key=str.casefold)
-    
-    pages_header = build_summary_header(
-        schema_id=SCHEMA_ID_PAGES,
-        schema_version=SCHEMA_VER_PAGES,
-        #versions={},  # pages has no extra versions; leave empty
-        versions=wiki_header_versions,  # include mame_xml_version, gaming_history_xml_version, ini_versions
-    )
-    
+    # --- Build pages + redirects (now via helper) ---
+    generated_at_iso = datetime.datetime.utcnow().isoformat() + "Z"
+
+    pages_info = compute_pages_and_redirects(out_map, WIKI_PREFIX)
+
     wiki_pages_redirects = {
-        "header": pages_header,
+        "header": {
+            "schema_id": SCHEMA_ID_PAGES,
+            "schema_version": SCHEMA_VER_PAGES,
+            "generated_at": generated_at_iso,
+        },
         "prefix": WIKI_PREFIX,
-        "stats": {
-            "parents_total": len(out_map),
-            "page_names_total": len(page_names_list_sorted),
-            "redirects_total": len(redirects_map_sorted),
-            "page_name_collisions": len(page_name_collisions),
-            "redirect_conflicts": len(redirect_conflicts),
-        },
-        "pages": pages_map_sorted,
-        "page_names": page_names_list_sorted,
-        "redirects": redirects_map_sorted,
-        "conflicts": {
-            "page_name_collisions": page_name_collisions,
-            "redirect_conflicts": redirect_conflicts,
-        },
+        "stats": pages_info["stats"],
+        "pages": pages_info["pages"],
+        "page_names": pages_info["page_names"],
+        "redirects": pages_info["redirects"],
+        "conflicts": pages_info["conflicts"],
     }
-    #write_json(EXOTICA_PAGES, wiki_pages_redirects)
     ok_pages = write_json(EXOTICA_PAGES, wiki_pages_redirects)
 
-    #ok_out = ok_out_wiki and ok_out_raw
     ok_out = ok_out_wiki and ok_out_raw and ok_pages
 
     finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
