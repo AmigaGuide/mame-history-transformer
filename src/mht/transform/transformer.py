@@ -93,6 +93,13 @@ from mht.utils.controls import (
     build_controls_section        as _build_controls_section,
     controls_section_to_display   as _controls_section_to_display,
 )
+from mht.utils.displays import (
+    orientation_from_rotate      as _orientation_from_rotate,
+    type_title                   as _type_title,
+    format_hz_3dp                as _format_hz_3dp,
+    build_displays_section       as _build_displays_section,
+    displays_section_to_display  as _displays_section_to_display,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -562,91 +569,6 @@ def _build_ports_for_parent(parent: str,
     if not parent_has_ports and not ports_obj["clone_sources"]:
         return None, clones_with_ports, False
     return ports_obj, clones_with_ports, parent_has_ports
-
-def _orientation_from_rotate(rot) -> str | None:
-    try:
-        r = int(rot)
-    except Exception:
-        return None
-    if r in (0, 180):
-        return "Horizontal"
-    if r in (90, 270):
-        return "Vertical"
-    return None
-
-def _type_title(s: str | None) -> str:
-    s = (s or "").strip().lower()
-    if s == "raster": return "Raster"
-    if s == "vector": return "Vector"
-    if s == "svg":    return "SVG"
-    if s == "lcd":    return "LCD"
-    return s.title() if s else ""
-
-def _build_displays_section(displays: list[dict] | None, display_count: int | None):
-    disp_list = displays or []
-    groups: dict[tuple, int] = {}
-    for d in disp_list:
-        typ = _type_title(d.get("type"))
-        ori = _orientation_from_rotate(d.get("rotate")) or ""
-        hz_str = _format_hz_3dp(d.get("refresh_hz"))
-        w = h = None
-        if typ in {"Raster", "LCD"}:
-            try:
-                w = int(d.get("width"))
-                h = int(d.get("height"))
-                if not (w > 0 and h > 0):
-                    w = h = None
-            except Exception:
-                w = h = None
-        key = (typ, ori, w, h, hz_str)
-        groups[key] = groups.get(key, 0) + 1
-    try:
-        cnt = int(display_count) if display_count is not None else 0
-    except Exception:
-        cnt = 0
-    if cnt <= 0:
-        cnt = sum(groups.values())
-    def _ord_key(kv):
-        (typ, ori, w, h, hz) = kv[0]
-        return (typ or "", ori or "", w or 0, h or 0, hz or "")
-    grouped_list = []
-    for (typ, ori, w, h, hz), c in sorted(groups.items(), key=_ord_key):
-        grouped_list.append({
-            "count": c,
-            "type": typ or "",
-            "orientation": ori,
-            "width": w,
-            "height": h,
-            "refresh": hz,
-        })
-    return {
-        "heading": _pluralise("Screen", cnt),
-        "count": cnt,
-        "groups": grouped_list,
-    }
-
-def _displays_section_to_display(section: dict) -> str:
-    lines: list[str] = []
-    heading = section.get("heading") or "Screen"
-    count = section.get("count") or 0
-    lines.append(f"{heading}: {count}")
-    for g in section.get("groups", []):
-        c   = g.get("count", 1)
-        typ = g.get("type", "")
-        ori = g.get("orientation", "")
-        w   = g.get("width")
-        h   = g.get("height")
-        hz  = g.get("refresh")
-        type_label = typ + (f" ({ori})" if ori else "")
-        if c > 1:
-            lines.append(f"({c}x) {type_label}")
-        else:
-            lines.append(type_label)
-        if w is not None and h is not None:
-            lines.append(f"{w} x {h} pixels")
-        if hz:
-            lines.append(hz)
-    return "\n".join(lines)
 
 def _build_chips_section(chips: list[dict] | None,
                          sound_channels: int | None,
