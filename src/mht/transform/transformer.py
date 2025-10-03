@@ -67,7 +67,7 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
-from mht.title.parser import parse_description
+#from mht.title.parser import parse_description
 from mht.utils.media import (
     normalise_device_to_media,
     normalise_device_list_to_media,
@@ -109,6 +109,14 @@ from mht.utils.ports import (
     build_ports_for_parent           as _build_ports_for_parent,
     gh_ids_from_ports_obj            as _gh_ids_from_ports_obj,
 )
+from mht.utils.titles import (
+    parse_description          as parse_description,
+    find_unbalanced            as _find_unbalanced,
+    wiki_page_name_from_desc   as _wiki_page_name_from_desc,
+    build_redirect_sources     as _build_redirect_sources,
+    unit_count_from_desc       as _unit_count_from_desc,
+    collapse_ws                as _collapse_ws,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -129,15 +137,6 @@ WIKI_PREFIX = "Lost In Translation/"
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
-
-def _find_unbalanced(full: str) -> tuple[bool, bool]:
-    dR = dS = 0
-    for ch in full or "":
-        if ch == "(": dR += 1
-        elif ch == ")": dR -= 1
-        elif ch == "[": dS += 1
-        elif ch == "]": dS -= 1
-    return (dR != 0, dS != 0)
 
 def _dedupe_ci_preserve_order(items: list[str]) -> list[str]:
     out, seen = [], set()
@@ -484,45 +483,8 @@ def format_manufacturers_for_wiki(raw: str | None) -> str:
         return f"{parts[0]} & {parts[1]}"
     return f"{', '.join(parts[:-1])} & {parts[-1]}"
 
-def _collapse_ws(s: str) -> str:
-    return " ".join((s or "").split())
-
 def _pref(name: str, prefix: str = WIKI_PREFIX) -> str:
     return f"{prefix}{name}"
-
-def _unit_count_from_desc(desc_fields: dict) -> int:
-    nums = []
-    for k in desc_fields.keys():
-        if k.startswith("title") and k[5:].isdigit():
-            nums.append(int(k[5:]))
-    return max(nums) if nums else 1
-
-def _build_redirect_sources(desc_fields: dict, wiki_page_name: str) -> list[str]:
-    sources: list[str] = []
-    seen_ci: set[str] = set()
-    def add(name: str):
-        n = _collapse_ws(name)
-        if not n:
-            return
-        if n.casefold() == (wiki_page_name or "").casefold():
-            return
-        ci = n.casefold()
-        if ci not in seen_ci:
-            seen_ci.add(ci)
-            sources.append(n)
-    n_units = _unit_count_from_desc(desc_fields)
-    for i in range(2, n_units + 1):
-        ti = (desc_fields.get(f"title{i}") or "").strip()
-        si = (desc_fields.get(f"subtitle{i}") or "").strip()
-        if ti:
-            add(ti)
-            if si:
-                add(f"{ti}: {si}")
-    t1 = (desc_fields.get("title1") or "").strip()
-    s1 = (desc_fields.get("subtitle1") or "").strip()
-    if t1 and s1:
-        add(t1)
-    return sources
 
 def _raw_mame_title(minfo: dict, fallback: str) -> str:
     return (minfo.get("description")
@@ -551,11 +513,6 @@ def _mame_titles_for_parent(parent_name: str,
             "year": cinfo.get("year"),
         })
     return out
-
-def _wiki_page_name_from_desc(desc_fields: dict) -> str:
-    title = (desc_fields.get("title1") or "").strip()
-    subtitle = (desc_fields.get("subtitle1") or "").strip()
-    return f"{title}: {subtitle}" if subtitle else title
 
 def _clone_entries_for_parent(parent_name: str,
                               mame: Dict[str, Any],
