@@ -100,6 +100,15 @@ from mht.utils.displays import (
     build_displays_section       as _build_displays_section,
     displays_section_to_display  as _displays_section_to_display,
 )
+from mht.utils.ports import (
+    canonical_port_key               as _canonical_port_key,
+    has_parent_clone_duplicate_ports as _has_parent_clone_duplicate_ports,
+    render_ports_display             as _render_ports_display,
+    collect_valid_ports_by_category  as _collect_valid_ports_by_category,
+    gh_keys_with_any_valid_ports     as _gh_keys_with_any_valid_ports,
+    build_ports_for_parent           as _build_ports_for_parent,
+    gh_ids_from_ports_obj            as _gh_ids_from_ports_obj,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -120,8 +129,6 @@ WIKI_PREFIX = "Lost In Translation/"
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
-
-_TERMINAL_PUNCT = ('.', '!', '?', '…')
 
 def _find_unbalanced(full: str) -> tuple[bool, bool]:
     dR = dS = 0
@@ -166,37 +173,6 @@ def _clone_primary_redirects(clone_machine: str,
     raw = _raw_mame_title(minfo, clone_machine)
     desc_fields, _ = parse_description(raw)
     return _primary_redirects_for_unit1(desc_fields, target_page_name)
-
-def _gh_ids_from_ports_obj(ports_obj: dict) -> list[int]:
-    ids: set[int] = set()
-    if not isinstance(ports_obj, dict):
-        return []
-    p = ports_obj.get("parent_source") or {}
-    gid = p.get("gh_id")
-    if isinstance(gid, int):
-        ids.add(gid)
-    for cs in (ports_obj.get("clone_sources") or []):
-        gid = (cs or {}).get("gh_id")
-        if isinstance(gid, int):
-            ids.add(gid)
-    return sorted(ids)
-
-def _collect_gh_ids_from_ports(ports_obj: dict) -> list:
-    if not isinstance(ports_obj, dict):
-        return []
-    ids = set()
-    p = ports_obj.get("parent_source")
-    if isinstance(p, dict):
-        gid = p.get("gh_id")
-        if gid is not None:
-            ids.add(gid)
-    for c in (ports_obj.get("clone_sources") or []):
-        if not isinstance(c, dict):
-            continue
-        gid = c.get("gh_id")
-        if gid is not None:
-            ids.add(gid)
-    return sorted(ids, key=lambda x: str(x))
 
 def _render_chips_display(
     chips_raw: dict,
@@ -303,42 +279,6 @@ def _render_mame_titles_display(rows: list[dict]) -> list[str]:
         out.append(" ".join(parts))
     return out
 
-def _canonical_port_key(row: dict) -> tuple:
-    regions = tuple(r.strip() for r in (row.get("regions") or []) if isinstance(r, str))
-    platform = (row.get("platform") or "").strip()
-    title    = (row.get("title") or "").strip()
-    date     = (row.get("date") or "").strip()
-    publisher= (row.get("publisher") or "").strip()
-    tags     = tuple(t.strip() for t in (row.get("additional_tags") or []) if isinstance(t, str))
-    models   = tuple(m.strip() for m in (row.get("model") or []) if isinstance(m, str))
-    comment  = (row.get("comment") or "").strip()
-    return (regions, platform, title, date, publisher, tags, models, comment)
-
-def _has_parent_clone_duplicate_ports(ports_obj: dict) -> bool:
-    if not isinstance(ports_obj, dict):
-        return False
-    p = (ports_obj.get("parent_source") or {}).get("categories") or {}
-    clones = [ (cs or {}).get("categories") or {} for cs in (ports_obj.get("clone_sources") or []) ]
-    if not p or not clones:
-        return False
-    parent_sets: dict[str, set] = {}
-    for cat, rows in p.items():
-        s = set()
-        for r in (rows or []):
-            s.add(_canonical_port_key(r))
-        if s:
-            parent_sets[cat] = s
-    if not parent_sets:
-        return False
-    for cdict in clones:
-        for cat, rows in cdict.items():
-            if cat not in parent_sets:
-                continue
-            for r in (rows or []):
-                if _canonical_port_key(r) in parent_sets[cat]:
-                    return True
-    return False
-
 def _date_sort_key(date_str: str, original_index: int) -> tuple[int, int, int, int]:
     s = (date_str or "").strip()
     y, m, d = "0000", "00", "00"
@@ -396,179 +336,9 @@ def _append_provenance_comment(existing: str | None, is_parent_row: bool, machin
     else:
         return prov
 
-def _render_ports_display(parent_machine: str, ports_obj: dict) -> dict[str, list[str]]:
-    if not isinstance(ports_obj, dict):
-        return {}
-    out: dict[str, list[str]] = {}
-    cat_roles: dict[str, set[str]] = {}
-    def _scan_source(source: dict, role: str):
-        cats = (source or {}).get("categories") or {}
-        for cat_key, rows in cats.items():
-            if rows:
-                cat_roles.setdefault(cat_key, set()).add(role)
-    if ports_obj.get("parent_source"):
-        _scan_source(ports_obj["parent_source"], "parent")
-    for cs in (ports_obj.get("clone_sources") or []):
-        _scan_source(cs, "clone")
-    combined: dict[str, list[tuple[int, str, dict]]] = {}
-    enc_ix = 0
-    def _append_source(source: dict, role: str):
-        nonlocal enc_ix
-        cats = (source or {}).get("categories") or {}
-        for cat_key, rows in cats.items():
-            bucket = combined.setdefault(cat_key, [])
-            for r in (rows or []):
-                bucket.append((enc_ix, role, r))
-                enc_ix += 1
-    if ports_obj.get("parent_source"):
-        _append_source(ports_obj["parent_source"], "parent")
-    for cs in (ports_obj.get("clone_sources") or []):
-        _append_source(cs, "clone")
-    for cat_key, triples in combined.items():
-        disp_cat = _title_case_words(cat_key)
-        bucket = out.setdefault(disp_cat, [])
-        mixed = (cat_roles.get(cat_key) == {"parent", "clone"})
-        undated = []
-        dated   = []
-        for enc, role, r in triples:
-            date = (r.get("date") or "").strip()
-            if date:
-                dated.append((enc, role, r, _date_sort_key(date, enc)))
-            else:
-                undated.append((enc, role, r))
-        dated.sort(key=lambda t: t[3])
-        ordered = [ (enc, role, r) for (enc, role, r) in undated ] + \
-                  [ (enc, role, r) for (enc, role, r, _) in dated ]
-        for enc, role, r in ordered:
-            is_parent = (role == "parent")
-            regions = _format_regions(r.get("regions"))
-            platform = (r.get("platform") or "").strip()
-            tags = _format_additional_tags(r.get("additional_tags"))
-            title = (r.get("title") or "").strip()
-            date  = (r.get("date") or "").strip()
-            pub   = (r.get("publisher") or "").strip()
-            models_in = _format_models_bracketed(r.get("model"))
-            machine = (r.get("machine") or "").strip()
-            parts: list[str] = []
-            parts.append(regions)
-            plat_seg = f"{platform}{tags}"
-            if title:
-                parts.append(plat_seg)
-            else:
-                parts.append(f"{plat_seg} {models_in}".strip())
-            if title:
-                safe_title = title.replace('"', '\\"')
-                if models_in:
-                    parts.append(f"\"{safe_title} {models_in}\"")
-                else:
-                    parts.append(f"\"{safe_title}\"")
-            if date:
-                parts.append(f"({date})")
-            if pub:
-                parts.append(f"by {pub}")
-            left = " ".join(p for p in parts if p)
-            comment = (r.get("comment") or "").strip()
-            if mixed:
-                comment = _append_provenance_comment(comment, is_parent_row=is_parent, machine=machine)
-            line = f"{left} : {comment}" if comment else left
-            bucket.append(line)
-    return out
-
 def _read_gh_ports(path: Path) -> dict:
     data = _read_json(path)
     return data if isinstance(data, dict) else {}
-
-def _is_valid_port_row(row: dict) -> bool:
-    plat = (row or {}).get("platform")
-    return isinstance(plat, str) and plat.strip() != ""
-
-def _norm_regions(regs) -> list[str]:
-    if not regs:
-        return ["??"]
-    out = []
-    for r in regs:
-        if isinstance(r, str) and r.strip():
-            out.append(r.strip())
-    return out or ["??"]
-
-def _norm_tags(tags) -> list[str]:
-    out = []
-    for t in (tags or []):
-        if isinstance(t, str) and t.strip():
-            out.append(t.strip())
-    return out
-
-def _collect_valid_ports_by_category(
-    gh_entry: dict, 
-    source_machine: str, 
-    source_gh_id: int | None = None
-) -> dict[str, list[dict]]:
-    cats = {}
-    ports = (gh_entry or {}).get("ports") or {}
-    if not isinstance(ports, dict):
-        return cats
-    for cat, rows in ports.items():
-        if not isinstance(rows, list):
-            continue
-        out_rows = []
-        for r in rows:
-            if not isinstance(r, dict) or not _is_valid_port_row(r):
-                continue
-            out_rows.append({
-                "machine": source_machine,
-                "gh_id": source_gh_id,
-                "platform": r.get("platform"),
-                "regions": _norm_regions(r.get("regions")),
-                "model": r.get("model") or [],
-                "title": r.get("title"),
-                "date": r.get("date"),
-                "publisher": r.get("publisher"),
-                "comment": r.get("comment"),
-                "additional_tags": _norm_tags(r.get("additional_tags")),
-            })
-        if out_rows:
-            cats[cat] = out_rows
-    return cats
-
-def _gh_keys_with_any_valid_ports(gh_ports: dict) -> set[str]:
-    out = set()
-    for key, entry in gh_ports.items():
-        cats = _collect_valid_ports_by_category(entry, key, (entry or {}).get("gh_id"))
-        if any(cats.values()):
-            out.add(key)
-    return out
-
-def _build_ports_for_parent(parent: str,
-                            parents_map: dict[str, list],
-                            gh_ports: dict) -> tuple[dict | None, set[str], bool]:
-    ports_obj: dict = {"clone_sources": []}
-    clones_with_ports: set[str] = set()
-    parent_has_ports = False
-    p_entry = gh_ports.get(parent)
-    if isinstance(p_entry, dict):
-        p_cats = _collect_valid_ports_by_category(p_entry, parent, p_entry.get("gh_id"))
-        if any(p_cats.values()):
-            ports_obj["parent_source"] = {
-                "machine": parent,
-                "gh_id": p_entry.get("gh_id"),
-                "categories": p_cats,
-            }
-            parent_has_ports = True
-    for clone in (parents_map.get(parent) or []):
-        c_entry = gh_ports.get(clone)
-        if not isinstance(c_entry, dict):
-            continue
-        c_cats = _collect_valid_ports_by_category(c_entry, clone, c_entry.get("gh_id"))
-        if any(c_cats.values()):
-            ports_obj["clone_sources"].append({
-                "machine": clone,
-                "gh_id": c_entry.get("gh_id"),
-                "categories": c_cats,
-            })
-            clones_with_ports.add(clone)
-    if not parent_has_ports and not ports_obj["clone_sources"]:
-        return None, clones_with_ports, False
-    return ports_obj, clones_with_ports, parent_has_ports
 
 def _build_chips_section(chips: list[dict] | None,
                          sound_channels: int | None,
