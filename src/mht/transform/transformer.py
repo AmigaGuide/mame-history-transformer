@@ -76,6 +76,14 @@ from mht.utils.media import (
     bytes_to_binary_human,
     join_with_ampersand,
 )
+from mht.utils.chips import (
+    hz_to_human         as _hz_to_human,
+    format_hz_3dp       as _format_hz_3dp,
+    chip_label          as _chip_label,
+    prefix_multiples    as _prefix_multiples,
+    sum_device_speakers as _sum_device_speakers,
+    has_samples_flag    as _has_samples_flag,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -96,21 +104,6 @@ WIKI_PREFIX = "Lost In Translation/"
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
-
-# Display precedence for the media "Plus:" line (higher = earlier).
-_MEDIA_ORDER = {
-    "GD-ROM": 100,
-    "DVD-ROM": 90,
-    "CD-ROM": 80,
-    "LaserDisc": 70,
-    "Capacitance Electronic Disc (CED)": 60,
-    "Hard disk": 50,
-    "CompactFlash card": 40,
-    "Secure Digital card": 30,
-    "NAND flash": 20,
-    "USB storage": 10,
-    "VHS tape": 0,
-}
 
 _CONTROL_TYPE_LABELS = {
     "joy": "Joystick",
@@ -640,15 +633,6 @@ def _type_title(s: str | None) -> str:
     if s == "lcd":    return "LCD"
     return s.title() if s else ""
 
-def _format_hz_3dp(hz) -> str | None:
-    try:
-        v = float(hz)
-    except Exception:
-        return None
-    if v <= 0:
-        return None
-    return f"{v:.3f} Hz"
-
 def _build_controls_section(players: int | None, controls: list[dict] | None) -> dict:
     try:
         pcount = int(players) if players is not None else 0
@@ -816,58 +800,6 @@ def _build_chips_section(chips: list[dict] | None,
         "audio_channels": chn,
         "speakers": int(speaker_count),
     }
-
-def _hz_to_human(n: int | float | None) -> tuple[float, str] | None:
-    if not n:
-        return None
-    try:
-        v = float(n)
-    except (TypeError, ValueError):
-        return None
-    if v < 1.0:
-        return None
-    GHz = 1_000_000_000.0
-    MHz = 1_000_000.0
-    kHz = 1_000.0
-    if v >= GHz: return (v / GHz, "GHz")
-    if v >= MHz: return (v / MHz, "MHz")
-    if v >= kHz: return (v / kHz, "kHz")
-    return (v, "Hz")
-
-def _chip_label(name: str | None, clock_hz) -> str:
-    nm = (name or "").strip()
-    h = _hz_to_human(clock_hz)
-    return f"{nm} @ {h[0]:.3f} {h[1]}" if h else nm
-
-def _prefix_multiples(labels: list[str]) -> list[str]:
-    labels = [l for l in labels if l]
-    counts = Counter(l.casefold() for l in labels)
-    first_seen_unique = list(dict.fromkeys(labels))
-    out = []
-    for lab in first_seen_unique:
-        n = counts[lab.casefold()]
-        out.append(f"({n}x) {lab}" if n > 1 else lab)
-    return out
-
-def _sum_device_speakers(device_ref) -> int:
-    if not isinstance(device_ref, (list, tuple)):
-        return 0
-    total = 0
-    for d in device_ref:
-        try:
-            total += int(d.get("speaker", 0))
-        except Exception:
-            continue
-    return total
-
-def _has_samples_flag(device_ref) -> bool:
-    if not isinstance(device_ref, (list, tuple)):
-        return False
-    for d in device_ref:
-        s = (d.get("samples") or "").strip().lower()
-        if s in {"yes", "true", "1", "y"}:
-            return True
-    return False
 
 def _format_chips_and_audio_block(chips: list[dict] | None,
                                   sound_channels: int | None,
