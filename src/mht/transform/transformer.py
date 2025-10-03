@@ -43,7 +43,6 @@ Notes:
 - See transform_summary.json → "notes" for the exact selection and parsing rules.
 This file is part of a student project and is not intended for commercial use.
 """
-
 from pathlib import Path
 from typing import Dict, Any, Optional, Set, List, Tuple, Sequence, Iterable
 import json
@@ -84,6 +83,16 @@ from mht.utils.chips import (
     sum_device_speakers as _sum_device_speakers,
     has_samples_flag    as _has_samples_flag,
 )
+from mht.utils.controls import (
+    pluralise                     as _pluralise,
+    control_type_label            as _control_type_label,
+    ways_pretty                   as _ways_pretty,
+    ways_label                    as _ways_label,
+    control_line_from_row         as _control_line_from_row,
+    buttons_count_from_rows       as _buttons_count_from_rows,
+    build_controls_section        as _build_controls_section,
+    controls_section_to_display   as _controls_section_to_display,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -104,27 +113,6 @@ WIKI_PREFIX = "Lost In Translation/"
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
-
-_CONTROL_TYPE_LABELS = {
-    "joy": "Joystick",
-    "doublejoy": "Dual Joystick",
-    "triplejoy": "Triple Joystick",
-    "stick": "Analogue Joystick",
-    "only_buttons": "Buttons Only",
-    "paddle": "Paddle",
-    "dial": "Dial",
-    "trackball": "Trackball",
-    "mouse": "Mouse",
-    "positional": "Positional",
-    "lightgun": "Light Gun",
-    "pedal": "Pedal",
-    "keyboard": "Keyboard",
-    "keypad": "Keypad",
-    "mahjong": "Mahjong Panel",
-    "hanafuda": "Hanafuda Panel",
-    "gambling": "Gambling Panel",
-    # fallback → title-case of raw type
-}
 
 _TERMINAL_PUNCT = ('.', '!', '?', '…')
 
@@ -575,45 +563,6 @@ def _build_ports_for_parent(parent: str,
         return None, clones_with_ports, False
     return ports_obj, clones_with_ports, parent_has_ports
 
-def _control_type_label(raw_type: str | None) -> str:
-    t = (raw_type or "").strip().lower()
-    return _CONTROL_TYPE_LABELS.get(t, t.title() if t else "Unknown Control")
-
-def _ways_pretty(raw: str | None) -> str:
-    s = (raw or "").strip().lower()
-    if not s:
-        return ""
-    if s in {"vertical2", "strange2"}:
-        return "2-way"
-    m = re.match(r"^(\d+)\s*\(half(\d+)\)$", s)
-    if m:
-        return f"{m.group(1)}-of-{m.group(2)}-way"
-    if s.isdigit():
-        return f"{int(s)}-way"
-    return raw.strip()
-
-def _ways_label(ways: str | None, ways2: str | None, ways3: str | None) -> str:
-    parts = [p for p in map(_ways_pretty, (ways, ways2, ways3)) if p]
-    return ", ".join(parts)
-
-def _control_line_from_row(row: dict) -> str:
-    typ = _control_type_label(row.get("type"))
-    ways = _ways_label(row.get("ways"), row.get("ways2"), row.get("ways3"))
-    return f"{ways} {typ}".strip() if ways else typ
-
-def _buttons_count_from_rows(rows: list[dict]) -> int:
-    total = 0
-    for r in rows:
-        try:
-            n = int(r.get("buttons")) if r.get("buttons") is not None else 0
-        except Exception:
-            n = 0
-        total += max(0, n)
-    return total
-
-def _pluralise(singular: str, n: int, plural: str | None = None) -> str:
-    return singular if int(n or 0) == 1 else (plural or f"{singular}s")
-
 def _orientation_from_rotate(rot) -> str | None:
     try:
         r = int(rot)
@@ -632,61 +581,6 @@ def _type_title(s: str | None) -> str:
     if s == "svg":    return "SVG"
     if s == "lcd":    return "LCD"
     return s.title() if s else ""
-
-def _build_controls_section(players: int | None, controls: list[dict] | None) -> dict:
-    try:
-        pcount = int(players) if players is not None else 0
-    except Exception:
-        pcount = 0
-    bucket: dict[int, list[dict]] = {}
-    for row in (controls or []):
-        try:
-            p = int(row.get("player"))
-        except Exception:
-            p = 1
-        bucket.setdefault(p, []).append(row)
-    per_player: list[dict] = []
-    for p in sorted(bucket.keys()):
-        rows = bucket[p]
-        raw_lines = [_control_line_from_row(r) for r in rows]
-        counts = Counter(l.casefold() for l in raw_lines)
-        order = list(dict.fromkeys(raw_lines))
-        control_lines = [
-            (f"({counts[l.casefold()]}x) {l}" if counts[l.casefold()] > 1 else l)
-            for l in order
-        ]
-        btn_total = _buttons_count_from_rows(rows)
-        per_player.append({
-            "player": p,
-            "control_lines": control_lines,
-            "buttons": btn_total
-        })
-    def _placeholder(p: int) -> dict:
-        return {"player": p, "control_lines": ["Unknown controls"], "buttons": 0}
-    if not per_player:
-        if pcount > 0:
-            per_player = [_placeholder(p) for p in range(1, pcount + 1)]
-        else:
-            return {"players": 0, "per_player": []}
-        return {"players": pcount, "per_player": per_player}
-    if pcount > 0:
-        present = {e["player"] for e in per_player}
-        for p in range(1, pcount + 1):
-            if p not in present:
-                per_player.append(_placeholder(p))
-        per_player.sort(key=lambda e: e["player"])
-    return {"players": pcount, "per_player": per_player}
-
-def _controls_section_to_display(section: dict) -> str:
-    lines: list[str] = []
-    lines.append(f"Players: {section.get('players', 0)}")
-    for pp in section.get("per_player", []):
-        lines.append(f"Player {pp.get('player')}")
-        for l in (pp.get("control_lines") or []):
-            lines.append(l)
-        btns = int(pp.get("buttons") or 0)
-        lines.append("No Buttons" if btns <= 0 else f"{btns} {_pluralise('Button', btns)}")
-    return "\n".join(lines)
 
 def _build_displays_section(displays: list[dict] | None, display_count: int | None):
     disp_list = displays or []
