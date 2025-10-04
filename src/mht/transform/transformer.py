@@ -119,6 +119,7 @@ from mht.utils.titles import (
 )
 from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
 from mht.utils.wiki_pages import compute_pages_and_redirects
+from mht.utils.roms import format_rom_block
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -426,33 +427,6 @@ def _format_chips_and_audio_block(chips: list[dict] | None,
     if speaker_count > 0:
         lines.append(f"({speaker_count}x) Speaker")
     return "\n".join(lines)
-
-def _format_rom_block(rom_count: int,
-                      rom_bytes_total: int,
-                      disk_required: str | None,
-                      disk_regions) -> str:
-    line1 = f"{rom_count:,} ROM" + ("" if rom_count == 1 else "s")
-    total_bytes = int(rom_bytes_total or 0)
-    human = bytes_to_binary_human(total_bytes)
-    line2 = f"{total_bytes:,} bytes" + (f" ({human[0]:.2f} {human[1]})" if human else "")
-    line3 = None
-    if (disk_required or "").lower() == "yes":
-        seq = disk_regions if isinstance(disk_regions, (list, tuple)) else ([disk_regions] if disk_regions else [])
-        all_labels: list[str] = []
-        for raw in seq:
-            lab = normalise_device_to_media(str(raw))
-            if lab:
-                all_labels.append(lab)
-        if all_labels:
-            counts = Counter(l.casefold() for l in all_labels)
-            first_seen_unique = list(dict.fromkeys(all_labels))
-            ordered_unique = order_media_labels(first_seen_unique)
-            display_labels = []
-            for lab in ordered_unique:
-                n = counts[lab.casefold()]
-                display_labels.append(f"({n}x) {lab}" if n > 1 else lab)
-            line3 = f"Plus: {join_with_ampersand(display_labels)}"
-    return "\n".join([line1, line2] + ([line3] if line3 else []))
 
 def _pref(name: str, prefix: str = WIKI_PREFIX) -> str:
     return f"{prefix}{name}"
@@ -803,7 +777,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         rom_bytes_total = int(minfo.get("rom_bytes_total") or 0)
         disk_required = minfo.get("disk_required")
         disk_regions  = minfo.get("disk_regions")
-        roms_display = _format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
+        roms_display = format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
+
         if (str(disk_required or "").lower() == "yes"):
             labels_for_counts = normalise_device_list_to_media(disk_regions)
             if labels_for_counts:

@@ -19,7 +19,7 @@ TOOL_VERSIONS = {
     "mame_parser":    "1.0.4",
     "history_parser": "1.0.4",
     "ini_summary":    "1.0.4",
-    "transformer":    "1.0.13",
+    "transformer":    "1.0.14",
 }
 
 # ===== Output dataset schemas (centralise the IDs + versions your transformer emits) =====
