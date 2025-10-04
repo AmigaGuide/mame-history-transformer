@@ -125,6 +125,7 @@ from mht.utils.selection import (
     is_eligible_parent as _is_eligible_parent,
     build_final_set as _build_final_set,
 )
+from mht.utils.title_overrides import load_title_overrides, apply_title_override_if_eligible
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -748,8 +749,16 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         minfo = mame.get(name)
         if not minfo:
             continue
-        cls = _classify(name, ini_map)
+        cls = _classify(name, ini_map)                      
         raw_desc_original = _machine_title(minfo, name)
+        raw_desc, applied, eligible = apply_title_override_if_eligible(name, raw_desc_original, overrides)
+
+        if eligible:
+            overrides_stats["eligible"] += 1
+        if applied:
+            overrides_applied.append(applied)
+            overrides_stats["applied"] += 1
+            
         _, pre_anoms = parse_description(raw_desc_original)
         for k, lst in pre_anoms.items():
             for item in lst:
