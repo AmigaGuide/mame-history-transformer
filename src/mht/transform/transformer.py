@@ -67,7 +67,6 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
-#from mht.title.parser import parse_description
 from mht.utils.media import (
     normalise_device_to_media,
     normalise_device_list_to_media,
@@ -120,6 +119,12 @@ from mht.utils.titles import (
 from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
 from mht.utils.wiki_pages import compute_pages_and_redirects
 from mht.utils.roms import format_rom_block
+
+from mht.utils.selection import (
+    classify as _classify,
+    is_eligible_parent as _is_eligible_parent,
+    build_final_set as _build_final_set,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
