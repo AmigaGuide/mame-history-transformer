@@ -40,23 +40,9 @@ from mht.utils.media import (
     normalise_device_list_to_media,
 )
 from mht.utils.selection import classify as _classify
+from mht.utils.booleans import truthy_flag as _truthy_flag
 
 # --- small helpers kept here to avoid reintroducing transformer-level noise ---
-
-def _truthy_flag(v) -> bool:
-    if isinstance(v, bool):
-        return v
-    if v is None:
-        return False
-    if isinstance(v, (int, float)):
-        return v != 0
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in {"1", "true", "yes", "y", "t"}:
-            return True
-        if s in {"0", "false", "no", "n", "f", ""}:
-            return False
-    return False
 
 def _raw_mame_title(minfo: Dict[str, Any], fallback: str) -> str:
     return (

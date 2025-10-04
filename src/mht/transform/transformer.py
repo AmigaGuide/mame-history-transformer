@@ -130,6 +130,7 @@ from mht.utils.title_overrides import (
     dedupe_anomalies_preferring_pre_override as _dedupe_anomalies_preferring_pre_override,
 )
 from mht.utils.records import build_parent_record
+from mht.utils.booleans import truthy_flag as _truthy_flag
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -439,21 +440,6 @@ def _build_final_set(eligible_parents: Set[str],
 
 def _machine_title(m: Dict[str, Any], fallback: str) -> str:
     return m.get("description") or m.get("title") or m.get("fullname") or fallback
-
-def _truthy_flag(v) -> bool:
-    if isinstance(v, bool):
-        return v
-    if v is None:
-        return False
-    if isinstance(v, (int, float)):
-        return v != 0
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in {"1", "true", "yes", "y", "t"}:
-            return True
-        if s in {"0", "false", "no", "n", "f", ""}:
-            return False
-    return False
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
