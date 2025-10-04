@@ -77,10 +77,10 @@ from mht.utils.media import (
 from mht.utils.chips import (
     hz_to_human         as _hz_to_human,
     format_hz_3dp       as _format_hz_3dp,
-    chip_label          as _chip_label,
-    prefix_multiples    as _prefix_multiples,
+    _chip_label,
+    _prefix_multiples,
     sum_device_speakers as _sum_device_speakers,
-    has_samples_flag    as _has_samples_flag,
+    _has_samples_flag,
 )
 from mht.utils.controls import (
     pluralise                     as _pluralise,
@@ -102,7 +102,7 @@ from mht.utils.displays import (
 from mht.utils.ports import (
     canonical_port_key               as _canonical_port_key,
     has_parent_clone_duplicate_ports as _has_parent_clone_duplicate_ports,
-    render_ports_display             as _render_ports_display,
+    render_ports_display,
     collect_valid_ports_by_category  as _collect_valid_ports_by_category,
     gh_keys_with_any_valid_ports     as _gh_keys_with_any_valid_ports,
     build_ports_for_parent           as _build_ports_for_parent,
@@ -125,7 +125,11 @@ from mht.utils.selection import (
     is_eligible_parent as _is_eligible_parent,
     build_final_set as _build_final_set,
 )
-from mht.utils.title_overrides import load_title_overrides, apply_title_override_if_eligible
+from mht.utils.title_overrides import (
+    load_title_overrides as _load_title_overrides,
+    apply_title_override_if_eligible,
+)
+from mht.utils.records import build_parent_record
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -181,83 +185,6 @@ def _clone_primary_redirects(clone_machine: str,
     raw = _raw_mame_title(minfo, clone_machine)
     desc_fields, _ = parse_description(raw)
     return _primary_redirects_for_unit1(desc_fields, target_page_name)
-
-def _render_chips_display(
-    chips_raw: dict,
-    requires_samples: bool = False,
-    sound_channels: int | None = None,
-    speaker_count: int | None = None,
-) -> dict[str, list[str]]:
-    def _rows(section):
-        if isinstance(section, dict):
-            return section.get("items") or []
-        return section or []
-    def _norm_rows(rows):
-        for r in rows or []:
-            if isinstance(r, dict):
-                name = (r.get("name") or "").strip()
-                clk  = r.get("clock_hz")
-            elif isinstance(r, str):
-                name = r.strip()
-                clk  = None
-            else:
-                continue
-            if name:
-                yield {"name": name, "clock_hz": clk}
-    def group_and_render(rows: list[dict]) -> list[str]:
-        buckets: dict[tuple[str, int | None], int] = {}
-        clocks: dict[tuple[str, int | None], float | None] = {}
-        for r in rows:
-            name = r["name"]
-            clk  = r.get("clock_hz")
-            bucket = round(float(clk)) if isinstance(clk, (int, float)) else None
-            key = (name, bucket)
-            buckets[key] = buckets.get(key, 0) + 1
-            clocks.setdefault(key, float(clk) if isinstance(clk, (int, float)) else None)
-        ordered = sorted(buckets.items(), key=lambda kv: (kv[0][0].casefold(), -(clocks[kv[0]] or -1)))
-        lines: list[str] = []
-        for (name, _bucket), count in ordered:
-            clk_val = clocks[(name, _bucket)]
-            if clk_val is not None:
-                human = _hz_to_human(clk_val)
-                if human:
-                    val, unit = human
-                    freq = f"{val:.3f} {unit}"
-                else:
-                    freq = _format_hz_3dp(clk_val) or ""
-            else:
-                freq = ""
-            base = name + (f" @ {freq}" if freq else "")
-            lines.append(f"({count}x) {base}" if count > 1 else base)
-        return lines
-    cpus_src_rows       = _rows((chips_raw or {}).get("cpus"))
-    audio_src_rows_all  = _rows((chips_raw or {}).get("audio_chips"))
-    cpus_src      = list(_norm_rows(cpus_src_rows))
-    audio_src_all = list(_norm_rows(audio_src_rows_all))
-    audio_src = [r for r in audio_src_all if r["name"].lower() not in {"speaker", "samples"}]
-    out = {
-        "cpus": group_and_render(cpus_src),
-        "audio_chips": group_and_render(audio_src),
-    }
-    tail: list[str] = []
-    if requires_samples:
-        tail.append("Requires additional samples")
-    if sound_channels is not None:
-        try:
-            n = int(sound_channels)
-        except Exception:
-            n = 0
-        tail.append(f"Audio {'Channel' if n == 1 else 'Channels'}: {n}")
-    if speaker_count is None:
-        speaker_count = sum(1 for r in audio_src_all if r["name"].lower() == "speaker")
-    try:
-        nsp = int(speaker_count or 0)
-    except Exception:
-        nsp = 0
-    tail.append(f"{'Speaker' if nsp == 1 else 'Speakers'}: {nsp}")
-    if tail:
-        out["audio_chips"].extend(tail)
-    return out
 
 def _render_mame_titles_display(rows: list[dict]) -> list[str]:
     if not isinstance(rows, list):
@@ -347,53 +274,6 @@ def _append_provenance_comment(existing: str | None, is_parent_row: bool, machin
 def _read_gh_ports(path: Path) -> dict:
     data = _read_json(path)
     return data if isinstance(data, dict) else {}
-
-def _build_chips_section(chips: list[dict] | None,
-                         sound_channels: int | None,
-                         device_ref):
-    cpu_labels_raw: list[str] = []
-    audio_chip_labels_raw: list[str] = []
-    speaker_count = 0
-    for ch in (chips or []):
-        typ = (ch.get("type") or "").strip().lower()
-        name_raw = (ch.get("name") or "").strip()
-        clk = ch.get("clock_hz")
-        name_ci = name_raw.casefold()
-        if typ == "cpu":
-            cpu_labels_raw.append(_chip_label(name_raw, clk))
-            continue
-        if typ == "audio":
-            if name_ci == "speaker":
-                speaker_count += 1
-                continue
-            if name_ci in {"samples", "sample"}:
-                continue
-            audio_chip_labels_raw.append(_chip_label(name_raw, clk))
-            continue
-    cpu_items = _prefix_multiples(cpu_labels_raw)
-    audio_items = _prefix_multiples(audio_chip_labels_raw)
-    cpu_heading = _pluralise("CPU", len(cpu_labels_raw))
-    audio_heading = _pluralise("Audio Chip", len(audio_chip_labels_raw), "Audio Chips")
-    try:
-        chn = int(sound_channels) if sound_channels is not None else 0
-    except Exception:
-        chn = 0
-    requires_samples = _has_samples_flag(device_ref)
-    return {
-        "cpus": {
-            "heading": cpu_heading,
-            "count": len(cpu_labels_raw),
-            "items": cpu_items,
-        },
-        "audio_chips": {
-            "heading": audio_heading,
-            "count": len(audio_chip_labels_raw),
-            "items": audio_items,
-        },
-        "requires_samples": bool(requires_samples),
-        "audio_channels": chn,
-        "speakers": int(speaker_count),
-    }
 
 def _format_chips_and_audio_block(chips: list[dict] | None,
                                   sound_channels: int | None,
@@ -574,17 +454,6 @@ def _truthy_flag(v) -> bool:
         if s in {"0", "false", "no", "n", "f", ""}:
             return False
     return False
-
-def _load_title_overrides(path: Path) -> dict:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except FileNotFoundError:
-        return {}
-    except Exception as e:
-        log.warning(f"Failed to read title overrides {path}: {e}")
-        return {}
 
 def _dedupe_anomalies_preferring_pre_override(anoms: dict) -> dict:
     out = {}
@@ -785,121 +654,43 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                     overrides_stats["applied"] += 1
         desc_fields, _ = parse_description(raw_desc)
         wiki_page_name = _wiki_page_name_from_desc(desc_fields)
-        raw_man = minfo.get("manufacturer") or ""
-        manufacturer_display = join_with_ampersand(split_outside_parens(raw_man))
-        rom_count       = int(minfo.get("rom_count") or 0)
-        rom_bytes_total = int(minfo.get("rom_bytes_total") or 0)
-        disk_required = minfo.get("disk_required")
-        disk_regions  = minfo.get("disk_regions")
-        roms_display = format_rom_block(rom_count, rom_bytes_total, disk_required, disk_regions)
 
-        if (str(disk_required or "").lower() == "yes"):
-            labels_for_counts = normalise_device_list_to_media(disk_regions)
-            if labels_for_counts:
-                parents_with_any_media += 1
-                for lab in dict.fromkeys(labels_for_counts):
-                    media_label_counts[lab] = media_label_counts.get(lab, 0) + 1
-            seq = disk_regions if isinstance(disk_regions, (list, tuple)) else ([disk_regions] if disk_regions else [])
-            for raw in seq:
-                if normalise_device_to_media(str(raw)) is None:
-                    ignored_device_counts[str(raw)] = ignored_device_counts.get(str(raw), 0) + 1
-        chips_section = _build_chips_section(
-            minfo.get("chips"),
-            minfo.get("sound_channels"),
-            minfo.get("device_ref"),
+        # Build the full per-parent record and gather telemetry (media/audio/ports)
+        record, t = build_parent_record(
+            parent_name=name,
+            mame=mame,
+            ini_map=ini_map,
+            parent_index=parent_index,
+            gh_ports=gh_ports,
+            desc_fields=desc_fields,
+            wiki_page_name=wiki_page_name,
         )
-        displays_section = _build_displays_section(
-            minfo.get("displays"),
-            minfo.get("display_count")
-        )
-        displays_display = _displays_section_to_display(displays_section)
-        controls_section = _build_controls_section(
-            minfo.get("players"),
-            minfo.get("controls"),
-        )
-        controls_display = _controls_section_to_display(controls_section)
-        reported_channels = minfo.get("sound_channels")
-        speaker_sum = _sum_device_speakers(minfo.get("device_ref"))
-        try:
-            chn = int(reported_channels) if reported_channels is not None else 0
-        except Exception:
-            chn = 0
-        if chn > 0:
-            audio_total_with_channels += 1
-            if speaker_sum != chn:
-                audio_channel_speaker_mismatch += 1
-                if len(audio_mismatch_examples) < 10:
-                    audio_mismatch_examples.append({
-                        "machine": name,
-                        "sound_channels": chn,
-                        "speaker_sum": speaker_sum
-                    })
-        if _has_samples_flag(minfo.get("device_ref")):
-            audio_samples_required_count += 1
-        chips_disp = _render_chips_display(
-            chips_section,
-            requires_samples=_truthy_flag(minfo.get("requires_samples")),
-            sound_channels=(int(reported_channels) if reported_channels not in (None, "") else None),
-            speaker_count=(int(speaker_sum) if speaker_sum not in (None, "") else None),
-        )
-        cpus_lines = list(chips_disp.get("cpus") or [])
-        audio_lines = list(chips_disp.get("audio_chips") or [])
-        cpu_hdr   = f"{_pluralise('CPU', len(cpus_lines), 'CPUs')}:"
-        audio_hdr = f"{_pluralise('Audio Chip', len(audio_lines), 'Audio Chips')}:"
-        chips_display_block = "\n".join([cpu_hdr, *cpus_lines, audio_hdr, *audio_lines])
-        ports_obj, clones_with_ports_local, parent_has_ports = _build_ports_for_parent(
-            name, parents_map, gh_ports
-        )
-        if ports_obj is None:
+
+        # If neither parent nor its clones has valid GH ports, skip this parent
+        if not record:
             continue
-        if not isinstance(ports_obj.get("clone_sources"), list):
-            ports_obj["clone_sources"] = []
-        if not isinstance(ports_obj.get("parent_source"), dict):
-            ports_obj["parent_source"] = {}
-        clones_with_ports_set.update(clones_with_ports_local)
-        if parent_has_ports:
-            parents_with_ports_count += 1
-        if _has_parent_clone_duplicate_ports(ports_obj):
-            systems_with_parent_clone_port_dupes += 1
-            systems_with_parent_clone_port_dupes_list.append(name)
-        gh_ids = _gh_ids_from_ports_obj(ports_obj)
-        record = {
-            "wiki_page_name": wiki_page_name,
-            "description": desc_fields,
-            "year": minfo.get("year") if minfo.get("year") not in ("", None) else None,
-            "manufacturer": manufacturer_display if manufacturer_display else None,
-            "roms_display": roms_display,
-            "rom_count": rom_count,
-            "rom_bytes_total": rom_bytes_total,
-            "disk_required": disk_required,
-            "disk_regions": disk_regions,
-            "chips": chips_section,
-            "chips_display": chips_display_block,
-            "displays": displays_section,
-            "displays_display": displays_display,
-            "controls": controls_section,
-            "controls_display": controls_display,
-            "game_status": cls["game_status"],
-            "category": cls["category"],
-            "type": cls["type"],
-            "isbios": _truthy_flag(minfo.get("isbios")),
-            "isdevice": _truthy_flag(minfo.get("isdevice")),
-            "ismechanical": _truthy_flag(minfo.get("ismechanical")),
-            "requires_samples": _truthy_flag(minfo.get("requires_samples")),
-            "mame_titles": _mame_titles_for_parent(name, mame, parent_index),
-            "ports": ports_obj,
-            "gh_ids": gh_ids,
-        }
-        mt_disp = _render_mame_titles_display(record["mame_titles"])
+
+        # Optional: MAME titles display (keep your existing helper)
+        mt_disp = _render_mame_titles_display(record.get("mame_titles", []))
         if mt_disp:
             record["mame_titles_display"] = mt_disp
-        parent_redirects = _build_redirect_sources(desc_fields, wiki_page_name)
+
+        # Build wiki redirects (use whichever helper name you already import)
+        try:
+            parent_redirects = build_redirect_sources(desc_fields, wiki_page_name)
+        except NameError:
+            # Back-compat if your helper is still named _build_redirect_sources
+            parent_redirects = _build_redirect_sources(desc_fields, wiki_page_name)
+
+        # Also add clone-based primary redirects that point to this parent page
         clone_redirects: list[str] = []
-        for cs in (ports_obj.get("clone_sources") or []):
+        for cs in (record.get("ports", {}) or {}).get("clone_sources", []) or []:
             c_machine = (cs or {}).get("machine")
             if not c_machine:
                 continue
             clone_redirects.extend(_clone_primary_redirects(c_machine, mame, wiki_page_name))
+
+        # Merge/normalise redirects (case-insensitive de-dupe, exclude exact target)
         merged_redirects: list[str] = []
         target_ci = (wiki_page_name or "").casefold()
         for s in (parent_redirects + clone_redirects):
@@ -907,14 +698,46 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             if n and n.casefold() != target_ci:
                 merged_redirects.append(n)
         record["wiki_redirects"] = _dedupe_ci_preserve_order(merged_redirects)
-        ports_display = _render_ports_display(name, ports_obj)
+
+        # Ports display lines for wiki (parent+clone rows, date-ordered per category)
+        ports_display = render_ports_display(name, record.get("ports") or {})
         if ports_display:
             record["ports_display"] = ports_display
-        if _truthy_flag(minfo.get("isbios")):       included_flags["isbios"] += 1
-        if _truthy_flag(minfo.get("isdevice")):     included_flags["isdevice"] += 1
-        if _truthy_flag(minfo.get("ismechanical")): included_flags["ismechanical"] += 1
-        out_map[name] = record
 
+        # ---- Aggregate telemetry into your existing counters ----
+
+        # Media tallies
+        if t["parents_with_any_media"]:
+            parents_with_any_media += 1
+        for lab in t["media_labels_for_counts"]:
+            media_label_counts[lab] = media_label_counts.get(lab, 0) + 1
+        for dev, cnt in t["ignored_devices"].items():
+            ignored_device_counts[dev] = ignored_device_counts.get(dev, 0) + cnt
+
+        # Audio tallies & mismatch examples
+        if t["audio_channels_reported"] > 0:
+            audio_total_with_channels += 1
+            if t["speaker_sum"] != t["audio_channels_reported"]:
+                audio_channel_speaker_mismatch += 1
+                if len(audio_mismatch_examples) < 10:
+                    audio_mismatch_examples.append({
+                        "machine": name,
+                        "sound_channels": t["audio_channels_reported"],
+                        "speaker_sum": t["speaker_sum"]
+                    })
+        if t["samples_required"]:
+            audio_samples_required_count += 1
+
+        # Ports tallies
+        if t["parent_has_ports"]:
+            parents_with_ports_count += 1
+        clones_with_ports_set.update(t["clones_with_ports"])
+        if t["has_parent_clone_port_dupes"]:
+            systems_with_parent_clone_port_dupes += 1
+            systems_with_parent_clone_port_dupes_list.append(name)
+
+        # Keep the record
+        out_map[name] = record
 
 
     wiki_header = build_summary_header(
