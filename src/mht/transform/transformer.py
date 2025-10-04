@@ -119,7 +119,6 @@ from mht.utils.titles import (
 from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
 from mht.utils.wiki_pages import compute_pages_and_redirects
 from mht.utils.roms import format_rom_block
-
 from mht.utils.selection import (
     classify as _classify,
     is_eligible_parent as _is_eligible_parent,
@@ -128,6 +127,7 @@ from mht.utils.selection import (
 from mht.utils.title_overrides import (
     load_title_overrides as _load_title_overrides,
     apply_title_override_if_eligible,
+    dedupe_anomalies_preferring_pre_override as _dedupe_anomalies_preferring_pre_override,
 )
 from mht.utils.records import build_parent_record
 
@@ -454,21 +454,6 @@ def _truthy_flag(v) -> bool:
         if s in {"0", "false", "no", "n", "f", ""}:
             return False
     return False
-
-def _dedupe_anomalies_preferring_pre_override(anoms: dict) -> dict:
-    out = {}
-    for cat, items in anoms.items():
-        seen = {}
-        for it in items:
-            key = (it.get("machine"), it.get("example"))
-            prev = seen.get(key)
-            if prev is None:
-                seen[key] = it
-            else:
-                if it.get("pre_override") and not prev.get("pre_override"):
-                    seen[key] = it
-        out[cat] = list(seen.values())
-    return out
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"

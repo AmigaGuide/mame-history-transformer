@@ -97,3 +97,25 @@ def apply_title_override_if_eligible(
 
     # Eligible, but nothing to apply (e.g., description missing/blank)
     return original_desc, None, True
+
+
+def dedupe_anomalies_preferring_pre_override(
+    anoms: Dict[str, List[Dict[str, Any]]]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Deduplicate anomaly rows by (machine, example), preferring any record with
+    pre_override=True when both pre/post copies exist.
+    """
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for cat, items in (anoms or {}).items():
+        seen: Dict[tuple, Dict[str, Any]] = {}
+        for it in items or []:
+            key = (it.get("machine"), it.get("example"))
+            prev = seen.get(key)
+            if prev is None:
+                seen[key] = it
+            else:
+                if it.get("pre_override") and not prev.get("pre_override"):
+                    seen[key] = it
+        out[cat] = list(seen.values())
+    return out
