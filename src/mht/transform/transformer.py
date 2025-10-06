@@ -135,6 +135,7 @@ from mht.utils.mame_titles import (
     mame_titles_for_parent as _mame_titles_for_parent,
     _raw_mame_title
 )    
+from mht.utils.summaries import build_transform_header, build_transform_summary
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -799,90 +800,64 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "note_duplicates": "Ports are not de-duplicated; identical parent/clone rows may appear intentionally for audit."
     }
 
-    header_versions = dict({
-        "mame_build":       mame_build_val,
-        "history_version":  history_version_val,
-        "history_date":     history_date_val,
-        "ini_generated_at": ini_generated_at_val,
-    })
-    header_versions["transformer_version"] = tool_version("transformer")
 
-
-
-    summary_header = build_summary_header(
-        schema_id=SCHEMA_IDS["transform"],
-        schema_version=schema_version(SCHEMA_IDS["transform"]),
-        versions=header_versions,
-    )
-    
-    summary = {
-        "header": summary_header,
-        "transformer_schema": TRANSFORMER_SCHEMA,
-        "started_utc": started_utc,
-        "finished_utc": finished_utc,
-        "duration_seconds": duration,
-        "inputs": inputs_map,
-        "outputs": outputs_map,
-        "versions": {
+    # --- Build standard header for the transform summary
+    header = build_transform_header(
+        versions={
             "mame_build":       mame_build_val,
             "history_version":  history_version_val,
             "history_date":     history_date_val,
             "ini_generated_at": ini_generated_at_val,
+            # transformer_version is added automatically if missing
         },
-        "counts": {
-            "mame_total": len(mame),
-            "parents_total": parents_total,
-            "clones_total": clones_total,
-            "eligible_parents": len(eligible_parents),
-            "final_included": len(out_map),
-            "parents_with_clones": parents_with_clones,
-            "total_clones_linked": total_clones_linked,
-            "parents_without_clones": len(eligible_parents) - parents_with_clones,
-            "parents_with_any_media": parents_with_any_media,
-            "media_label_counts": media_label_counts_sorted,
-            "audio": {
-                "machines_reporting_channels": audio_total_with_channels,
-                "channel_speaker_mismatches": audio_channel_speaker_mismatch,
-                "mismatch_examples": audio_mismatch_examples,
-                "machines_requiring_samples": audio_samples_required_count,
-            },
+        started_utc=started_utc,
+        finished_utc=finished_utc,
+        duration_seconds=duration,
+    )
+
+    # Inputs/outputs maps are already constructed earlier as `inputs_map` and `outputs_map`
+
+    summary = build_transform_summary(
+        header=header,
+        inputs=inputs_map,
+        outputs=outputs_map,
+
+        # Sets / maps
+        out_map=out_map,
+        parents_map=parents_map,
+
+        # Universe counts
+        mame_total=len(mame),
+        parents_total=parents_total,
+        clones_total=clones_total,
+        eligible_parents=eligible_parents,
+
+        # Media / audio telemetry (use your existing variables)
+        media_label_counts=media_label_counts,
+        parents_with_any_media=parents_with_any_media,
+        audio={
+            "machines_reporting_channels": audio_total_with_channels,
+            "channel_speaker_mismatches": audio_channel_speaker_mismatch,
+            "mismatch_examples": audio_mismatch_examples,
+            "machines_requiring_samples": audio_samples_required_count,
         },
-        "excluded_parents_by_reason": excluded_reasons,
-        "included_flags": included_flags,
-        "title_anomaly_counts": {k: len(v) for k, v in title_anomalies.items()},
-        "title_anomalies": title_anomalies,
-        "title_overrides": {
+
+        # Ports block (already assembled earlier)
+        ports=summary_ports,
+
+        # Optional diagnostics / mirrors (use your existing dicts)
+        excluded_parents_by_reason=excluded_reasons,
+        included_flags=included_flags,
+        title_anomalies=title_anomalies,
+        title_overrides={
             "stats": overrides_stats,
             "applied": overrides_applied,
         },
-        "ports": summary_ports,
-        "notes": {
-            "ports_attached": True,
-            "export_scope": "Parents are exported only if INI says Arcade/Game AND the parent or any clone has ≥1 valid GH port row (platform present).",
-            "filter_rules": {
-                "game_status_equals": "game",
-                "category_must_include": "Arcade",
-                "ignore_coin_op_games": True,
-                "ignore_type_for_filter": True,
-                "ignore_isbios_isdevice_ismechanical_for_filter": True,
-            },
-            "title_parsing": {
-                "numbered_fields": True,
-                "global_version_is_single_string": True,
-                "only_top_level_groups": True,
-                "nested_preserved_inside": True,
-            },
-            "clones_list_title_source": "raw MAME 'description' (no overrides)",
-            "ignored_media_devices": {
-                "total_ignored_entries": ignored_total,
-                "unique_ignored": len(ignored_device_counts),
-                "top_ignored": ignored_top,
-            },
-        },
-        "errors": [] if ok_out and not missing_in_mame else (
+        errors=[] if ok_out and not missing_in_mame else (
             [{"missing_in_mame": missing_in_mame}] if missing_in_mame else []
         ),
-    }
+    )
+
 
     orphans = [k for k, v in out_map.items() if "mame_titles" not in v]
     if orphans:
