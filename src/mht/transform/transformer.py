@@ -124,13 +124,17 @@ from mht.utils.selection import (
     is_eligible_parent as _is_eligible_parent,
     build_final_set as _build_final_set,
 )
-from mht.utils.title_overrides import (
+from mht.utils.mame_overrides import (
     load_title_overrides as _load_title_overrides,
     apply_title_override_if_eligible,
     dedupe_anomalies_preferring_pre_override as _dedupe_anomalies_preferring_pre_override,
 )
 from mht.utils.records import build_parent_record
 from mht.utils.booleans import truthy_flag as _truthy_flag
+from mht.utils.mame_titles import (
+    mame_titles_for_parent as _mame_titles_for_parent,
+    _raw_mame_title
+)    
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -317,48 +321,6 @@ def _format_chips_and_audio_block(chips: list[dict] | None,
 
 def _pref(name: str, prefix: str = WIKI_PREFIX) -> str:
     return f"{prefix}{name}"
-
-def _raw_mame_title(minfo: dict, fallback: str) -> str:
-    return (minfo.get("description")
-            or minfo.get("title")
-            or minfo.get("fullname")
-            or fallback)
-
-def _mame_titles_for_parent(parent_name: str,
-                            mame: Dict[str, Any],
-                            parent_index: Dict[str, Any]) -> list[dict]:
-    out: list[dict] = []
-    pinfo = mame.get(parent_name, {})
-    out.append({
-        "role": "parent",
-        "machine": parent_name,
-        "title": _raw_mame_title(pinfo, parent_name),
-        "year": pinfo.get("year"),
-    })
-    clones = sorted((parent_index.get("parents") or {}).get(parent_name, []) or [])
-    for c in clones:
-        cinfo = mame.get(c, {})
-        out.append({
-            "role": "clone",
-            "machine": c,
-            "title": _raw_mame_title(cinfo, c),
-            "year": cinfo.get("year"),
-        })
-    return out
-
-def _clone_entries_for_parent(parent_name: str,
-                              mame: Dict[str, Any],
-                              parent_index: Dict[str, Any]) -> list[dict]:
-    clones = (parent_index.get("parents") or {}).get(parent_name, []) or []
-    out: list[dict] = []
-    for c in sorted(clones):
-        minfo = mame.get(c, {})
-        out.append({
-            "machine": c,
-            "title": _raw_mame_title(minfo, c),
-            "year": minfo.get("year"),
-        })
-    return out
 
 def _core(s: str | None) -> str | None:
     if not s:
