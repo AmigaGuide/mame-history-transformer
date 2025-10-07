@@ -17,7 +17,7 @@ SCHEMA_INFO = {
 # Tool/module versions (your code)
 TOOL_VERSIONS = {
     "mame_parser":    "1.0.4",
-    "history_parser": "1.0.5",
+    "history_parser": "1.0.6",
     "ini_summary":    "1.0.4",
     "transformer":    "1.0.25",
 }
