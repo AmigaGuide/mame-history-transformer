@@ -109,7 +109,7 @@ from mht.utils.ports import (
     gh_ids_from_ports_obj            as _gh_ids_from_ports_obj,
 )
 from mht.utils.titles import (
-    parse_description          as parse_description,
+    parse_description,
     find_unbalanced            as _find_unbalanced,
     wiki_page_name_from_desc   as _wiki_page_name_from_desc,
     build_redirect_sources     as _build_redirect_sources,
@@ -136,6 +136,10 @@ from mht.utils.mame_titles import (
     _raw_mame_title
 )    
 from mht.utils.summaries import build_transform_header, build_transform_summary
+from mht.utils.redirects import (
+    clone_primary_redirects as _clone_primary_redirects,
+    dedupe_ci_preserve_order as _dedupe_ci_preserve_order,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -156,41 +160,6 @@ WIKI_PREFIX = "Lost In Translation/"
 
 _ALNUM = re.compile(r"[A-Za-z0-9]")
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
-
-def _dedupe_ci_preserve_order(items: list[str]) -> list[str]:
-    out, seen = [], set()
-    for s in items or []:
-        key = (s or "").casefold()
-        if key and key not in seen:
-            seen.add(key)
-            out.append(s)
-    return out
-
-def _primary_redirects_for_unit1(desc_fields: dict, target_page_name: str) -> list[str]:
-    t = _collapse_ws((desc_fields.get("title1") or "").strip())
-    s = _collapse_ws((desc_fields.get("subtitle1") or "").strip())
-    target_ci = (target_page_name or "").casefold()
-    out: list[str] = []
-    if not t:
-        return out
-    if s:
-        full = _collapse_ws(f"{t}: {s}")
-        if full.casefold() != target_ci:
-            out.append(full)
-        if t.casefold() != target_ci:
-            out.append(t)
-    else:
-        if t.casefold() != target_ci:
-            out.append(t)
-    return _dedupe_ci_preserve_order(out)
-
-def _clone_primary_redirects(clone_machine: str,
-                             mame: Dict[str, Any],
-                             target_page_name: str) -> list[str]:
-    minfo = mame.get(clone_machine) or {}
-    raw = _raw_mame_title(minfo, clone_machine)
-    desc_fields, _ = parse_description(raw)
-    return _primary_redirects_for_unit1(desc_fields, target_page_name)
 
 def _render_mame_titles_display(rows: list[dict]) -> list[str]:
     if not isinstance(rows, list):

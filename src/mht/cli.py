@@ -89,7 +89,8 @@ def cmd_status(args: argparse.Namespace) -> int:
 
         reason = "fresh" if fresh else "stale"
         suffix = f" ({'; '.join(note)})" if note else ""
-        print(f"{name:10} : {reason}{suffix}")
+        #print(f"{name:10} : {reason}{suffix}")
+        print(f"{name:10} : {reason}{suffix}  (tool={cfg['tool_key']} v{tv})")
 
         if not fresh:
             any_stale = True
