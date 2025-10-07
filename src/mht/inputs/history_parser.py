@@ -21,6 +21,7 @@ Schema: HISTORY_PARSER_SCHEMA = "1.0"
 """
 
 from __future__ import annotations
+
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import time
@@ -41,8 +42,17 @@ from mht.utils.paths import (
     HISTORY_SUMMARY,
 )
 from mht.utils.headers import build_summary_header
-from mht.utils.io import write_json
-
+from mht.utils.io import write_json, read_json
+from mht.utils.ports import (
+    is_valid_port_row as _is_valid_port_row,
+    norm_regions      as _norm_regions,
+    norm_tags         as _norm_tags,
+)
+from mht.inputs.history_constants import (
+    SECTION_PATTERN,
+    CATEGORY_HEADING_PATTERN,
+    KNOWN_PLATFORMS,
+)
 
 __all__ = [
     "HISTORY_PARSER_SCHEMA",
@@ -55,15 +65,6 @@ __all__ = [
 
 log = setup_logger(log_level=LOG_LEVEL)
 # HISTORY_PARSER_SCHEMA = "1.0"
-
-# Headings like '----- PORTS -----' (case-insensitive).
-SECTION_PATTERN = re.compile(r"^-+\s+([A-Z0-9 &]+)\s+-+$", re.IGNORECASE)
-
-# Category headings inside PORTS, e.g. '* CONSOLES:'
-CATEGORY_HEADING_PATTERN = re.compile(r"^\*\s*([A-Z0-9 &]+)\s*:\s*$", re.IGNORECASE)
-
-# Expected top-level PORTS categories
-KNOWN_PLATFORMS = {"CONSOLES", "COMPUTERS", "HANDHELDS", "OTHERS"}
 
 
 def segment_text_sections(text: str, parsing_state: dict) -> dict:
