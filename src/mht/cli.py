@@ -14,6 +14,7 @@ from mht.utils.paths import (
     # summaries (used as inputs to transform stamp)
     MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY, TRANSFORM_SUMMARY,
 )
+from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
 
 # Stage-specific config mirroring your modules
 STAGES = {
@@ -54,6 +55,17 @@ STAGES = {
         "stamp":     STAMPS_DIR / "transform.json",
     },
 }
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    names = args.only or None
+    errors = validate_outputs(names)
+    if errors:
+        print("Validation failed:")
+        for e in errors:
+            print(e)
+        return 1
+    print("Validation OK")
+    return 0
 
 def _exists_list(paths: Iterable[Path]) -> list[Path]:
     return [p for p in paths if p.exists()]
@@ -194,6 +206,16 @@ def main() -> None:
 
     s_run = sub.add_parser("run", help="Run the full incremental pipeline (delegates to main.py)")
     s_run.set_defaults(func=cmd_run)
+
+    # ... after s_run setup ...
+    s_validate = sub.add_parser("validate", help="Validate output JSONs against schemas")
+    s_validate.add_argument(
+        "--only",
+        nargs="+",
+        choices=sorted(VALIDATION_REGISTRY.keys()),   # was SCHEMAS.keys()
+        help="Limit validation to one or more of: " + ", ".join(sorted(VALIDATION_REGISTRY.keys())),
+    )
+    s_validate.set_defaults(func=cmd_validate)
 
     args = p.parse_args()
     raise SystemExit(args.func(args))

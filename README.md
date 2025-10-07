@@ -223,3 +223,37 @@ Run the full suite:
 
 ```bash
 python -m pytest -q
+
+
+## CLI quick start
+
+```bash
+# Full incremental pipeline (same as running main.py)
+python -m mht
+
+# Or explicit
+python -m mht run
+
+# See which stages are fresh/stale by stamp
+python -m mht status
+
+# Safe clean (preview only)
+python -m mht clean --outputs --stamps --data-summaries --dry-run
+
+# Confirmed clean (no prompt)
+python -m mht clean --outputs --stamps --data-summaries --yes
+```
+
+## Validate outputs against schemas
+
+Validate generated JSONs in `output/` against the JSON Schemas in `src/mht/contracts/`:
+
+```bash
+# Validate all (raw, wiki, pages)
+python -m mht validate
+
+# Validate a subset
+python -m mht validate --only wiki pages
+```
+
+The validator uses paths from `mht.utils.paths` (single source of truth) and reports any schema or document issues with clear messages.
