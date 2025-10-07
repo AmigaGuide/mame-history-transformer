@@ -66,7 +66,7 @@ from mht.utils.paths import (
     ensure_dirs,
 )
 from mht.utils.headers import build_summary_header
-from mht.utils.io import write_json
+from mht.utils.io import write_json, read_json as _read_json
 from mht.utils.media import (
     normalise_device_to_media,
     normalise_device_list_to_media,
@@ -110,11 +110,11 @@ from mht.utils.ports import (
 )
 from mht.utils.titles import (
     parse_description,
-    find_unbalanced            as _find_unbalanced,
-    wiki_page_name_from_desc   as _wiki_page_name_from_desc,
-    build_redirect_sources     as _build_redirect_sources,
-    unit_count_from_desc       as _unit_count_from_desc,
-    collapse_ws                as _collapse_ws,
+    find_unbalanced          as _find_unbalanced,
+    wiki_page_name_from_desc as _wiki_page_name_from_desc,
+    build_redirect_sources   as _build_redirect_sources,
+    unit_count_from_desc     as _unit_count_from_desc,
+    collapse_ws              as _collapse_ws,
 )
 from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
 from mht.utils.wiki_pages import compute_pages_and_redirects
@@ -129,13 +129,22 @@ from mht.utils.mame_overrides import (
     apply_title_override_if_eligible,
     dedupe_anomalies_preferring_pre_override as _dedupe_anomalies_preferring_pre_override,
 )
-from mht.utils.records import build_parent_record
+from mht.utils.records import (
+    build_parent_record,
+    project_for_wiki as _project_for_wiki, 
+    project_for_raw  as _project_for_raw
+)
 from mht.utils.booleans import truthy_flag as _truthy_flag
 from mht.utils.mame_titles import (
-    mame_titles_for_parent as _mame_titles_for_parent,
-    _raw_mame_title
+    _raw_mame_title,
+    mame_titles_for_parent     as _mame_titles_for_parent,
+    render_mame_titles_display as _render_mame_titles_display,
 )    
-from mht.utils.summaries import build_transform_header, build_transform_summary
+from mht.utils.summaries import (
+    build_transform_header,
+    build_transform_summary,
+    version_core as _core,
+)
 from mht.utils.redirects import (
     clone_primary_redirects as _clone_primary_redirects,
     dedupe_ci_preserve_order as _dedupe_ci_preserve_order,
@@ -157,221 +166,6 @@ SCHEMA_ID_PAGES  = output_schema("pages")["id"]
 SCHEMA_VER_PAGES = output_schema("pages")["version"]
 
 WIKI_PREFIX = "Lost In Translation/"
-
-_ALNUM = re.compile(r"[A-Za-z0-9]")
-_VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
-
-def _render_mame_titles_display(rows: list[dict]) -> list[str]:
-    if not isinstance(rows, list):
-        return []
-    parent_rows = [r for r in rows if str(r.get("role", "")).strip().lower() == "parent"]
-    clone_rows  = [r for r in rows if str(r.get("role", "")).strip().lower() != "parent"]
-    clone_rows.sort(key=lambda r: (
-        (r.get("title") or "").casefold(),
-        (r.get("machine") or "").casefold()
-    ))
-    ordered = parent_rows + clone_rows
-    out: list[str] = []
-    for r in ordered:
-        title   = (r.get("title") or "").strip()
-        year    = (r.get("year") or "")
-        role    = str(r.get("role", "parent")).strip().lower() or "parent"
-        machine = (r.get("machine") or "").strip()
-        if not title:
-            continue
-        parts = [title]
-        if str(year).strip():
-            parts.append(f"({year})")
-        if machine:
-            parts.append(f"[{role}: {machine}]")
-        else:
-            parts.append(f"[{role}]")
-        out.append(" ".join(parts))
-    return out
-
-def _date_sort_key(date_str: str, original_index: int) -> tuple[int, int, int, int]:
-    s = (date_str or "").strip()
-    y, m, d = "0000", "00", "00"
-    parts = s.split("-")
-    if len(parts) >= 1 and parts[0]:
-        y = parts[0].replace("X", "0")
-    if len(parts) >= 2 and parts[1]:
-        m = parts[1].replace("X", "0")
-    if len(parts) >= 3 and parts[2]:
-        d = parts[2].replace("X", "0")
-    try:
-        yi = int(y)
-    except ValueError:
-        yi = 0
-    try:
-        mi = int(m)
-    except ValueError:
-        mi = 0
-    try:
-        di = int(d)
-    except ValueError:
-        di = 0
-    return (yi, mi, di, original_index)
-
-def _format_models_bracketed(models: list[str] | None) -> str:
-    models = [m.strip() for m in (models or []) if isinstance(m, str) and m.strip()]
-    return f"[{', '.join(models)}]" if models else ""
-
-def _title_case_words(s: str) -> str:
-    return " ".join(w[:1].upper() + w[1:].lower() if w else w for w in (s or "").split())
-
-def _format_regions(regs: list[str] | None) -> str:
-    regs = regs or ["??"]
-    regs = [r.strip() for r in regs if isinstance(r, str) and r.strip()]
-    regs = regs or ["??"]
-    return "".join(f"[{r}]" for r in regs)
-
-def _format_additional_tags(tags: list[str] | None) -> str:
-    tags = [t.strip() for t in (tags or []) if isinstance(t, str) and t.strip()]
-    return f" [{', '.join(tags)}]" if tags else ""
-
-def _format_models(models: list[str] | None) -> str:
-    models = [m.strip() for m in (models or []) if isinstance(m, str) and m.strip()]
-    return f" [{', '.join(models)}]" if models else ""
-
-def _append_provenance_comment(existing: str | None, is_parent_row: bool, machine: str) -> str:
-    role = "parent" if is_parent_row else "clone"
-    prov = f"This GH port entry is based on the MAME {role} {machine}."
-    c = (existing or "").strip()
-    if c:
-        if c.endswith(_TERMINAL_PUNCT):
-            return f"{c} {prov}"
-        else:
-            return f"{c}. {prov}"
-    else:
-        return prov
-
-def _read_gh_ports(path: Path) -> dict:
-    data = _read_json(path)
-    return data if isinstance(data, dict) else {}
-
-def _format_chips_and_audio_block(chips: list[dict] | None,
-                                  sound_channels: int | None,
-                                  device_ref) -> str:
-    cpu_labels: list[str] = []
-    audio_chip_labels: list[str] = []
-    speaker_count = 0
-    for ch in (chips or []):
-        typ = (ch.get("type") or "").strip().lower()
-        name_raw = (ch.get("name") or "").strip()
-        clk = ch.get("clock_hz")
-        name_ci = name_raw.casefold()
-        if typ == "cpu":
-            cpu_labels.append(_chip_label(name_raw, clk))
-            continue
-        if typ == "audio":
-            if name_ci == "speaker":
-                speaker_count += 1
-                continue
-            if name_ci in {"samples", "sample"}:
-                continue
-            audio_chip_labels.append(_chip_label(name_raw, clk))
-            continue
-    lines: list[str] = []
-    if cpu_labels:
-        lines.append("CPU: " + ", ".join(_prefix_multiples(cpu_labels)))
-    if audio_chip_labels:
-        lines.append("Audio: " + ", ".join(_prefix_multiples(audio_chip_labels)))
-    if _has_samples_flag(device_ref):
-        lines.append("Requires additional samples")
-    try:
-        chn = int(sound_channels) if sound_channels is not None else 0
-    except Exception:
-        chn = 0
-    if chn > 0:
-        lines.append(f"Audio channels: {chn}")
-    if speaker_count > 0:
-        lines.append(f"({speaker_count}x) Speaker")
-    return "\n".join(lines)
-
-def _pref(name: str, prefix: str = WIKI_PREFIX) -> str:
-    return f"{prefix}{name}"
-
-def _core(s: str | None) -> str | None:
-    if not s:
-        return None
-    m = _VERSION_CORE_RX.search(s)
-    return m.group(0) if m else None
-
-def _read_json(path: Path):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as e:
-        log.error(f"Failed to read {path}: {e}")
-        return None
-
-def _project_for_wiki(rec: dict) -> dict:
-    out = {}
-    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
-    out["wiki_redirects"] = rec.get("wiki_redirects", [])
-    if rec.get("year") is not None: out["year"] = rec["year"]
-    if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
-    if rec.get("mame_titles_display"):
-        out["mame_titles_display"] = rec["mame_titles_display"]
-    for k in ("roms_display", "chips_display", "displays_display", "controls_display"):
-        if rec.get(k): out[k] = rec[k]
-    if rec.get("ports_display"):
-        out["ports_display"] = rec["ports_display"]
-    if rec.get("gh_ids"):
-        out["gh_ids"] = rec["gh_ids"]
-    return out
-
-def _project_for_raw(machine: str, rec: dict) -> dict:
-    out = {}
-    out["machine"] = machine
-    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
-    out["wiki_redirects"] = rec.get("wiki_redirects", [])
-    if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
-    if rec.get("description"): out["description"] = rec["description"]
-    if rec.get("year") is not None: out["year"] = rec["year"]
-    if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
-    for k in ("rom_count", "rom_bytes_total", "disk_required", "disk_regions"):
-        if k in rec: out[k] = rec[k]
-    if rec.get("chips"): out["chips"] = rec["chips"]
-    if rec.get("displays"): out["displays"] = rec["displays"]
-    if rec.get("controls"): out["controls"] = rec["controls"]
-    if rec.get("ports"): out["ports"] = rec["ports"]
-    for k in ("game_status", "category", "type", "isbios", "isdevice", "ismechanical", "requires_samples"):
-        if k in rec: out[k] = rec[k]
-    if rec.get("gh_ids"): out["gh_ids"] = rec["gh_ids"]
-    return out
-
-def _classify(machine: str, ini_map: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    row = ini_map.get(machine)
-    if not row:
-        return {"game_status": "unknown", "category": ["unknown"], "type": "unknown"}
-    gs = row.get("game_status", "unknown") or "unknown"
-    cat = row.get("category")
-    if not isinstance(cat, list) or not cat:
-        cat = ["unknown"]
-    typ = row.get("type", "unknown") or "unknown"
-    return {"game_status": gs, "category": cat, "type": typ}
-
-def _is_eligible_parent(machine: str,
-                        mame: Dict[str, Any],
-                        ini_map: Dict[str, Dict[str, Any]]) -> bool:
-    info = mame.get(machine, {})
-    if info.get("cloneof"):
-        return False
-    c = _classify(machine, ini_map)
-    return (c["game_status"] == "game") and ("Arcade" in c["category"])
-
-def _build_final_set(eligible_parents: Set[str],
-                     parent_index: Dict[str, Any]) -> Set[str]:
-    final: Set[str] = set(eligible_parents)
-    parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})
-    for p in sorted(eligible_parents):
-        final.update(parents_map.get(p, []))
-    return final
-
-def _machine_title(m: Dict[str, Any], fallback: str) -> str:
-    return m.get("description") or m.get("title") or m.get("fullname") or fallback
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
@@ -419,7 +213,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     mame = _read_json(MAME_MACHINES_PATH)
     ini_map = _read_json(INI_CLASS_PATH)
     parent_index = _read_json(PARENT_INDEX_PATH)
-    gh_ports = _read_gh_ports(GH_SYSTEM_PORTS_PATH)
+    #gh_ports = _read_gh_ports(GH_SYSTEM_PORTS_PATH)
+    gh_ports = _read_json(GH_SYSTEM_PORTS_PATH)
+    gh_ports = gh_ports if isinstance(gh_ports, dict) else {}
     gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
 
     if not isinstance(mame, dict) or not isinstance(ini_map, dict) or not isinstance(parent_index, dict):
@@ -522,7 +318,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if not minfo:
             continue
         cls = _classify(name, ini_map)                      
-        raw_desc_original = _machine_title(minfo, name)
+        #raw_desc_original = _machine_title(minfo, name)
+        raw_desc_original = _raw_mame_title(minfo, name)
         raw_desc, applied, eligible = apply_title_override_if_eligible(name, raw_desc_original, overrides)
 
         if eligible:
@@ -574,7 +371,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             continue
 
         # Optional: MAME titles display (keep your existing helper)
-        mt_disp = _render_mame_titles_display(record.get("mame_titles", []))
+        #mt_disp = _render_mame_titles_display(record.get("mame_titles", []))
+        #if mt_disp:
+        #    record["mame_titles_display"] = mt_disp
+        mt_disp = _render_mame_titles_display(record["mame_titles"])
         if mt_disp:
             record["mame_titles_display"] = mt_disp
 

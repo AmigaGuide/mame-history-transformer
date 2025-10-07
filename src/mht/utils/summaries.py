@@ -1,7 +1,10 @@
 from __future__ import annotations
 from typing import Dict, Any, List, Set
+import re
 
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
+
+_VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
 
 # Optional: if your repo already has a standard header helper, we’ll prefer it.
 try:
@@ -51,7 +54,6 @@ def build_transform_header(
         "versions": v,
     }
 
-
 def _count_parents_with_clones(out_map: Dict[str, Any]) -> int:
     """How many included parents have at least one clone listed in mame_titles."""
     n = 0
@@ -61,7 +63,6 @@ def _count_parents_with_clones(out_map: Dict[str, Any]) -> int:
             n += 1
     return n
 
-
 def _total_clones_linked(out_map: Dict[str, Any]) -> int:
     """Total number of clone rows listed across all included parents."""
     total = 0
@@ -69,7 +70,6 @@ def _total_clones_linked(out_map: Dict[str, Any]) -> int:
         titles = rec.get("mame_titles") or []
         total += sum(1 for t in titles if (t.get("role") or "").strip().lower() == "clone")
     return total
-
 
 def build_transform_summary(
     *,
@@ -177,3 +177,13 @@ def build_transform_summary(
     }
 
     return summary
+
+def version_core(s: str | None) -> str | None:
+    """
+    Extract the dotted version core from a string, e.g.
+    'MAME 0.263 (mame0263)' -> '0.263'. Returns None if not found.
+    """
+    if not s:
+        return None
+    m = _VERSION_CORE_RX.search(s)
+    return m.group(0) if m else None

@@ -305,3 +305,13 @@ def render_ports_display(parent_machine: str, ports_obj: Dict[str, Any]) -> Dict
             bucket.append(line)
 
     return out
+
+def _format_regions(regs: list[str] | None) -> str:
+    regs = regs or ["??"]
+    regs = [r.strip() for r in regs if isinstance(r, str) and r.strip()]
+    regs = regs or ["??"]
+    return "".join(f"[{r}]" for r in regs)
+
+def _format_additional_tags(tags: list[str] | None) -> str:
+    tags = [t.strip() for t in (tags or []) if isinstance(t, str) and t.strip()]
+    return f" [{', '.join(tags)}]" if tags else ""

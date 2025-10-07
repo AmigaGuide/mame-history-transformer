@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from mht.utils.logger import debug_log
 
 def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
     """
@@ -36,3 +37,11 @@ def write_json(path: Path, obj: Any, *, sort_keys: bool = True) -> bool:
         text += "\n"
     _atomic_write_text(Path(path), text, encoding="utf-8")
     return True
+
+def read_json(path: Path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        log.error(f"Failed to read {path}: {e}")
+        return None

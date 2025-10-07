@@ -261,3 +261,39 @@ def build_parent_record(
     }
 
     return record, telemetry
+
+def project_for_wiki(rec: dict) -> dict:
+    out = {}
+    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
+    out["wiki_redirects"] = rec.get("wiki_redirects", [])
+    if rec.get("year") is not None: out["year"] = rec["year"]
+    if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
+    if rec.get("mame_titles_display"):
+        out["mame_titles_display"] = rec["mame_titles_display"]
+    for k in ("roms_display", "chips_display", "displays_display", "controls_display"):
+        if rec.get(k): out[k] = rec[k]
+    if rec.get("ports_display"):
+        out["ports_display"] = rec["ports_display"]
+    if rec.get("gh_ids"):
+        out["gh_ids"] = rec["gh_ids"]
+    return out
+
+def project_for_raw(machine: str, rec: dict) -> dict:
+    out = {}
+    out["machine"] = machine
+    if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
+    out["wiki_redirects"] = rec.get("wiki_redirects", [])
+    if rec.get("mame_titles"): out["mame_titles"] = rec["mame_titles"]
+    if rec.get("description"): out["description"] = rec["description"]
+    if rec.get("year") is not None: out["year"] = rec["year"]
+    if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]
+    for k in ("rom_count", "rom_bytes_total", "disk_required", "disk_regions"):
+        if k in rec: out[k] = rec[k]
+    if rec.get("chips"): out["chips"] = rec["chips"]
+    if rec.get("displays"): out["displays"] = rec["displays"]
+    if rec.get("controls"): out["controls"] = rec["controls"]
+    if rec.get("ports"): out["ports"] = rec["ports"]
+    for k in ("game_status", "category", "type", "isbios", "isdevice", "ismechanical", "requires_samples"):
+        if k in rec: out[k] = rec[k]
+    if rec.get("gh_ids"): out["gh_ids"] = rec["gh_ids"]
+    return out
