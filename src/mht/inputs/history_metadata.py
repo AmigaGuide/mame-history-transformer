@@ -21,6 +21,7 @@
 #
 
 from __future__ import annotations
+
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, Tuple, List, Set
@@ -37,6 +38,7 @@ from mht.utils.paths import (
     DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
     INI_GAME, INI_CATEGORY, INI_TYPE,
     INI_SUMMARY, INI_CLASS_PATH,
+    ENCODINGS_JSON,
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
@@ -349,7 +351,8 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     current_stamp = make_stamp(
         schema_id="mht.stage.ini",
         tool_version=tool_version("ini_summary"),
-        inputs=ini_paths,
+        #inputs=ini_paths,
+        inputs = [*ini_paths, ENCODINGS_JSON],
     )
     prev = load_stamp(stamp_path)
     if is_fresh(current_stamp, prev):

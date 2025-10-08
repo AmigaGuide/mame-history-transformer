@@ -16,6 +16,7 @@ selection (using .ini metadata) and the join with Gaming-History.
 """
 
 from __future__ import annotations
+
 import datetime
 import json
 import time
@@ -33,6 +34,7 @@ from mht.utils.paths import (
     MAME_MACHINES_PATH,
     PARENT_INDEX_PATH,
     MAME_SUMMARY,
+    ENCODINGS_JSON,
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
@@ -125,7 +127,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     current_stamp = make_stamp(
         schema_id="mht.stage.mame",
         tool_version=tool_version("mame_parser"),
-        inputs=[file_path],
+        #inputs = [file_path],
+        inputs = [file_path, ENCODINGS_JSON],
     )
     prev = load_stamp(stamp_path)
     if is_fresh(current_stamp, prev):
