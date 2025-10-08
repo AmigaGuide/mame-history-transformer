@@ -13,6 +13,7 @@ from mht.utils.paths import (
     MAME_MACHINES_PATH, PARENT_INDEX_PATH, GH_SYSTEM_PORTS_PATH, INI_CLASS_PATH,
     # summaries (used as inputs to transform stamp)
     MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY, TRANSFORM_SUMMARY,
+    ENCODINGS_JSON,
 )
 from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
 
@@ -21,21 +22,24 @@ STAGES = {
     "mame": {
         "schema_id": "mht.stage.mame",
         "tool_key":  "mame_parser",
-        "inputs":    [DATA_DIR / "mame.xml"],
+        "inputs":    [DATA_DIR / "mame.xml", ENCODINGS_JSON],
         "stamp":     STAMPS_DIR / "mame.json",
     },
     "history": {
         "schema_id": "mht.stage.history",
         "tool_key":  "history_parser",
-        "inputs":    [DATA_DIR / "history.xml"],
+        "inputs":    [DATA_DIR / "history.xml", ENCODINGS_JSON],
         "stamp":     STAMPS_DIR / "history.json",
     },
     "ini": {
         "schema_id": "mht.stage.ini",
         "tool_key":  "ini_summary",
-        "inputs":    [DATA_DIR / "[GAMING HISTORY] Game Or No Game.ini",
-                      DATA_DIR / "[GAMING HISTORY] Machine Category.ini",
-                      DATA_DIR / "[GAMING HISTORY] Machine Type.ini"],
+        "inputs":    [
+                        DATA_DIR / "[GAMING HISTORY] Game Or No Game.ini",
+                        DATA_DIR / "[GAMING HISTORY] Machine Category.ini",
+                        DATA_DIR / "[GAMING HISTORY] Machine Type.ini",
+                        ENCODINGS_JSON,
+                     ],
         "stamp":     STAMPS_DIR / "ini.json",
     },
     "transform": {

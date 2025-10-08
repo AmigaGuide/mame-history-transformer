@@ -13,12 +13,8 @@ INI_GAME     = DATA_DIR / "[GAMING HISTORY] Game Or No Game.ini"
 INI_CATEGORY = DATA_DIR / "[GAMING HISTORY] Machine Category.ini"
 INI_TYPE     = DATA_DIR / "[GAMING HISTORY] Machine Type.ini"
 
-
-# Contracts / schema directory (absolute, resilient to working directory)
-# src/mht/utils/paths.py -> parents[2] == src/mht
-#CONTRACTS_DIR = Path(__file__).resolve().parents[2] / "contracts"
+# Contracts / schema directory
 CONTRACTS_DIR = Path("src") / "mht" / "contracts"
-
 
 # Specific schema files used by the CLI validator
 EXOTICA_RAW_SCHEMA   = CONTRACTS_DIR / "exotica_lit_raw_data.schema.json"
@@ -31,6 +27,8 @@ EXOTICA_PAGES_SCHEMA = CONTRACTS_DIR / "exotica_wiki_pages_and_redirects.schema.
 # MAME_MACHINES_SCHEMA     = CONTRACTS_DIR / "mame_machines.schema.json"
 # MAME_PARENT_INDEX_SCHEMA = CONTRACTS_DIR / "mame_parent_index.schema.json"
 
+# Cache of detected encodings + version strings
+ENCODINGS_JSON = DATA_DIR / "encodings.json"
 
 # Stage summaries
 MAME_SUMMARY     = DATA_DIR / "mame_parsing_summary.json"

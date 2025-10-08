@@ -40,6 +40,7 @@ from mht.utils.paths import (
     STAMPS_DIR,
     GH_SYSTEM_PORTS_PATH,
     HISTORY_SUMMARY,
+    ENCODINGS_JSON,
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json, read_json
@@ -86,7 +87,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     current_stamp = make_stamp(
         schema_id="mht.stage.history",
         tool_version=tool_version("history_parser"),
-        inputs=[file_path],
+        inputs=[file_path, ENCODINGS_JSON],
     )
     prev = load_stamp(stamp_path)
     if is_fresh(current_stamp, prev):
