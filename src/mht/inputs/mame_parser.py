@@ -38,11 +38,17 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
+from mht.utils.mame_xml import attr_text, attr_int, attr_yesno_bool, safe_int, element_text
+from mht.utils.mame_fields import normalise_year, normalise_manufacturer
 
 log = setup_logger(log_level=LOG_LEVEL)
 
 __all__ = ["MAME_PARSER_SCHEMA", "parse_mame_xml"]
 
+
+# yes/no as strings for the JSON (schema requirement)
+def _yesno_str(flag: bool) -> str:
+    return "yes" if flag else "no"
 
 def _build_parent_index(machines: dict[str, dict]) -> dict:
     """Build a minimal parent/clone index from the parsed MAME machines."""
@@ -196,23 +202,18 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         current_machine = None
                         continue
 
-                    cloneof = elem.attrib.get("cloneof")
-                    isbios = elem.attrib.get("isbios", "no")
-                    isdevice = elem.attrib.get("isdevice", "no")
-                    ismechanical = elem.attrib.get("ismechanical", "no")
-                    sampleof = elem.attrib.get("sampleof")
-                    sourcefile = elem.attrib.get("sourcefile")
-                    romof = elem.attrib.get("romof")  # present but not used in summary
+                    cloneof      = attr_text(elem, "cloneof")
+                    isbios       = _yesno_str(attr_yesno_bool(elem, "isbios"))
+                    isdevice     = _yesno_str(attr_yesno_bool(elem, "isdevice"))
+                    ismechanical = _yesno_str(attr_yesno_bool(elem, "ismechanical"))
+                    sampleof     = attr_text(elem, "sampleof")
+                    sourcefile   = attr_text(elem, "sourcefile")
+                    romof        = attr_text(elem, "romof")  # Not sure if this is still used
 
                     # CHILD FIELDS
-                    desc_el = elem.find("description")
-                    description = (desc_el.text or "").strip() if desc_el is not None else ""
-
-                    year_el = elem.find("year")
-                    year_raw = (year_el.text or "").strip() if year_el is not None else ""
-
-                    manuf_el = elem.find("manufacturer")
-                    manufacturer_raw = (manuf_el.text or "").strip() if manuf_el is not None else ""
+                    description      = element_text(elem, "description", default=None) or None
+                    year_raw         = element_text(elem, "year", default="")
+                    manufacturer_raw = element_text(elem, "manufacturer", default="")
 
                     # normalised keys for dists
                     year_key = "unknown"
@@ -416,6 +417,10 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     sound_devices_per_machine_ctr[str(audio_count)] += 1
                     displays_per_machine_ctr[str(display_count)] += 1
 
+                    # after computing year_raw / manufacturer_raw:
+                    year_out         = (year_raw or "")
+                    manufacturer_out = (manufacturer_raw or "")
+
                     # Per-machine record
                     machines_out[mame_name] = {
                         "description": description,
@@ -424,8 +429,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         "isbios": isbios,
                         "isdevice": isdevice,
                         "ismechanical": ismechanical,
-                        "year": year_raw,
-                        "manufacturer": manufacturer_raw,
+                        "year": year_out,                                                                     
+                        "manufacturer": manufacturer_out,                       
                         "rom_count": rom_count,
                         "rom_bytes_total": rom_bytes_total if rom_count else 0,
                         "disk_required": disk_required,
@@ -677,35 +682,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         f"{len(parent_index['child_to_parent'])} clones)"
     )
     
-    #try:
-    #    MAME_MACHINES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    #    canon = {k: machines_out[k] for k in sorted(machines_out)}
-    #    write_json(MAME_MACHINES_PATH, canon)
-    #    log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
-    #except Exception as e:
-    #    log.error(f"Failed to write machines JSON: {e}")
-    #    return False
-
-    #try:
-    #    write_json(MAME_SUMMARY, summary)
-    #    log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
-    #except Exception as e:
-    #    log.error(f"Failed to write MAME summary: {e}")
-    #    return False
-
-    #try:
-    #    PARENT_INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    #    parent_index = _build_parent_index(machines_out)
-    #    write_json(PARENT_INDEX_PATH, parent_index)
-    #    log.info(
-    #        f"Wrote {PARENT_INDEX_PATH} "
-    #        f"({len(parent_index['parents'])} parents-with-clones, "
-    #        f"{len(parent_index['child_to_parent'])} clones)"
-    #    )
-    #except Exception as e:
-    #    log.error(f"Failed to write parent index: {e}")
-    #    return False
-
     # All good → persist the stamp
     save_stamp(stamp_path, current_stamp)
 
