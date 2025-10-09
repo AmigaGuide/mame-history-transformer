@@ -43,8 +43,14 @@ from mht.utils.mame_fields import normalise_year, normalise_manufacturer
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-__all__ = ["MAME_PARSER_SCHEMA", "parse_mame_xml"]
+__all__ = ["parse_mame_xml"]
 
+def _int_or_none(s: str | None) -> int | None:
+    s = (s or "").strip()
+    return int(s) if s.isdigit() else None
+
+def _bucket_key_int(v: int | None) -> str:
+    return str(v) if v is not None else "unknown"
 
 # yes/no as strings for the JSON (schema requirement)
 def _yesno_str(flag: bool) -> str:
@@ -228,8 +234,10 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     input_el = elem.find("input")
                     if input_el is not None:
                         players_attr = (input_el.attrib.get("players") or "").strip()
-                        if players_attr.isdigit():
-                            players_key = players_attr
+                        #if players_attr.isdigit():
+                        #    players_key = players_attr
+                        players_val = _int_or_none(input_el.attrib.get("players"))
+                        players_key = _bucket_key_int(players_val)   
 
                     controls_list = []
                     if input_el is not None:
@@ -271,9 +279,11 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     sound_el = elem.find("sound")
                     if sound_el is not None:
                         channels_attr = (sound_el.attrib.get("channels") or "").strip()
-                        if channels_attr.isdigit():
-                            sound_channels = int(channels_attr)
-                    sound_channels_per_machine_ctr[str(sound_channels) if sound_channels is not None else "unknown"] += 1
+                        #if channels_attr.isdigit():
+                        #    sound_channels = int(channels_attr)
+                        sound_channels = _int_or_none(sound_el.attrib.get("channels"))
+                    #sound_channels_per_machine_ctr[str(sound_channels) if sound_channels is not None else "unknown"] += 1
+                    sound_channels_per_machine_ctr[_bucket_key_int(sound_channels)] += 1
 
                     has_samples_device_ref = False
                     speaker_ref_count = 0
