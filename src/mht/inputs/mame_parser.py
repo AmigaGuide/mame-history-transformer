@@ -51,6 +51,7 @@ from mht.utils.summaries import (
     sorted_numeric_keys_with_unknown_last,
     sorted_alpha_with_unknown_last,
     sort_numeric_str,
+    build_mame_summary,
 )
 
 
@@ -346,137 +347,43 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     parse_seconds = time.perf_counter() - start
     #generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
+
     # ----------------------------
     # Build summary
     # ----------------------------
-    def _build_summary():
-        years_dist = sorted_numeric_keys_with_unknown_last(dict(years_ctr))
-        manuf_dist = sorted_alpha_with_unknown_last(dict(manuf_ctr))
-        display_types_overall_dist = sorted_alpha_with_unknown_last(dict(display_types_overall_ctr))
-        display_tags_overall_dist = sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
+    summary = build_mame_summary(
+        total_machines=total_machines,
+        total_parents=total_parents,
+        total_clones=total_clones,
+        total_isbios=total_isbios,
+        total_isdevice=total_isdevice,
+        total_ismechanical=total_ismechanical,
+        total_requires_samples=total_requires_samples,
+        years_ctr=years_ctr,
+        manuf_ctr=manuf_ctr,
+        players_ctr=players_ctr,
+        control_type_overall_ctr=control_type_overall_ctr,
+        control_ways_overall_ctr=control_ways_overall_ctr,
+        control_ways2_overall_ctr=control_ways2_overall_ctr,
+        control_ways3_overall_ctr=control_ways3_overall_ctr,
+        control_buttons_overall_ctr=control_buttons_overall_ctr,
+        control_reqbuttons_overall_ctr=control_reqbuttons_overall_ctr,
+        cpus_per_machine_ctr=cpus_per_machine_ctr,
+        sound_devices_per_machine_ctr=sound_devices_per_machine_ctr,
+        displays_per_machine_ctr=displays_per_machine_ctr,
+        display_types_overall_ctr=display_types_overall_ctr,
+        display_tags_overall_ctr=display_tags_overall_ctr,
+        sound_channels_per_machine_ctr=sound_channels_per_machine_ctr,
+        speakers_per_machine_ctr=speakers_per_machine_ctr,
+        disk_regions_overall_ctr=disk_regions_overall_ctr,
+        disk_media_platforms_per_machine_ctr=disk_media_platforms_per_machine_ctr,
+        disk_media_examples=disk_media_examples,
+        dropped_displays_total=dropped_displays_total,
+        dropped_displays_examples=dropped_displays_examples,
+        mame_build=mame_build,
+        mame_mameconfig=mame_mameconfig,
+    )
 
-        def _numdist(counter):
-            dist = sort_numeric_str(dict(counter))
-            if "unknown" in counter:
-                dist["unknown"] = counter["unknown"]
-            return dist
-
-        players_dist = _numdist(players_ctr)
-        cpus_dist = _numdist(cpus_per_machine_ctr)
-        sounds_dist = _numdist(sound_devices_per_machine_ctr)
-        displays_dist = _numdist(displays_per_machine_ctr)
-        speakers_dist = _numdist(speakers_per_machine_ctr)
-        sound_channels_dist = _numdist(sound_channels_per_machine_ctr)
-
-        disk_regions_overall_dist = sorted_alpha_with_unknown_last(dict(disk_regions_overall_ctr))
-
-        years_sum = sum(years_dist.values())
-        manufacturers_sum = sum(manuf_dist.values())
-        players_sum = sum(players_dist.values())
-        cpus_sum = sum(cpus_dist.values())
-        sounds_sum = sum(sounds_dist.values())
-        displays_sum = sum(displays_dist.values())
-        speakers_sum = sum(speakers_dist.values())
-        sound_channels_sum = sum(sound_channels_dist.values())
-        display_types_overall_sum = sum(display_types_overall_dist.values())
-        display_tags_overall_sum = sum(display_tags_overall_dist.values())
-        disk_regions_overall_sum = sum(disk_regions_overall_dist.values())
-
-        # versions for header
-        mame_build_str = mame_build
-        mame_xml_version = (
-            mame_build_str.split(" ", 1)[0]
-            if isinstance(mame_build_str, str) and mame_build_str.strip()
-            else None
-        )
-        versions_block = {}
-        if mame_xml_version:
-            versions_block["mame_xml_version"] = mame_xml_version
-        if mame_build_str:
-            versions_block["mame_build"] = mame_build_str
-        if mame_mameconfig is not None:
-            versions_block["mameconfig"] = mame_mameconfig
-
-
-        header = build_summary_header(
-            schema_id=SCHEMA_IDS["mame"],
-            schema_version=schema_version(SCHEMA_IDS["mame"]),
-            versions={
-                **versions_block,
-                "mame_parser_version": tool_version("mame_parser"),
-            },
-        )
-        
-        doc = {
-            "header": header,
-            "totals": {
-                "total_machines": total_machines,
-                "total_parents": total_parents,
-                "total_clones": total_clones,
-                "total_isbios": total_isbios,
-                "total_isdevice": total_isdevice,
-                "total_ismechanical": total_ismechanical,
-                "total_requires_samples": total_requires_samples,
-                "years": {
-                    "unique": len([k for k in years_dist.keys() if k != "unknown"]),
-                    "distribution": years_dist,
-                    "sum": years_sum,
-                },
-                "manufacturers": {
-                    "unique": len([k for k in manuf_dist.keys() if k != "unknown"]),
-                    "distribution": manuf_dist,
-                    "sum": manufacturers_sum,
-                },
-                "players": {"distribution": players_dist, "sum": players_sum},
-                "controls": {
-                    "types_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_type_overall_ctr)),
-                                      "sum": sum(dict(control_type_overall_ctr).values())},
-                    "ways_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_ways_overall_ctr)),
-                                     "sum": sum(dict(control_ways_overall_ctr).values())},
-                    "ways2_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_ways2_overall_ctr)),
-                                      "sum": sum(dict(control_ways2_overall_ctr).values())},
-                    "ways3_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_ways3_overall_ctr)),
-                                      "sum": sum(dict(control_ways3_overall_ctr).values())},
-                    "buttons_overall": {"distribution": _numdist(control_buttons_overall_ctr),
-                                        "sum": sum(control_buttons_overall_ctr.values())},
-                    "reqbuttons_overall": {"distribution": _numdist(control_reqbuttons_overall_ctr),
-                                           "sum": sum(control_reqbuttons_overall_ctr.values())},
-                },
-                "cpus_per_machine": {"distribution": cpus_dist, "sum": cpus_sum},
-                "sound_devices_per_machine": {"distribution": sounds_dist, "sum": sounds_sum},
-                "displays_per_machine": {"distribution": displays_dist, "sum": displays_sum},
-                "display_types_overall": {"distribution": display_types_overall_dist, "sum": display_types_overall_sum},
-                "display_tags_overall": {"distribution": display_tags_overall_dist, "sum": display_tags_overall_sum},
-                "sound_channels_per_machine": {"distribution": sound_channels_dist, "sum": sound_channels_sum},
-                "speakers_per_machine": {"distribution": speakers_dist, "sum": speakers_sum},
-                "disk_regions_overall": {"distribution": disk_regions_overall_dist, "sum": disk_regions_overall_sum},
-                "disk_media_platforms_per_machine": {
-                    "distribution": sort_numeric_str(dict(disk_media_platforms_per_machine_ctr)) | (
-                        {"unknown": disk_media_platforms_per_machine_ctr["unknown"]}
-                        if "unknown" in disk_media_platforms_per_machine_ctr else {}
-                    ),
-                    "sum": sum(disk_media_platforms_per_machine_ctr.values()),
-                    "examples": disk_media_examples,
-                },
-                "invalid_displays_dropped": {
-                    "count": dropped_displays_total,
-                    "examples": dropped_displays_examples
-                },
-            },
-        }
-
-        # additive aliases + anomalies mirror
-        totals = doc["totals"]
-        if "total_is_bios" not in totals:
-            totals["total_is_bios"] = totals["total_isbios"]
-        if "total_is_device" not in totals:
-            totals["total_is_device"] = totals["total_isdevice"]
-        legacy_drop = totals.get("invalid_displays_dropped")
-        if legacy_drop:
-            doc.setdefault("anomalies", {}).setdefault("dropped_displays", legacy_drop)
-        return doc
-
-    summary = _build_summary()
 
     # ----------------------------
     # Invariants (warnings only)
