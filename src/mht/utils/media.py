@@ -1,7 +1,8 @@
 from __future__ import annotations
 import re
 from collections import Counter
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, Dict, List, Tuple
+from xml.etree.ElementTree import Element
 
 _MEDIA_ORDER = {
     "GD-ROM": 100,
@@ -91,3 +92,42 @@ def join_with_ampersand(items: Sequence[str]) -> str:
     if n == 1: return items[0]
     if n == 2: return f"{items[0]} & {items[1]}"
     return f"{', '.join(items[:-1])} & {items[-1]}"
+
+def disk_required_and_regions(machine_elem: Element) -> Tuple[str, List[str], Dict[str, int]]:
+    """
+    Return (disk_required, disk_regions_unique_sorted, regions_overall_counts) from <disk> elements.
+
+    - disk_required: "yes" if any <disk> exists, else "no".
+    - disk_regions_unique_sorted: unique region keys (lowercased; "" -> "unknown") sorted ascending.
+    - regions_overall_counts: counts per region across all <disk> elements (not deduped).
+    """
+    disk_elems = machine_elem.findall("disk")
+    disk_required = "yes" if disk_elems else "no"
+
+    regions_set = set()
+    regions_overall: Dict[str, int] = {}
+    for d in disk_elems:
+        region_raw = (d.attrib.get("region") or "").strip()
+        region_key = region_raw.lower() if region_raw else "unknown"
+        regions_set.add(region_key)
+        regions_overall[region_key] = regions_overall.get(region_key, 0) + 1
+
+    disk_regions = sorted(regions_set)
+    return disk_required, disk_regions, regions_overall
+
+def summarise_device_refs(machine_elem: Element) -> Dict[str, object]:
+    """
+    Summarise <device_ref name="..."> entries for 'samples' and 'speaker'.
+
+    Returns a dict shaped exactly like the existing parser output:
+        {"samples": "yes" | "no", "speaker": <int_count>}
+    """
+    has_samples = False
+    speaker_ref_count = 0
+    for dref in machine_elem.findall("device_ref"):
+        name = (dref.attrib.get("name") or "").strip().lower()
+        if name == "samples":
+            has_samples = True
+        elif name == "speaker":
+            speaker_ref_count += 1
+    return {"samples": "yes" if has_samples else "no", "speaker": speaker_ref_count}

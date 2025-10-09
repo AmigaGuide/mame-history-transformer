@@ -1,7 +1,8 @@
 # src/mht/utils/roms.py
 from __future__ import annotations
 from collections import Counter
-from typing import Sequence
+from typing import Sequence, Tuple
+from xml.etree.ElementTree import Element
 
 from mht.utils.media import (
     normalise_device_to_media,
@@ -66,3 +67,20 @@ def format_rom_block(
             line3 = f"Plus: {join_with_ampersand(display_labels)}"
 
     return "\n".join([line1, line2] + ([line3] if line3 else []))
+
+def rom_count_and_bytes(machine_elem: Element) -> Tuple[int, int]:
+    """
+    Return (rom_count, rom_bytes_total) by scanning <rom> elements.
+
+    - Counts all <rom> children.
+    - Sums 'size' attributes that are purely digits; ignores non-numeric.
+    - When no ROMs are present, returns (0, 0).
+    """
+    rom_elems = machine_elem.findall("rom")
+    rom_count = len(rom_elems)
+    rom_bytes_total = 0
+    for r in rom_elems:
+        sz = (r.attrib.get("size") or "").strip()
+        if sz.isdigit():
+            rom_bytes_total += int(sz)
+    return rom_count, rom_bytes_total

@@ -43,6 +43,8 @@ from mht.utils.mame_fields import normalise_year, normalise_manufacturer
 from mht.utils.displays import extract_displays_for_parser
 from mht.utils.controls import extract_controls_for_parser
 from mht.utils.chips import extract_chips_for_parser
+from mht.utils.roms import rom_count_and_bytes
+from mht.utils.media import disk_required_and_regions, summarise_device_refs
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -274,7 +276,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
                     # INPUT - Controls
                     controls_list, _ctrl_metrics = extract_controls_for_parser(input_el)
-
                     # Merge control metrics into your existing overall counters
                     for k, v in _ctrl_metrics["type_overall"].items():
                         control_type_overall_ctr[k] += v
@@ -300,16 +301,9 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     #sound_channels_per_machine_ctr[str(sound_channels) if sound_channels is not None else "unknown"] += 1
                     sound_channels_per_machine_ctr[_bucket_key_int(sound_channels)] += 1
 
-                    has_samples_device_ref = False
-                    speaker_ref_count = 0
-                    for dref in elem.findall("device_ref"):
-                        name = (dref.attrib.get("name") or "").strip().lower()
-                        if name == "samples":
-                            has_samples_device_ref = True
-                        elif name == "speaker":
-                            speaker_ref_count += 1
-                    device_ref_summary = {"samples": "yes" if has_samples_device_ref else "no", "speaker": speaker_ref_count}
-                    speakers_per_machine_ctr[str(speaker_ref_count)] += 1
+                    # DEVICE REFS (samples/speaker)
+                    device_ref_summary = summarise_device_refs(elem)
+                    speakers_per_machine_ctr[str(device_ref_summary["speaker"])] += 1
 
                     # CHIPS
                     chips_list, cpu_count, audio_count = extract_chips_for_parser(elem)
@@ -336,27 +330,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     if requires_samples:
                         total_requires_samples += 1
 
-                    # ROMS
-                    rom_elems = elem.findall("rom")
-                    rom_count = len(rom_elems)
-                    rom_bytes_total = 0
-                    for r in rom_elems:
-                        sz = (r.attrib.get("size") or "").strip()
-                        if sz.isdigit():
-                            rom_bytes_total += int(sz)
+                    # ROMS (extracted to utils)
+                    rom_count, rom_bytes_total = rom_count_and_bytes(elem)
 
                     # DISKS (regions only)
-                    disk_elems = elem.findall("disk")
-                    disk_required = "yes" if disk_elems else "no"
+                    disk_required, disk_regions, _regions_overall = disk_required_and_regions(elem)
+                    # Preserve the original per-disk region counting behaviour
+                    for k, v in _regions_overall.items():
+                        disk_regions_overall_ctr[k] += v
 
-                    disk_regions_set = set()
-                    for d in disk_elems:
-                        region_raw = (d.attrib.get("region") or "").strip()
-                        region_key = region_raw.lower() if region_raw else "unknown"
-                        disk_regions_set.add(region_key)
-                        disk_regions_overall_ctr[region_key] += 1
-
-                    disk_regions = sorted(disk_regions_set)
                     disk_media_platforms_count = len(disk_regions)
                     disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
                     examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
