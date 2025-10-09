@@ -45,6 +45,7 @@ from mht.utils.controls import extract_controls_for_parser
 from mht.utils.chips import extract_chips_for_parser
 from mht.utils.roms import rom_count_and_bytes
 from mht.utils.media import disk_required_and_regions, summarise_device_refs
+from mht.utils.selection import build_parent_index
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -90,26 +91,6 @@ def _yesno_str(flag: bool) -> str:
         'yes' if True, else 'no'.
     """           
     return "yes" if flag else "no"
-
-def _build_parent_index(machines: dict[str, dict]) -> dict:
-    """Build a minimal parent/clone index from the parsed MAME machines."""
-    parents: dict[str, list[str]] = {}
-    child_to_parent: dict[str, str] = {}
-
-    for mname, info in machines.items():
-        parent = info.get("cloneof")
-        if not parent:
-            continue
-        child_to_parent[mname] = parent
-        parents.setdefault(parent, []).append(mname)
-
-    parents_sorted: dict[str, list[str]] = {
-        p: sorted(set(clones)) for p, clones in parents.items() if clones
-    }
-    parents_sorted = {p: parents_sorted[p] for p in sorted(parents_sorted.keys())}
-    child_to_parent_sorted = {c: child_to_parent[c] for c in sorted(child_to_parent.keys())}
-    return {"parents": parents_sorted, "child_to_parent": child_to_parent_sorted}
-
 
 def _sorted_numeric_keys_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
     """Numeric ascending; non-digits rolled into 'other'; 'unknown' last."""
@@ -624,7 +605,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         return False
     log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
 
-    parent_index = _build_parent_index(machines_out)
+    parent_index = build_parent_index(machines_out)
     if not write_json(PARENT_INDEX_PATH, parent_index):
         return False
     log.info(
