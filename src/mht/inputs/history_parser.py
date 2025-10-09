@@ -50,20 +50,17 @@ from mht.utils.ports import (
     norm_tags         as _norm_tags,
 )
 from mht.inputs.history_constants import (
-    SECTION_PATTERN,
     CATEGORY_HEADING_PATTERN,
     KNOWN_PLATFORMS,
 )
 from mht.inputs.history_ports import (
-    segment_text_sections,
     extract_ports_section,
-    parse_port_entry,
 )
+from mht.inputs.history_text import segment_text_sections
+from mht.inputs.history_summary import build_history_summary
 
 
 __all__ = [
-    "HISTORY_PARSER_SCHEMA",
-    "parse_port_entry",
     "parse_history_entries",
 ]
 
@@ -230,216 +227,27 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     if not write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False):  # preserve your explicit order
         return False
     log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")        
-    
-    #try:
-    #    write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False)  # keep your case-insensitive order                     
-    #    log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")
-    #except Exception as e:
-    #    log.error(f"Failed to write GH systems JSON: {e}")
-    #    return False
 
-    # ----------------------------
-    # Build summary JSON
-    # ----------------------------
-    platforms_found_summary = {}
-    for platform, data in parsing_state["platforms_found"].items():
-        systems_unique = sorted(set(data["systems"]))
-        platforms_found_summary[platform] = {"systems_count": len(systems_unique), "systems": systems_unique}
 
-    _section_heads = dict(parsing_state["section_headings_found"])
-    section_headings_block = {
-        "unique": len(_section_heads),
-        "distribution": dict(sorted(_section_heads.items(), key=lambda kv: kv[0].upper())),
-    }
-
-    _cats = dict(parsing_state["platform_categories_found"])
-    platform_categories_block = {
-        "unique": len(_cats),
-        "distribution": dict(sorted(_cats.items(), key=lambda kv: kv[0].upper())),
-    }
-
-    summary_platforms_block = {
-        "unique": len(platforms_found_summary),
-        "by_platform": dict(sorted(platforms_found_summary.items(), key=lambda kv: kv[0].lower())),
-    }
-
-    _publishers_map = parsing_state["publishers_found"]
-    _by_publisher = {}
-    for name, data in _publishers_map.items():
-        systems_unique = sorted(set(data["systems"]))
-        _by_publisher[name] = {"systems_count": len(systems_unique), "systems": systems_unique}
-
-    publishers_block = {
-        "unique": len(_by_publisher),
-        "indicators_found": {
-            k: parsing_state["publisher_indicators_found"].get(k, 0)
-            for k in ("by", "released_by", "other_after_date", "none")
-        },
-        "by_publisher": dict(sorted(_by_publisher.items(), key=lambda kv: kv[0].lower())),
-    }
-
-    titles_items = sorted(parsing_state["titles_found"])
-    titles_block = {"unique": len(titles_items), "items": titles_items}
-
-    _region = parsing_state["region_codes"]
-    region_codes_block = {"unique": len(_region), "distribution": dict(sorted(_region.items(), key=lambda kv: (-kv[1], kv[0])))}  # fmt: skip
-
-    models_items = sorted(parsing_state["models_found"].keys())
-    models_block = {"unique": len(models_items), "items": models_items}
-
-    _comments_map = parsing_state["comments_found"]
-    comments_block = {
-        "unique": len(_comments_map),
-        "by_comment": {c: sorted(set(sys)) for c, sys in sorted(_comments_map.items(), key=lambda kv: kv[0].lower())},
-    }
-
-    _tags_map = parsing_state["additional_tags_found"]
-    additional_tags_block = {
-        "unique": len(_tags_map),
-        "by_tag": {
-            tag: {"systems_count": len(set(s)), "systems": sorted(set(s))}
-            for tag, s in sorted(_tags_map.items(), key=lambda kv: kv[0].lower())
-        },
-    }
-
-    overviews_map = parsing_state["systems_with_port_overview"]
-    port_overview_block = {"count": len(overviews_map), "by_system": dict(sorted(overviews_map.items(), key=lambda kv: kv[0].lower()))}
-
-    _upc_map = parsing_state["unexpected_platform_categories"]
-    _by_category = {}
-    systems_affected_set = set()
-    for cat, systems in _upc_map.items():
-        uniq = sorted(set(systems))
-        systems_affected_set.update(uniq)
-        _by_category[cat] = {"systems_count": len(uniq), "systems": uniq}
-    unexpected_platform_categories_block = {
-        "unique": len(_by_category),
-        "systems_affected": len(systems_affected_set),
-        "by_category": dict(sorted(_by_category.items(), key=lambda kv: kv[0].lower())),
-    }
-
-    _oddq_map = parsing_state["odd_quotes"]
-    odd_number_of_quotes_block = {
-        "count": sum(len(v) for v in _oddq_map.values()),
-        "systems_affected": len(_oddq_map),
-        "by_system": {sys: lines for sys, lines in sorted(_oddq_map.items(), key=lambda kv: kv[0].lower())},
-    }
-
-    _oddb_map = parsing_state["odd_brackets"]
-    odd_number_of_brackets_block = {
-        "count": sum(len(v) for v in _oddb_map.values()),
-        "systems_affected": len(_oddb_map),
-        "by_system": {sys: lines for sys, lines in sorted(_oddb_map.items(), key=lambda kv: kv[0].lower())},
-    }
-
-    _pms_list = parsing_state.get("anomalies", {}).get("ports_missing_subheadings", [])
-    _pms_map = {}
-    for rec in _pms_list:
-        sys = rec.get("system")
-        exc = rec.get("excerpt", "")
-        if sys:
-            _pms_map[sys] = exc
-    ports_missing_subheadings_block = {"count": len(_pms_map), "by_system": dict(sorted(_pms_map.items(), key=lambda kv: kv[0].lower()))}
-
-    _ud_map = parsing_state["unparsable_dates"]
-    unparsable_dates_block = {
-        "count": sum(len(v) for v in _ud_map.values()),
-        "systems_affected": len(_ud_map),
-        "by_system": {sys: dates for sys, dates in sorted(_ud_map.items(), key=lambda kv: kv[0].lower())},
-    }
-
-    _swr_items = sorted(parsing_state["systems_with_residue"])
-    systems_with_residue_block = {"count": len(_swr_items), "items": _swr_items}
-
-    _dsq = parsing_state["disk_size_quotes"]
-    disk_size_quotes_block = {
-        "unique": len(_dsq),
-        "distribution": {
-            size: {"count": len(set(systems)), "systems": sorted(set(systems))}
-            for size, systems in sorted(_dsq.items(), key=lambda kv: kv[0])
-        },
-    }
-
-    #generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
-
-    header = build_summary_header(
-        schema_id=SCHEMA_IDS["history"],
-        schema_version=schema_version(SCHEMA_IDS["history"]),
-        versions={
-            "gh_version": history_version,
-            "gh_date": history_date,
-            "history_parser_version": tool_version("history_parser"),
-        },
+    summary = build_history_summary(
+        history_version=history_version,
+        history_date=history_date,
+        parsing_state=parsing_state,
+        systems_count=systems_count,
+        software_count=software_count,
+        systems_with_ports=systems_with_ports,
+        systems_with_aliases=systems_with_aliases,
+        total_port_lines_all=total_port_lines_all,
     )
 
-    summary = {
-        "header": header,
-        "totals": {
-            "systems_total": systems_count,
-            "software_total": software_count,
-            "entries_total": systems_count + software_count,
-            "total_systems": systems_count,
-            "total_software": software_count,
-            "total_entries": systems_count + software_count,
-            "systems_with_ports": systems_with_ports,
-            "systems_with_aliases": systems_with_aliases,
-            "port_lines_parsed": total_port_lines_all,
-            "publisher_count_unique": len(parsing_state["publishers_found"]),
-            "platform_count_unique": len(platforms_found_summary),
-            "model_count_unique": len(models_items := models_items if 'models_items' in locals() else sorted(parsing_state["models_found"].keys())),
-            "additional_tag_count_unique": len(_tags_map),
-            "ports_with_comments": parsing_state["ports_with_comments"],
-            "systems_with_port_overview": port_overview_block["count"],
-        },
-        "found": {
-            "section_headings_found": section_headings_block,
-            "platform_categories_found": platform_categories_block,
-            "platforms_found": summary_platforms_block,
-            "publishers_found": publishers_block,
-            "titles_found": titles_block,
-            "region_codes": region_codes_block,
-            "models_found": {"unique": len(models_items), "items": models_items},
-            "comments_found": comments_block,
-            "additional_tags_found": additional_tags_block,
-            "disk_size_quotes": disk_size_quotes_block,
-            "port_overview_texts": port_overview_block,
-        },
-        "anomalies": {
-            "unexpected_platform_categories": unexpected_platform_categories_block,
-            "odd_number_of_quotes": odd_number_of_quotes_block,
-            "odd_number_of_brackets": odd_number_of_brackets_block,
-            "ports_missing_subheadings": ports_missing_subheadings_block,
-            "platform_banners": {
-                "count": parsing_state["platform_banner_total"],
-                "systems_affected": len(parsing_state["platform_banners_by_system"]),
-                "by_system": {
-                    sys: {"count": sum(counter.values()), "banners": dict(counter)}
-                    for sys, counter in sorted(parsing_state["platform_banners_by_system"].items())
-                },
-            },
-            "null_platform_ports": {
-                "count": parsing_state["null_platform_ports_total"],
-                "systems_affected": len(parsing_state["null_platform_ports_by_system"]),
-                "by_system": dict(sorted(parsing_state["null_platform_ports_by_system"].items(), key=lambda kv: (-kv[1], kv[0]))),
-                "by_system_lines": {k: v for k, v in parsing_state["null_platform_examples"].items()},
-            },
-        },
-        "residue_flags": {
-            "unparsable_dates": unparsable_dates_block,
-            "systems_with_residue": systems_with_residue_block,
-        },
-    }
+    if not write_json(HISTORY_SUMMARY, summary):  # default sort_keys=True is fine for summaries
+        return False
+    debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
+
 
     if not write_json(HISTORY_SUMMARY, summary):  # sorted keys are fine for summaries (default True)
         return False
     debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
-
-    #try:
-    #    write_json(HISTORY_SUMMARY, summary)  # sorted keys are fine for summaries
-    #    debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
-    #except Exception as e:
-    #    log.warning(f"Could not write parsing summary: {e}")
-    #    return False
 
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
