@@ -53,6 +53,7 @@ from mht.utils.summaries import (
     sort_numeric_str,
     build_mame_summary,
 )
+from mht.utils.validator import check_mame_parse_invariants
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -388,74 +389,33 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     # ----------------------------
     # Invariants (warnings only)
     # ----------------------------
-    def _sum(counter):
-        return sum(counter.values())
-
-    checks_equal_total = [
-        ("years_ctr", _sum(years_ctr)),
-        ("manuf_ctr", _sum(manuf_ctr)),
-        ("players_ctr", _sum(players_ctr)),
-        ("cpus_per_machine_ctr", _sum(cpus_per_machine_ctr)),
-        ("sound_devices_per_machine_ctr", _sum(sound_devices_per_machine_ctr)),
-        ("displays_per_machine_ctr", _sum(displays_per_machine_ctr)),
-        ("speakers_per_machine_ctr", _sum(speakers_per_machine_ctr)),
-        ("sound_channels_per_machine_ctr", _sum(sound_channels_per_machine_ctr)),
-        ("disk_media_platforms_per_machine_ctr", _sum(disk_media_platforms_per_machine_ctr)),
-    ]
-    for name, val in checks_equal_total:
-        if val != total_machines:
-            log.warning(f"[mame_parser::parse_mame_xml] Invariant: sum({name})={val} != total_machines={total_machines}")
-
-    expected_total_displays = sum(int(k) * v for k, v in displays_per_machine_ctr.items() if k.isdigit())
-    types_sum = _sum(display_types_overall_ctr)
-    tags_sum = _sum(display_tags_overall_ctr)
-    if types_sum != expected_total_displays:
-        log.warning(f"[mame_parser::parse_mame_xml] Display types total {types_sum} != expected {expected_total_displays}")
-    if tags_sum != expected_total_displays:
-        log.warning(f"[mame_parser::parse_mame_xml] Display tags total {tags_sum} != expected {expected_total_displays}")
-
-    disk_flag_yes_empty = 0
-    disk_flag_no_nonempty = 0
-    for m in machines_out.values():
-        dr = m.get("disk_required")
-        regs = m.get("disk_regions") or []
-        if dr == "yes" and not regs:
-            disk_flag_yes_empty += 1
-        elif dr == "no" and regs:
-            disk_flag_no_nonempty += 1
-    if disk_flag_yes_empty or disk_flag_no_nonempty:
-        log.warning(f"[mame_parser::parse_mame_xml] Disk consistency: yes+empty={disk_flag_yes_empty}, no+nonempty={disk_flag_no_nonempty}")
-
-    total_controls_entries = sum(len(m.get("controls") or []) for m in machines_out.values())
-    ctrl_sums = [
-        ("control_type_overall", _sum(control_type_overall_ctr)),
-        ("control_ways_overall", _sum(control_ways_overall_ctr)),
-        ("control_ways2_overall", _sum(control_ways2_overall_ctr)),
-        ("control_ways3_overall", _sum(control_ways3_overall_ctr)),
-        ("control_buttons_overall", _sum(control_buttons_overall_ctr)),
-        ("control_reqbuttons_overall", _sum(control_reqbuttons_overall_ctr)),
-    ]
-    for label, val in ctrl_sums:
-        if val != total_controls_entries:
-            log.warning(f"[mame_parser::parse_mame_xml] Controls total mismatch: {label}={val} != {total_controls_entries}")
-
-    cpu_mismatch = audio_mismatch = 0
-    for m in machines_out.values():
-        chips = m.get("chips") or []
-        cpus = sum(1 for c in chips if (c.get("type") or "").lower() == "cpu")
-        audios = sum(1 for c in chips if (c.get("type") or "").lower() == "audio")
-        if cpus != (m.get("cpu_count") or 0):
-            cpu_mismatch += 1
-        if audios != (m.get("sound_chip_count") or 0):
-            audio_mismatch += 1
-    if cpu_mismatch or audio_mismatch:
-        log.warning(f"[mame_parser::parse_mame_xml] Chip count mismatches: cpu={cpu_mismatch}, audio={audio_mismatch}")
-
+    check_mame_parse_invariants(
+        log=log,
+        log_prefix="[mame_parser::parse_mame_xml]",
+        total_machines=total_machines,
+        machines_out=machines_out,
+        years_ctr=years_ctr,
+        manuf_ctr=manuf_ctr,
+        players_ctr=players_ctr,
+        cpus_per_machine_ctr=cpus_per_machine_ctr,
+        sound_devices_per_machine_ctr=sound_devices_per_machine_ctr,
+        displays_per_machine_ctr=displays_per_machine_ctr,
+        speakers_per_machine_ctr=speakers_per_machine_ctr,
+        sound_channels_per_machine_ctr=sound_channels_per_machine_ctr,
+        display_types_overall_ctr=display_types_overall_ctr,
+        display_tags_overall_ctr=display_tags_overall_ctr,
+        disk_media_platforms_per_machine_ctr=disk_media_platforms_per_machine_ctr,
+        control_type_overall_ctr=control_type_overall_ctr,
+        control_ways_overall_ctr=control_ways_overall_ctr,
+        control_ways2_overall_ctr=control_ways2_overall_ctr,
+        control_ways3_overall_ctr=control_ways3_overall_ctr,
+        control_buttons_overall_ctr=control_buttons_overall_ctr,
+        control_reqbuttons_overall_ctr=control_reqbuttons_overall_ctr,
+    )
+        
     # ----------------------------
     # Write outputs
     # ----------------------------
-    
-    
     if not write_json(MAME_MACHINES_PATH, {k: machines_out[k] for k in sorted(machines_out)}, sort_keys=False):
         return False
     log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
