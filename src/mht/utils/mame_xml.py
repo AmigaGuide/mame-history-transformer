@@ -23,8 +23,20 @@ def attr_int(node: ET.Element, name: str, *, default: int = 0) -> int:
 
 def attr_yesno_bool(el, name: str, *, default: bool = False) -> bool:
     """
-    Interpret a MAME yes/no style attribute as a boolean.
-    Falls back to default when missing/empty/unrecognised.
+    Interpret an XML attribute with yes/no semantics as a boolean.
+
+    Parameters
+    ----------
+    elem
+        XML element carrying the attribute.
+    name
+        Attribute name to read.
+
+    Returns
+    -------
+    bool
+        True for values like "yes", "true", "1" (case-insensitive);
+        False for anything else or missing.
     """
     from mht.utils.booleans import truthy_flag  # already in your repo
     v = el.attrib.get(name, "")
@@ -38,7 +50,24 @@ def safe_int(value: Any, *, default: int = 0) -> int:
         return default
 
 def element_text(parent: ET.Element, tag: str, *, default: str | None = None) -> str | None:
-    """Return trimmed text of a child element, or default if missing/empty."""
+    """
+    Return the stripped text of the first child element with `tag`.
+
+    Parameters
+    ----------
+    elem
+        Parent XML element.
+    tag
+        Child tag name to locate once under `elem`.
+    default
+        Value to return when the child is missing or has no text.
+
+    Returns
+    -------
+    str
+        Child text with surrounding whitespace collapsed to a single space.
+        If not found, returns `default` (never None).
+    """
     child = parent.find(tag)
     if child is None or child.text is None:
         return default

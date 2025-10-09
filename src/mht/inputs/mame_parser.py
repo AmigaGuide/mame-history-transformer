@@ -46,14 +46,43 @@ log = setup_logger(log_level=LOG_LEVEL)
 __all__ = ["parse_mame_xml"]
 
 def _int_or_none(s: str | None) -> int | None:
+    """
+    Parse an integer or return None when value is empty/invalid.
+
+    Notes
+    -----
+    Keeps 'unknown' distinct from 0 (important for summaries/buckets).
+    """           
     s = (s or "").strip()
     return int(s) if s.isdigit() else None
 
 def _bucket_key_int(v: int | None) -> str:
+    """
+    Convert an optional int to a stable bucket key for counters.
+
+    Examples
+    --------
+    >>> _bucket_key_int(2)
+    '2'
+    >>> _bucket_key_int(None)
+    'unknown'
+    """            
     return str(v) if v is not None else "unknown"
 
-# yes/no as strings for the JSON (schema requirement)
 def _yesno_str(flag: bool) -> str:
+    """
+    Map a boolean to the schema-required 'yes'/'no' string.
+
+    Parameters
+    ----------
+    flag
+        Input boolean.
+
+    Returns
+    -------
+    str
+        'yes' if True, else 'no'.
+    """           
     return "yes" if flag else "no"
 
 def _build_parent_index(machines: dict[str, dict]) -> dict:

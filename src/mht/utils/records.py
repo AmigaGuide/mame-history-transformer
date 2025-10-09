@@ -88,20 +88,11 @@ def build_parent_record(
     wiki_page_name: str,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
-    Returns:
-      record   - the full per-parent record dict (unchanged shape vs transformer)
-      telemetry - aux stats to be aggregated by transformer (counts, flags, lists)
-                  {
-                    "media_labels_for_counts": set[str],
-                    "ignored_devices": dict[str,int],
-                    "parents_with_any_media": bool,
-                    "audio_channels_reported": int,
-                    "speaker_sum": int,
-                    "samples_required": bool,
-                    "parent_has_ports": bool,
-                    "clones_with_ports": set[str],
-                    "has_parent_clone_port_dupes": bool,
-                  }
+    Assemble the full per-parent record used by the raw and wiki projections.
+
+    The record includes manufacturers, ROM/media summary, chips/displays/controls
+    sections, titles, PORTS (merged with clone provenance), GH IDs, and flags.
+    Telemetry returns counters/sets used for run-level summaries.
     """
     minfo = mame.get(parent_name, {}) or {}
 

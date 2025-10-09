@@ -146,7 +146,18 @@ def gh_keys_with_any_valid_ports(gh_ports: Dict[str, Any]) -> set[str]:
 
 def build_ports_for_parent(parent: str,
                            parents_map: Dict[str, List[str]],
-                           gh_ports: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], set[str], bool]:
+                           gh_ports: Dict[str, Any]
+                           ) -> Tuple[Optional[Dict[str, Any]], set[str], bool]:
+    """
+    Merge PORTS from a parent system and its clones (if any), preserving order.
+
+    Returns
+    -------
+    (ports_obj, clones_with_ports, parent_has_ports)
+        ports_obj is None when neither parent nor clones have valid ports.
+    """
+
+
     ports_obj: Dict[str, Any] = {"clone_sources": []}
     clones_with_ports: set[str] = set()
     parent_has_ports = False

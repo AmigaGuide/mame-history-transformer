@@ -23,7 +23,19 @@ REGISTRY: Dict[str, Tuple[Path, Path]] = {
 }
 
 def validate(names: Iterable[str] | None = None) -> list[str]:
-    """Return a list of human-readable error strings; empty list means success."""
+    """
+    Validate one or more output JSON documents against their JSON Schemas.
+
+    Parameters
+    ----------
+    only
+        Optional subset of keys from VALIDATION_REGISTRY to validate.
+
+    Returns
+    -------
+    list[str]
+        Human-readable error lines; empty list means 'Validation OK'.
+    """
     targets = (names or REGISTRY.keys())
     errors_out: list[str] = []
 

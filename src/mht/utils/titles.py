@@ -160,6 +160,20 @@ def find_infix_brackets_no_spaces(s: str) -> bool:
     return _INFEX_BRACKETS_NO_SPACE_RX.search(s or "") is not None
 
 def parse_description(full_desc: str) -> Tuple[Dict[str, str], Dict[str, List[Dict[str, str]]]]:
+    """
+    Parse a MAME description into numbered title/subtitle/version fields.
+
+    Splits multi-part titles (e.g. "Foo / Bar") into title1, title2, ...
+    Extracts a single `global_version` when appropriate and surfaces
+    anomalies (unbalanced brackets, odd infix groups) for QA.
+
+    Returns
+    -------
+    (desc_fields, anomalies)
+        `desc_fields` is a dict with keys like 'title1', 'subtitle1',
+        'version1', ... and 'global_version'.
+        `anomalies` maps anomaly type -> list of {'example': <string>}.
+    """                
     anomalies: Dict[str, List[Dict[str, str]]] = {
         "unbalanced_round_brackets": [],
         "unbalanced_square_brackets": [],
@@ -231,7 +245,12 @@ def wiki_page_name_from_desc(desc_fields: Dict[str, str]) -> str:
     return f"{title}: {subtitle}" if subtitle else title
 
 def build_redirect_sources(desc_fields: Dict[str, str], wiki_page_name: str) -> List[str]:
-    """Deterministic list of redirect sources, excluding the exact target page name (case-insensitive)."""
+    """
+    Deterministically compute redirect source names for a wiki page.
+
+    Excludes the exact target (case-insensitive). Adds titles/subtitles
+    for units >= 2 and the bare title for unit 1 when target is title+subtitle.
+    """
     sources: List[str] = []
     seen_ci: set[str] = set()
 

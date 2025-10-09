@@ -37,26 +37,19 @@ def build_summary_header(
     schema_version: str,
     versions: Dict[str, Any],
     generated_at: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> Dict[str, Any]:       
     """
-    Create the standard header dict for summaries/outputs.
-
-    Parameters
-    ----------
-    schema_id : str
-        Identifier of the schema for this artefact (e.g. "mame_machines").
-    schema_version : str
-        Version of the schema (e.g. "1.0").
-    versions : dict
-        Tool/source versions to embed (e.g. mame_xml_version, tool_version).
-    generated_at : Optional[str]
-        ISO 8601 timestamp to stamp into the header. Defaults to current UTC.
+    Create the standard header block shared by all summary JSONs.
 
     Returns
     -------
     dict
-        A serialisable header with keys: schema_id, schema_version,
-        generated_at, versions.
+        {
+          "schema_id": ...,
+          "schema_version": ...,
+          "generated_at": "<UTC ISO8601>Z",
+          "versions": {...}
+        }
     """
     header = SummaryHeader(
         schema_id=schema_id,
