@@ -38,8 +38,7 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
-from mht.utils.mame_xml import attr_text, attr_int, attr_yesno_bool, safe_int, element_text
-from mht.utils.mame_fields import normalise_year, normalise_manufacturer
+from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text
 from mht.utils.displays import extract_displays_for_parser
 from mht.utils.controls import extract_controls_for_parser
 from mht.utils.chips import extract_chips_for_parser
@@ -54,6 +53,7 @@ from mht.utils.summaries import (
     build_mame_summary,
 )
 from mht.utils.validator import check_mame_parse_invariants
+from mht.utils.booleans import yesno_str
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -70,22 +70,6 @@ def _int_or_none(s: str | None) -> int | None:
     """           
     s = (s or "").strip()
     return int(s) if s.isdigit() else None
-
-def _yesno_str(flag: bool) -> str:
-    """
-    Map a boolean to the schema-required 'yes'/'no' string.
-
-    Parameters
-    ----------
-    flag
-        Input boolean.
-
-    Returns
-    -------
-    str
-        'yes' if True, else 'no'.
-    """           
-    return "yes" if flag else "no"
 
 def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
     """
@@ -182,9 +166,9 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         continue
 
                     cloneof      = attr_text(elem, "cloneof")
-                    isbios       = _yesno_str(attr_yesno_bool(elem, "isbios"))
-                    isdevice     = _yesno_str(attr_yesno_bool(elem, "isdevice"))
-                    ismechanical = _yesno_str(attr_yesno_bool(elem, "ismechanical"))
+                    isbios       = yesno_str(attr_yesno_bool(elem, "isbios"))
+                    isdevice     = yesno_str(attr_yesno_bool(elem, "isdevice"))
+                    ismechanical = yesno_str(attr_yesno_bool(elem, "ismechanical"))
                     sampleof     = attr_text(elem, "sampleof")
                     sourcefile   = attr_text(elem, "sourcefile")
                     romof        = attr_text(elem, "romof")  # Not sure if this is still used
