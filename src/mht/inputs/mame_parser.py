@@ -40,6 +40,7 @@ from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
 from mht.utils.mame_xml import attr_text, attr_int, attr_yesno_bool, safe_int, element_text
 from mht.utils.mame_fields import normalise_year, normalise_manufacturer
+from mht.utils.displays import extract_displays_for_parser
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -343,62 +344,23 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
                         chips_list.append({"type": ctype, "name": chip_name, "tag": tag, "clock_hz": clock_hz})
 
-                    # DISPLAYS
-                    displays_list = []
-                    for d in elem.findall("display"):
-                        d_type = (d.attrib.get("type") or "").strip().lower() or None
-                        d_tag = (d.attrib.get("tag") or "").strip() or None
 
-                        rot_attr = (d.attrib.get("rotate") or "").strip()
-                        d_rotate = int(rot_attr) if rot_attr.isdigit() else None
+                    # DISPLAYS (extracted to utils)
+                    displays_list, display_count, _disp_metrics = extract_displays_for_parser(elem, mame_name)
 
-                        w_attr = (d.attrib.get("width") or "").strip()
-                        h_attr = (d.attrib.get("height") or "").strip()
-                        d_width = int(w_attr) if w_attr.isdigit() else None
-                        d_height = int(h_attr) if h_attr.isdigit() else None
+                    # Merge display metrics into the existing overall counters and dropped stats
+                    for k, v in _disp_metrics["types_overall"].items():
+                        display_types_overall_ctr[k] += v
+                    for k, v in _disp_metrics["tags_overall"].items():
+                        display_tags_overall_ctr[k] += v
 
-                        r_attr = (d.attrib.get("refresh") or "").strip()
-                        try:
-                            d_refresh_hz = float(r_attr) if r_attr else None
-                        except ValueError:
-                            d_refresh_hz = None
+                    dropped_displays_total += _disp_metrics["dropped_total"]
+                    if _disp_metrics["dropped_examples"]:
+                        # Keep your original cap of 10 total examples
+                        remaining = max(0, 10 - len(dropped_displays_examples))
+                        if remaining:
+                            dropped_displays_examples.extend(_disp_metrics["dropped_examples"][:remaining])
 
-                        valid = True
-                        if d_type != "vector":
-                            if (d_width is None or d_height is None or
-                                not isinstance(d_width, int) or not isinstance(d_height, int) or
-                                d_width <= 0 or d_height <= 0):
-                                valid = False
-
-                        if not valid:
-                            log.warning(
-                                f"[mame_parser::parse_mame_xml] Dropping invalid display on {mame_name}: "
-                                f"type={d_type}, width={d_width}, height={d_height}, tag={d_tag}"
-                            )
-                            dropped_displays_total += 1
-                            if len(dropped_displays_examples) < 10:
-                                dropped_displays_examples.append({
-                                    "machine": mame_name,
-                                    "type": d_type,
-                                    "width": d_width,
-                                    "height": d_height,
-                                    "tag": d_tag,
-                                })
-                            continue
-
-                        displays_list.append({
-                            "tag": d_tag,
-                            "type": d_type,
-                            "rotate": d_rotate,
-                            "width": d_width,
-                            "height": d_height,
-                            "refresh_hz": d_refresh_hz,
-                        })
-
-                        display_types_overall_ctr[d_type or "unknown"] += 1
-                        display_tags_overall_ctr[d_tag or "unknown"] += 1
-
-                    display_count = len(displays_list)
 
                     # SAMPLES flags
                     sample_children = elem.findall("sample")

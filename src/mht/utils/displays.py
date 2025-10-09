@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from xml.etree.ElementTree import Element
 
 from mht.utils.chips import format_hz_3dp  # <-- import from chips
 
@@ -107,3 +108,92 @@ def displays_section_to_display(section: Dict[str, Any]) -> str:
         if hz:
             lines.append(hz)
     return "\n".join(lines)
+
+def extract_displays_for_parser(machine_elem: Element, mame_name: str, *, max_examples: int = 10
+                                ) -> Tuple[List[Dict[str, Any]], int, Dict[str, Any]]:
+    """
+    Extract and validate <display> nodes from a <machine> element.
+
+    Behaviour is kept identical to the inlined logic previously in mame_parser:
+    - Non-vector displays must have valid positive integer width/height, else they are dropped.
+    - VECTOR displays are allowed without width/height.
+    - rotate is parsed to int when numeric; otherwise None.
+    - refresh is parsed to float when numeric; otherwise None.
+    - type/tag normalised to lower-case (type) and stripped text (tag), allowing None.
+    - Returns both the display list and a small metrics bundle so the caller can
+      update global counters and dropped-display tracking without changing semantics.
+
+    Returns:
+        displays_list: List[dict] with keys: tag, type, rotate, width, height, refresh_hz
+        display_count: int
+        metrics: {
+            "types_overall": Dict[str,int],
+            "tags_overall": Dict[str,int],
+            "dropped_total": int,
+            "dropped_examples": List[dict]
+        }
+    """
+    displays_list: List[Dict[str, Any]] = []
+    types_overall: Dict[str, int] = {}
+    tags_overall: Dict[str, int] = {}
+    dropped_total = 0
+    dropped_examples: List[Dict[str, Any]] = []
+
+    for d in machine_elem.findall("display"):
+        d_type = (d.attrib.get("type") or "").strip().lower() or None
+        d_tag = (d.attrib.get("tag") or "").strip() or None
+
+        rot_attr = (d.attrib.get("rotate") or "").strip()
+        d_rotate = int(rot_attr) if rot_attr.isdigit() else None
+
+        w_attr = (d.attrib.get("width") or "").strip()
+        h_attr = (d.attrib.get("height") or "").strip()
+        d_width = int(w_attr) if w_attr.isdigit() else None
+        d_height = int(h_attr) if h_attr.isdigit() else None
+
+        r_attr = (d.attrib.get("refresh") or "").strip()
+        try:
+            d_refresh_hz = float(r_attr) if r_attr else None
+        except ValueError:
+            d_refresh_hz = None
+
+        valid = True
+        if d_type != "vector":
+            if (
+                d_width is None or d_height is None
+                or not isinstance(d_width, int) or not isinstance(d_height, int)
+                or d_width <= 0 or d_height <= 0
+            ):
+                valid = False
+
+        if not valid:
+            dropped_total += 1
+            if len(dropped_examples) < max_examples:
+                dropped_examples.append({
+                    "machine": mame_name,
+                    "type": d_type,
+                    "width": d_width,
+                    "height": d_height,
+                    "tag": d_tag,
+                })
+            continue
+
+        displays_list.append({
+            "tag": d_tag,
+            "type": d_type,
+            "rotate": d_rotate,
+            "width": d_width,
+            "height": d_height,
+            "refresh_hz": d_refresh_hz,
+        })
+
+        # Maintain the same overall counting behaviour (None -> "unknown")
+        types_overall[d_type or "unknown"] = types_overall.get(d_type or "unknown", 0) + 1
+        tags_overall[d_tag or "unknown"] = tags_overall.get(d_tag or "unknown", 0) + 1
+
+    return displays_list, len(displays_list), {
+        "types_overall": types_overall,
+        "tags_overall": tags_overall,
+        "dropped_total": dropped_total,
+        "dropped_examples": dropped_examples,
+    }
