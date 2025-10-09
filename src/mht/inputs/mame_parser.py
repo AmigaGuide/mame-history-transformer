@@ -41,6 +41,8 @@ from mht.utils.io import write_json
 from mht.utils.mame_xml import attr_text, attr_int, attr_yesno_bool, safe_int, element_text
 from mht.utils.mame_fields import normalise_year, normalise_manufacturer
 from mht.utils.displays import extract_displays_for_parser
+from mht.utils.controls import extract_controls_for_parser
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -259,7 +261,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     if manufacturer_key.strip().strip("-.,;:/()[]{}") == "":
                         manufacturer_key = "unknown"
 
-                    # INPUT
+                    # INPUT - Players
                     players_key = "unknown"
                     input_el = elem.find("input")
                     if input_el is not None:
@@ -269,40 +271,23 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         players_val = _int_or_none(input_el.attrib.get("players"))
                         players_key = _bucket_key_int(players_val)   
 
-                    controls_list = []
-                    if input_el is not None:
-                        for ctrl in input_el.findall("control"):
-                            c_type = (ctrl.attrib.get("type") or "").strip().lower() or None
+                    # INPUT - Controls
+                    controls_list, _ctrl_metrics = extract_controls_for_parser(input_el)
 
-                            player_attr = (ctrl.attrib.get("player") or "").strip()
-                            c_player = int(player_attr) if player_attr.isdigit() else None
+                    # Merge control metrics into your existing overall counters
+                    for k, v in _ctrl_metrics["type_overall"].items():
+                        control_type_overall_ctr[k] += v
+                    for k, v in _ctrl_metrics["ways_overall"].items():
+                        control_ways_overall_ctr[k] += v
+                    for k, v in _ctrl_metrics["ways2_overall"].items():
+                        control_ways2_overall_ctr[k] += v
+                    for k, v in _ctrl_metrics["ways3_overall"].items():
+                        control_ways3_overall_ctr[k] += v
+                    for k, v in _ctrl_metrics["buttons_overall"].items():
+                        control_buttons_overall_ctr[k] += v
+                    for k, v in _ctrl_metrics["reqbuttons_overall"].items():
+                        control_reqbuttons_overall_ctr[k] += v
 
-                            buttons_attr = (ctrl.attrib.get("buttons") or "").strip()
-                            c_buttons = int(buttons_attr) if buttons_attr.isdigit() else None
-
-                            reqbuttons_attr = (ctrl.attrib.get("reqbuttons") or "").strip()
-                            c_reqbuttons = int(reqbuttons_attr) if reqbuttons_attr.isdigit() else None
-
-                            c_ways = (ctrl.attrib.get("ways") or "").strip() or None
-                            c_ways2 = (ctrl.attrib.get("ways2") or "").strip() or None
-                            c_ways3 = (ctrl.attrib.get("ways3") or "").strip() or None
-
-                            controls_list.append({
-                                "player": c_player,
-                                "type": c_type,
-                                "buttons": c_buttons,
-                                "reqbuttons": c_reqbuttons,
-                                "ways": c_ways,
-                                "ways2": c_ways2,
-                                "ways3": c_ways3,
-                            })
-
-                            control_type_overall_ctr[(c_type or "unknown")] += 1
-                            control_ways_overall_ctr[(c_ways or "unknown").lower()] += 1
-                            control_ways2_overall_ctr[(c_ways2 or "unknown").lower()] += 1
-                            control_ways3_overall_ctr[(c_ways3 or "unknown").lower()] += 1
-                            control_buttons_overall_ctr[str(c_buttons) if c_buttons is not None else "unknown"] += 1
-                            control_reqbuttons_overall_ctr[str(c_reqbuttons) if c_reqbuttons is not None else "unknown"] += 1
 
                     # SOUND
                     sound_channels = None

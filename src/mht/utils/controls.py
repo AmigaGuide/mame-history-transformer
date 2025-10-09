@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+from xml.etree.ElementTree import Element
+
 
 __all__ = [
     "CONTROL_TYPE_LABELS",
@@ -140,3 +142,74 @@ def controls_section_to_display(section: Dict[str, Any]) -> str:
         btns = int(pp.get("buttons") or 0)
         lines.append("No Buttons" if btns <= 0 else f"{btns} {pluralise('Button', btns)}")
     return "\n".join(lines)
+
+def extract_controls_for_parser(input_el: Element | None) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, int]]]:
+    """
+    Extract <control> entries from an <input> element and return:
+      - controls_list: list of dicts with keys:
+        player, type, buttons, reqbuttons, ways, ways2, ways3
+      - metrics: per-field overall counters to merge at the caller:
+        {
+          "type_overall": Dict[str,int],
+          "ways_overall": Dict[str,int],
+          "ways2_overall": Dict[str,int],
+          "ways3_overall": Dict[str,int],
+          "buttons_overall": Dict[str,int],
+          "reqbuttons_overall": Dict[str,int],
+        }
+
+    Behaviour mirrors the original in mame_parser:
+    - type lowercased; empty → None in the per-control dict.
+    - numeric fields parsed when digits; else None in the per-control dict.
+    - overall counters use "unknown" for None/empty values.
+    """
+    controls_list: List[Dict[str, Any]] = []
+    metrics = {
+        "type_overall": {},
+        "ways_overall": {},
+        "ways2_overall": {},
+        "ways3_overall": {},
+        "buttons_overall": {},
+        "reqbuttons_overall": {},
+    }
+    if input_el is None:
+        return controls_list, metrics
+
+    def _count(bucket: Dict[str, int], key: str | None):
+        k = (key or "unknown")
+        bucket[k] = bucket.get(k, 0) + 1
+
+    for ctrl in input_el.findall("control"):
+        c_type = (ctrl.attrib.get("type") or "").strip().lower() or None
+
+        player_attr = (ctrl.attrib.get("player") or "").strip()
+        c_player = int(player_attr) if player_attr.isdigit() else None
+
+        buttons_attr = (ctrl.attrib.get("buttons") or "").strip()
+        c_buttons = int(buttons_attr) if buttons_attr.isdigit() else None
+
+        reqbuttons_attr = (ctrl.attrib.get("reqbuttons") or "").strip()
+        c_reqbuttons = int(reqbuttons_attr) if reqbuttons_attr.isdigit() else None
+
+        c_ways = (ctrl.attrib.get("ways") or "").strip() or None
+        c_ways2 = (ctrl.attrib.get("ways2") or "").strip() or None
+        c_ways3 = (ctrl.attrib.get("ways3") or "").strip() or None
+
+        controls_list.append({
+            "player": c_player,
+            "type": c_type,
+            "buttons": c_buttons,
+            "reqbuttons": c_reqbuttons,
+            "ways": c_ways,
+            "ways2": c_ways2,
+            "ways3": c_ways3,
+        })
+
+        _count(metrics["type_overall"], c_type)
+        _count(metrics["ways_overall"], (c_ways or "").lower() or None)
+        _count(metrics["ways2_overall"], (c_ways2 or "").lower() or None)
+        _count(metrics["ways3_overall"], (c_ways3 or "").lower() or None)
+        _count(metrics["buttons_overall"], str(c_buttons) if c_buttons is not None else None)
+        _count(metrics["reqbuttons_overall"], str(c_reqbuttons) if c_reqbuttons is not None else None)
+
+    return controls_list, metrics
