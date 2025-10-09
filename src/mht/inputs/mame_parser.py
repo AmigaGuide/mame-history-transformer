@@ -46,6 +46,12 @@ from mht.utils.chips import extract_chips_for_parser
 from mht.utils.roms import rom_count_and_bytes
 from mht.utils.media import disk_required_and_regions, summarise_device_refs
 from mht.utils.selection import build_parent_index
+from mht.utils.summaries import (
+    bucket_key_int,
+    sorted_numeric_keys_with_unknown_last,
+    sorted_alpha_with_unknown_last,
+    sort_numeric_str,
+)
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -63,19 +69,6 @@ def _int_or_none(s: str | None) -> int | None:
     s = (s or "").strip()
     return int(s) if s.isdigit() else None
 
-def _bucket_key_int(v: int | None) -> str:
-    """
-    Convert an optional int to a stable bucket key for counters.
-
-    Examples
-    --------
-    >>> _bucket_key_int(2)
-    '2'
-    >>> _bucket_key_int(None)
-    'unknown'
-    """            
-    return str(v) if v is not None else "unknown"
-
 def _yesno_str(flag: bool) -> str:
     """
     Map a boolean to the schema-required 'yes'/'no' string.
@@ -91,44 +84,6 @@ def _yesno_str(flag: bool) -> str:
         'yes' if True, else 'no'.
     """           
     return "yes" if flag else "no"
-
-def _sorted_numeric_keys_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
-    """Numeric ascending; non-digits rolled into 'other'; 'unknown' last."""
-    numeric = []
-    unknown = None
-    other = 0
-    for k, v in counter.items():
-        if k == "unknown":
-            unknown = v
-        elif k.isdigit():
-            numeric.append((int(k), v))
-        else:
-            other += v
-    numeric.sort(key=lambda t: t[0])
-    out: Dict[str, int] = {str(k): v for k, v in numeric}
-    if other:
-        out["other"] = other
-    if unknown is not None:
-        out["unknown"] = unknown
-    return out
-
-
-def _sorted_alpha_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
-    """Case-insensitive A–Z; 'unknown' last."""
-    items = [(k, v) for k, v in counter.items() if k != "unknown"]
-    items.sort(key=lambda kv: kv[0].lower())
-    out = {k: v for k, v in items}
-    if "unknown" in counter:
-        out["unknown"] = counter["unknown"]
-    return out
-
-
-def _sort_numeric_str(counter: Dict[str, int]) -> Dict[str, int]:
-    """Numeric-string keys ascending; caller appends 'unknown' if needed."""
-    items = [(int(k), v) for k, v in counter.items() if k.isdigit()]
-    items.sort(key=lambda t: t[0])
-    return {str(k): v for k, v in items}
-
 
 def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
     """
@@ -253,7 +208,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         #if players_attr.isdigit():
                         #    players_key = players_attr
                         players_val = _int_or_none(input_el.attrib.get("players"))
-                        players_key = _bucket_key_int(players_val)   
+                        players_key = bucket_key_int(players_val)   
 
                     # INPUT - Controls
                     controls_list, _ctrl_metrics = extract_controls_for_parser(input_el)
@@ -276,11 +231,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     sound_el = elem.find("sound")
                     if sound_el is not None:
                         channels_attr = (sound_el.attrib.get("channels") or "").strip()
-                        #if channels_attr.isdigit():
-                        #    sound_channels = int(channels_attr)
                         sound_channels = _int_or_none(sound_el.attrib.get("channels"))
-                    #sound_channels_per_machine_ctr[str(sound_channels) if sound_channels is not None else "unknown"] += 1
-                    sound_channels_per_machine_ctr[_bucket_key_int(sound_channels)] += 1
+                    sound_channels_per_machine_ctr[bucket_key_int(sound_channels)] += 1
 
                     # DEVICE REFS (samples/speaker)
                     device_ref_summary = summarise_device_refs(elem)
@@ -398,13 +350,13 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     # Build summary
     # ----------------------------
     def _build_summary():
-        years_dist = _sorted_numeric_keys_with_unknown_last(dict(years_ctr))
-        manuf_dist = _sorted_alpha_with_unknown_last(dict(manuf_ctr))
-        display_types_overall_dist = _sorted_alpha_with_unknown_last(dict(display_types_overall_ctr))
-        display_tags_overall_dist = _sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
+        years_dist = sorted_numeric_keys_with_unknown_last(dict(years_ctr))
+        manuf_dist = sorted_alpha_with_unknown_last(dict(manuf_ctr))
+        display_types_overall_dist = sorted_alpha_with_unknown_last(dict(display_types_overall_ctr))
+        display_tags_overall_dist = sorted_alpha_with_unknown_last(dict(display_tags_overall_ctr))
 
         def _numdist(counter):
-            dist = _sort_numeric_str(dict(counter))
+            dist = sort_numeric_str(dict(counter))
             if "unknown" in counter:
                 dist["unknown"] = counter["unknown"]
             return dist
@@ -416,7 +368,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         speakers_dist = _numdist(speakers_per_machine_ctr)
         sound_channels_dist = _numdist(sound_channels_per_machine_ctr)
 
-        disk_regions_overall_dist = _sorted_alpha_with_unknown_last(dict(disk_regions_overall_ctr))
+        disk_regions_overall_dist = sorted_alpha_with_unknown_last(dict(disk_regions_overall_ctr))
 
         years_sum = sum(years_dist.values())
         manufacturers_sum = sum(manuf_dist.values())
@@ -477,13 +429,13 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 },
                 "players": {"distribution": players_dist, "sum": players_sum},
                 "controls": {
-                    "types_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_type_overall_ctr)),
+                    "types_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_type_overall_ctr)),
                                       "sum": sum(dict(control_type_overall_ctr).values())},
-                    "ways_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_ways_overall_ctr)),
+                    "ways_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_ways_overall_ctr)),
                                      "sum": sum(dict(control_ways_overall_ctr).values())},
-                    "ways2_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_ways2_overall_ctr)),
+                    "ways2_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_ways2_overall_ctr)),
                                       "sum": sum(dict(control_ways2_overall_ctr).values())},
-                    "ways3_overall": {"distribution": _sorted_alpha_with_unknown_last(dict(control_ways3_overall_ctr)),
+                    "ways3_overall": {"distribution": sorted_alpha_with_unknown_last(dict(control_ways3_overall_ctr)),
                                       "sum": sum(dict(control_ways3_overall_ctr).values())},
                     "buttons_overall": {"distribution": _numdist(control_buttons_overall_ctr),
                                         "sum": sum(control_buttons_overall_ctr.values())},
@@ -499,7 +451,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 "speakers_per_machine": {"distribution": speakers_dist, "sum": speakers_sum},
                 "disk_regions_overall": {"distribution": disk_regions_overall_dist, "sum": disk_regions_overall_sum},
                 "disk_media_platforms_per_machine": {
-                    "distribution": _sort_numeric_str(dict(disk_media_platforms_per_machine_ctr)) | (
+                    "distribution": sort_numeric_str(dict(disk_media_platforms_per_machine_ctr)) | (
                         {"unknown": disk_media_platforms_per_machine_ctr["unknown"]}
                         if "unknown" in disk_media_platforms_per_machine_ctr else {}
                     ),

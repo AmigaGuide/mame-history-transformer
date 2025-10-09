@@ -187,3 +187,55 @@ def version_core(s: str | None) -> str | None:
         return None
     m = _VERSION_CORE_RX.search(s)
     return m.group(0) if m else None
+
+def bucket_key_int(v: int | None) -> str:
+    """
+    Convert an optional int to a stable counter/distribution key.
+    Returns the numeric string for ints, otherwise 'unknown'.
+    """
+    return str(v) if v is not None else "unknown"
+
+def sorted_numeric_keys_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
+    """
+    Return a dict with numeric-string keys sorted ascending,
+    any non-numeric keys (except 'unknown') merged into 'other',
+    and 'unknown' (if present) appended last.
+    """
+    numeric = []
+    unknown = None
+    other = 0
+    for k, v in counter.items():
+        if k == "unknown":
+            unknown = v
+        elif k.isdigit():
+            numeric.append((int(k), v))
+        else:
+            other += v
+    numeric.sort(key=lambda t: t[0])
+    out: Dict[str, int] = {str(k): v for k, v in numeric}
+    if other:
+        out["other"] = other
+    if unknown is not None:
+        out["unknown"] = unknown
+    return out
+
+def sorted_alpha_with_unknown_last(counter: Dict[str, int]) -> Dict[str, int]:
+    """
+    Return a dict with keys sorted A–Z case-insensitively,
+    placing 'unknown' (if present) at the end.
+    """
+    items = [(k, v) for k, v in counter.items() if k != "unknown"]
+    items.sort(key=lambda kv: kv[0].lower())
+    out = {k: v for k, v in items}
+    if "unknown" in counter:
+        out["unknown"] = counter["unknown"]
+    return out
+
+def sort_numeric_str(counter: Dict[str, int]) -> Dict[str, int]:
+    """
+    Return a new dict with only numeric-string keys sorted ascending.
+    Caller can append 'unknown' manually if needed.
+    """
+    items = [(int(k), v) for k, v in counter.items() if k.isdigit()]
+    items.sort(key=lambda t: t[0])
+    return {str(k): v for k, v in items}
