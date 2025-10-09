@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import Counter
 from typing import Iterable, Optional, Tuple, List, Dict, Any
+from xml.etree.ElementTree import Element
+
 
 __all__ = [
     "hz_to_human",
@@ -43,7 +45,6 @@ def hz_to_human(n: int | float | None) -> Optional[Tuple[float, str]]:
         return (v / kHz, "kHz")
     return (v, "Hz")
 
-
 def format_hz_3dp(hz: Any) -> Optional[str]:
     """
     Format a raw Hz value as '<value> Hz' with 3 decimal places.
@@ -57,7 +58,6 @@ def format_hz_3dp(hz: Any) -> Optional[str]:
         return None
     return f"{v:.3f} Hz"
 
-
 def _chip_label(name: Optional[str], clock_hz: Any) -> str:
     """
     Build a human-readable chip label, e.g. 'Z80 @ 3.579 MHz'.
@@ -66,7 +66,6 @@ def _chip_label(name: Optional[str], clock_hz: Any) -> str:
     nm = (name or "").strip()
     human = hz_to_human(clock_hz)
     return f"{nm} @ {human[0]:.3f} {human[1]}" if human else nm
-
 
 def _prefix_multiples(labels: Iterable[str]) -> List[str]:
     """
@@ -81,7 +80,6 @@ def _prefix_multiples(labels: Iterable[str]) -> List[str]:
         n = counts[lab.casefold()]
         out.append(f"({n}x) {lab}" if n > 1 else lab)
     return out
-
 
 def sum_device_speakers(device_ref: Any) -> int:
     """
@@ -100,7 +98,6 @@ def sum_device_speakers(device_ref: Any) -> int:
             continue
     return total
 
-
 def _has_samples_flag(device_ref: Any) -> bool:
     """
     Return True if any device_ref entry signals samples are required.
@@ -113,7 +110,6 @@ def _has_samples_flag(device_ref: Any) -> bool:
         if s in {"yes", "true", "1", "y"}:
             return True
     return False
-
 
 def build_chips_section(
     chips: Optional[List[Dict[str, Any]]],
@@ -186,7 +182,6 @@ def build_chips_section(
         "audio_channels": chn,
         "speakers": int(speaker_count),
     }
-
 
 def render_chips_display(
     chips_raw: dict,
@@ -296,3 +291,43 @@ def render_chips_display(
         out["audio_chips"].extend(tail)
 
     return out
+
+def extract_chips_for_parser(machine_elem: Element) -> Tuple[List[Dict[str, Any]], int, int]:
+    """
+    Extract <chip> entries from a <machine> element.
+
+    Behaviour is kept identical to the original in mame_parser:
+    - type lowercased (e.g., "cpu", "audio"); empty -> "" then normalised to lower
+    - name/tag passed through (name stripped)
+    - clock parsed to int when purely digits; else None
+    - counts incremented for ctype == "cpu" and ctype == "audio"
+
+    Returns:
+        chips_list: list of dicts with keys: type, name, tag, clock_hz
+        cpu_count: int
+        audio_count: int
+    """
+    cpu_count = 0
+    audio_count = 0
+    chips_list: List[Dict[str, Any]] = []
+
+    for chip in machine_elem.findall("chip"):
+        ctype = (chip.attrib.get("type") or "").strip().lower()
+        chip_name = (chip.attrib.get("name") or "").strip()
+        tag = chip.attrib.get("tag")
+        clock_attr = (chip.attrib.get("clock") or "").strip()
+        clock_hz = int(clock_attr) if clock_attr.isdigit() else None
+
+        if ctype == "cpu":
+            cpu_count += 1
+        elif ctype == "audio":
+            audio_count += 1
+
+        chips_list.append({
+            "type": ctype,
+            "name": chip_name,
+            "tag": tag,
+            "clock_hz": clock_hz,
+        })
+
+    return chips_list, cpu_count, audio_count

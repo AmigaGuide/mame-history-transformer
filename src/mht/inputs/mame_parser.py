@@ -42,6 +42,7 @@ from mht.utils.mame_xml import attr_text, attr_int, attr_yesno_bool, safe_int, e
 from mht.utils.mame_fields import normalise_year, normalise_manufacturer
 from mht.utils.displays import extract_displays_for_parser
 from mht.utils.controls import extract_controls_for_parser
+from mht.utils.chips import extract_chips_for_parser
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -288,7 +289,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     for k, v in _ctrl_metrics["reqbuttons_overall"].items():
                         control_reqbuttons_overall_ctr[k] += v
 
-
                     # SOUND
                     sound_channels = None
                     sound_el = elem.find("sound")
@@ -312,25 +312,9 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     speakers_per_machine_ctr[str(speaker_ref_count)] += 1
 
                     # CHIPS
-                    cpu_count = 0
-                    audio_count = 0
-                    chips_list = []
-                    for chip in elem.findall("chip"):
-                        ctype = (chip.attrib.get("type") or "").strip().lower()
-                        chip_name = (chip.attrib.get("name") or "").strip()
-                        tag = chip.attrib.get("tag")
-                        clock_attr = (chip.attrib.get("clock") or "").strip()
-                        clock_hz = int(clock_attr) if clock_attr.isdigit() else None
+                    chips_list, cpu_count, audio_count = extract_chips_for_parser(elem)
 
-                        if ctype == "cpu":
-                            cpu_count += 1
-                        elif ctype == "audio":
-                            audio_count += 1
-
-                        chips_list.append({"type": ctype, "name": chip_name, "tag": tag, "clock_hz": clock_hz})
-
-
-                    # DISPLAYS (extracted to utils)
+                    # DISPLAYS
                     displays_list, display_count, _disp_metrics = extract_displays_for_parser(elem, mame_name)
 
                     # Merge display metrics into the existing overall counters and dropped stats
@@ -345,7 +329,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         remaining = max(0, 10 - len(dropped_displays_examples))
                         if remaining:
                             dropped_displays_examples.extend(_disp_metrics["dropped_examples"][:remaining])
-
 
                     # SAMPLES flags
                     sample_children = elem.findall("sample")
