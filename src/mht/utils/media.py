@@ -10,6 +10,7 @@ Includes:
 """
 
 from __future__ import annotations
+
 import re
 from collections import Counter
 from typing import Iterable, Sequence, Dict, List, Tuple, Optional
@@ -158,3 +159,12 @@ def extract_sound_channels(machine_elem: Element) -> Optional[int]:
         return None
     raw = (sound_el.attrib.get("channels") or "").strip()
     return int(raw) if raw.isdigit() else None
+
+def requires_samples_flag(machine_elem: Element, sampleof: str | None) -> bool:
+    """
+    Return True if machine requires samples: either sampleof is set or there are <sample> children.
+    Matches the original parser logic.
+    """
+    if sampleof:
+        return True
+    return bool(machine_elem.findall("sample"))

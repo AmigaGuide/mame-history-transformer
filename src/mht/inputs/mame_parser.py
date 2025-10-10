@@ -38,14 +38,14 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
-from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text, int_or_none
+from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text, int_or_none, capture_root_attrs
 # Backwards-compat for older tests that import _int_or_none from this module
 _int_or_none = int_or_none
 from mht.utils.displays import extract_displays_for_parser, extend_examples_capped
 from mht.utils.controls import extract_controls_for_parser, extract_players_bucket
 from mht.utils.chips import extract_chips_for_parser
 from mht.utils.roms import rom_count_and_bytes
-from mht.utils.media import disk_required_and_regions, summarise_device_refs, extract_sound_channels
+from mht.utils.media import disk_required_and_regions, summarise_device_refs, extract_sound_channels, requires_samples_flag
 from mht.utils.selection import build_parent_index
 from mht.utils.summaries import (
     bucket_key_int,
@@ -59,6 +59,7 @@ from mht.utils.booleans import yesno_str
 # Backwards-compat for older tests that import _yesno_str from this module
 _yesno_str = yesno_str
 from mht.utils.records import build_mame_machine_record
+from mht.utils.strings import year_bucket_key, manufacturer_bucket_key
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -145,9 +146,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             current_machine = None
 
             for event, elem in it:
-                if event == "start" and elem.tag == "mame":
-                    mame_build = elem.attrib.get("build")
-                    mame_mameconfig = elem.attrib.get("mameconfig")
+                #if event == "start" and elem.tag == "mame":
+                #    mame_build = elem.attrib.get("build")
+                #    mame_mameconfig = elem.attrib.get("mameconfig")
+                b, mc = capture_root_attrs(event, elem)
+                if b is not None or mc is not None:
+                    mame_build, mame_mameconfig = b, mc
 
                 if event == "start" and elem.tag == "machine":
                     current_machine = elem
@@ -173,12 +177,14 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     manufacturer_raw = element_text(elem, "manufacturer", default="")
 
                     # normalised keys for dists
-                    year_key = "unknown"
-                    if year_raw and len(year_raw) == 4 and year_raw.isdigit():
-                        year_key = year_raw
-                    manufacturer_key = manufacturer_raw if manufacturer_raw else "unknown"
-                    if manufacturer_key.strip().strip("-.,;:/()[]{}") == "":
-                        manufacturer_key = "unknown"
+                    #year_key = "unknown"
+                    #if year_raw and len(year_raw) == 4 and year_raw.isdigit():
+                    #    year_key = year_raw
+                    #manufacturer_key = manufacturer_raw if manufacturer_raw else "unknown"
+                    #if manufacturer_key.strip().strip("-.,;:/()[]{}") == "":
+                    #    manufacturer_key = "unknown"
+                    year_key = year_bucket_key(year_raw)
+                    manufacturer_key = manufacturer_bucket_key(manufacturer_raw)
 
                     # INPUT - Players
                     input_el = elem.find("input")
@@ -235,12 +241,14 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         extend_examples_capped(dropped_displays_examples, _disp_metrics["dropped_examples"], cap=10)
 
                     # SAMPLES flags
-                    sample_children = elem.findall("sample")
-                    requires_samples = bool(sampleof or sample_children)
-                    if requires_samples:
+                    #sample_children = elem.findall("sample")
+                    #requires_samples = bool(sampleof or sample_children)
+                    #if requires_samples:
+                    #    total_requires_samples += 1
+                    if requires_samples_flag(elem, sampleof):
                         total_requires_samples += 1
 
-                    # ROMS (extracted to utils)
+                    # ROMS
                     rom_count, rom_bytes_total = rom_count_and_bytes(elem)
 
                     # DISKS (regions only)

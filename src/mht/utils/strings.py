@@ -1,5 +1,5 @@
-# src/mht/utils/strings.py
 from __future__ import annotations
+
 from typing import List
 import re
 
@@ -44,3 +44,21 @@ def format_manufacturers_for_wiki(raw: str | None) -> str:
     if not parts:
         return ""
     return join_with_ampersand(parts)
+
+def year_bucket_key(year_text: str | None) -> str:
+    """
+    Return a summary bucket key for the <year> string: 'YYYY' when 4 digits, else 'unknown'.
+    """
+    s = (year_text or "").strip()
+    return s if len(s) == 4 and s.isdigit() else "unknown"
+
+def manufacturer_bucket_key(text: str | None) -> str:
+    """
+    Return a summary bucket key for <manufacturer>: cleaned string or 'unknown' if effectively empty.
+    Mirrors the parser's punctuation-trim behaviour.
+    """
+    s = (text or "").strip()
+    if not s:
+        return "unknown"
+    cleaned = s.strip("-.,;:/()[]{}").strip()
+    return cleaned if cleaned else "unknown"

@@ -8,7 +8,7 @@ Notable helpers:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 def attr_text(el, name: str, *, default: str | None = None) -> str | None:
@@ -91,3 +91,11 @@ def int_or_none(s: str | None) -> int | None:
     """
     s = (s or "").strip()
     return int(s) if s.isdigit() else None
+
+def capture_root_attrs(event: str, elem) -> Tuple[str | None, str | None]:
+    """
+    When iterparse hits the <mame> start, extract ('build', 'mameconfig'), else (None, None).
+    """
+    if event == "start" and getattr(elem, "tag", None) == "mame":
+        return elem.attrib.get("build"), elem.attrib.get("mameconfig")
+    return None, None
