@@ -58,6 +58,7 @@ from mht.utils.validator import check_mame_parse_invariants
 from mht.utils.booleans import yesno_str
 # Backwards-compat for older tests that import _yesno_str from this module
 _yesno_str = yesno_str
+from mht.utils.records import build_mame_machine_record
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -286,32 +287,31 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     manufacturer_out = (manufacturer_raw or "")
 
                     # Per-machine record
-                    machines_out[mame_name] = {
-                        "description": description,
-                        "sourcefile": sourcefile,
-                        "cloneof": cloneof,
-                        "isbios": isbios,
-                        "isdevice": isdevice,
-                        "ismechanical": ismechanical,
-                        "year": year_out,                                                                     
-                        "manufacturer": manufacturer_out,                       
-                        "rom_count": rom_count,
-                        "rom_bytes_total": rom_bytes_total if rom_count else 0,
-                        "disk_required": disk_required,
-                        "disk_regions": disk_regions,
-                        "disk_media_platforms_count": disk_media_platforms_count,
-                        "cpu_count": cpu_count,
-                        "sound_chip_count": audio_count,
-                        "chips": chips_list,
-                        "sound_channels": sound_channels,
-                        "device_ref": [device_ref_summary],
-                        "sampleof": sampleof,
-                        "display_count": display_count,
-                        "displays": displays_list,
-                        #"players": None if players_key == "unknown" else int(players_key),
-                        "players": players_value,
-                        "controls": controls_list,
-                    }
+                    machines_out[mame_name] = build_mame_machine_record(
+                        description=description,
+                        sourcefile=sourcefile,
+                        cloneof=cloneof,
+                        isbios=isbios,
+                        isdevice=isdevice,
+                        ismechanical=ismechanical,
+                        year=year_out,
+                        manufacturer=manufacturer_out,
+                        rom_count=rom_count,
+                        rom_bytes_total=rom_bytes_total,
+                        disk_required=disk_required,
+                        disk_regions=disk_regions,
+                        disk_media_platforms_count=disk_media_platforms_count,
+                        cpu_count=cpu_count,
+                        sound_chip_count=audio_count,
+                        chips=chips_list,
+                        sound_channels=sound_channels,
+                        device_ref_summary=device_ref_summary,
+                        sampleof=sampleof,
+                        display_count=display_count,
+                        displays=displays_list,
+                        players_value=players_value,   # from extract_players_bucket
+                        controls=controls_list,
+                    )
 
                     if max_records and total_machines >= max_records:
                         elem.clear()

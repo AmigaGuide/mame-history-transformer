@@ -10,7 +10,7 @@ out of transformer.py while preserving identical behaviour.
 """
 
 from __future__ import annotations
-from typing import Dict, Any, Tuple, List, Set
+from typing import Dict, Any, Tuple, List, Set, Optional
 from pathlib import Path
 
 # Local utilities
@@ -288,3 +288,63 @@ def project_for_raw(machine: str, rec: dict) -> dict:
         if k in rec: out[k] = rec[k]
     if rec.get("gh_ids"): out["gh_ids"] = rec["gh_ids"]
     return out
+
+def build_mame_machine_record(
+    *,
+    description: Optional[str],
+    sourcefile: str,
+    cloneof: Optional[str],
+    isbios: str,
+    isdevice: str,
+    ismechanical: str,
+    year: str,
+    manufacturer: str,
+    rom_count: int,
+    rom_bytes_total: int,
+    disk_required: str,
+    disk_regions: List[str],
+    disk_media_platforms_count: int,
+    cpu_count: int,
+    sound_chip_count: int,
+    chips: List[Dict[str, Any]],
+    sound_channels: Optional[int],
+    device_ref_summary: Dict[str, Any],
+    sampleof: str,
+    display_count: int,
+    displays: List[Dict[str, Any]],
+    players_value: Optional[int],
+    controls: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Assemble the per-machine record dict for MAME parsing.
+
+    Behaviour is identical to the previous inline construction in mame_parser:
+    - Leaves `description` as-is (may be None; text-field normalisation handled elsewhere).
+    - Forces `rom_bytes_total` to 0 when `rom_count == 0`.
+    - Wraps device_ref_summary as a single-element list under 'device_ref'.
+    """
+    return {
+        "description": description,
+        "sourcefile": sourcefile,
+        "cloneof": cloneof,
+        "isbios": isbios,
+        "isdevice": isdevice,
+        "ismechanical": ismechanical,
+        "year": year,
+        "manufacturer": manufacturer,
+        "rom_count": rom_count,
+        "rom_bytes_total": rom_bytes_total if rom_count else 0,
+        "disk_required": disk_required,
+        "disk_regions": disk_regions,
+        "disk_media_platforms_count": disk_media_platforms_count,
+        "cpu_count": cpu_count,
+        "sound_chip_count": sound_chip_count,
+        "chips": chips,
+        "sound_channels": sound_channels,
+        "device_ref": [device_ref_summary],
+        "sampleof": sampleof,
+        "display_count": display_count,
+        "displays": displays,
+        "players": players_value,
+        "controls": controls,
+    }
