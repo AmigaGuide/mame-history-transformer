@@ -210,7 +210,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
                     # DEVICE REFS (samples/speaker)
                     device_ref_summary = summarise_device_refs(elem)
-                    speakers_per_machine_ctr[str(device_ref_summary["speaker"])] += 1
+                    #speakers_per_machine_ctr[str(device_ref_summary["speaker"])] += 1
+                    speakers_per_machine_ctr[bucket_key_int(device_ref_summary["speaker"])] += 1
 
                     # CHIPS
                     chips_list, cpu_count, audio_count = extract_chips_for_parser(elem)
@@ -248,7 +249,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         disk_regions_overall_ctr[k] += v
 
                     disk_media_platforms_count = len(disk_regions)
-                    disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
+                    #disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
+                    disk_media_platforms_per_machine_ctr[bucket_key_int(disk_media_platforms_count)] += 1
                     examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
                     if len(examples) < 5:
                         examples.append(mame_name)
@@ -272,9 +274,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     years_ctr[year_key] += 1
                     manuf_ctr[manufacturer_key] += 1
                     players_ctr[players_key] += 1
-                    cpus_per_machine_ctr[str(cpu_count)] += 1
-                    sound_devices_per_machine_ctr[str(audio_count)] += 1
-                    displays_per_machine_ctr[str(display_count)] += 1
+                    #cpus_per_machine_ctr[str(cpu_count)] += 1
+                    cpus_per_machine_ctr[bucket_key_int(cpu_count)] += 1
+                    #sound_devices_per_machine_ctr[str(audio_count)] += 1
+                    sound_devices_per_machine_ctr[bucket_key_int(audio_count)] += 1
+                    #displays_per_machine_ctr[str(display_count)] += 1
+                    displays_per_machine_ctr[bucket_key_int(display_count)] += 1
 
                     # after computing year_raw / manufacturer_raw:
                     year_out         = (year_raw or "")
