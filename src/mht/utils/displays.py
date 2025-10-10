@@ -197,3 +197,16 @@ def extract_displays_for_parser(machine_elem: Element, mame_name: str, *, max_ex
         "dropped_total": dropped_total,
         "dropped_examples": dropped_examples,
     }
+
+def extend_examples_capped(dst: List[Dict[str, Any]], new: List[Dict[str, Any]], cap: int = 10) -> None:
+    """
+    Extend `dst` with items from `new` without exceeding `cap` total items.
+
+    Mutates `dst` in place. No return value.
+    Behaviour mirrors the previous inlined logic in mame_parser:
+    - If dst already at/over cap: do nothing.
+    - Otherwise, append up to (cap - len(dst)) entries from `new`.
+    """
+    remaining = max(0, cap - len(dst))
+    if remaining:
+        dst.extend(new[:remaining])

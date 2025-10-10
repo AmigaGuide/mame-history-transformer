@@ -41,7 +41,7 @@ from mht.utils.io import write_json
 from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text, int_or_none
 # Backwards-compat for older tests that import _int_or_none from this module
 _int_or_none = int_or_none
-from mht.utils.displays import extract_displays_for_parser
+from mht.utils.displays import extract_displays_for_parser, extend_examples_capped
 from mht.utils.controls import extract_controls_for_parser, extract_players_bucket
 from mht.utils.chips import extract_chips_for_parser
 from mht.utils.roms import rom_count_and_bytes
@@ -227,9 +227,10 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     dropped_displays_total += _disp_metrics["dropped_total"]
                     if _disp_metrics["dropped_examples"]:
                         # Keep your original cap of 10 total examples
-                        remaining = max(0, 10 - len(dropped_displays_examples))
-                        if remaining:
-                            dropped_displays_examples.extend(_disp_metrics["dropped_examples"][:remaining])
+                        #remaining = max(0, 10 - len(dropped_displays_examples))
+                        #if remaining:
+                        #    dropped_displays_examples.extend(_disp_metrics["dropped_examples"][:remaining])
+                        extend_examples_capped(dropped_displays_examples, _disp_metrics["dropped_examples"], cap=10)
 
                     # SAMPLES flags
                     sample_children = elem.findall("sample")
