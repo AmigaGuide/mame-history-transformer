@@ -1,3 +1,13 @@
+"""
+Control and input helpers for MAME <input> parsing.
+
+Includes:
+- extract_controls_for_parser(): normalises <control> entries and produces
+  per-field metrics for overall distributions.
+- extract_players_bucket(): parses <input players="..."> into a bucket key and
+  an optional integer value.
+"""
+
 from __future__ import annotations
 
 from collections import Counter

@@ -1,3 +1,11 @@
+"""
+XML accessors and small normalisers for MAME XML parsing.
+
+Notable helpers:
+- element_text(), attr_text(), attr_yesno_bool(): safe element/attribute readers.
+- int_or_none(): strict integer parser for numeric attributes (digits only).
+"""
+
 from __future__ import annotations
 
 from typing import Any, Optional

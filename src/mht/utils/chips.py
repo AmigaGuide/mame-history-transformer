@@ -1,3 +1,11 @@
+"""
+Chip extraction helpers for MAME <machine> nodes.
+
+Includes:
+- extract_chips_for_parser(): returns a chip list and CPU/audio counts, preserving
+  the original output shape and counting semantics.
+"""
+
 from __future__ import annotations
 
 from collections import Counter

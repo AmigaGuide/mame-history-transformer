@@ -1,3 +1,12 @@
+"""
+Display extraction and QA helpers for MAME <machine> nodes.
+
+Includes:
+- extract_displays_for_parser(): builds the per-machine 'displays' list with
+  validation rules identical to the original parser.
+- extend_examples_capped(): utility to cap dropped-display example logs.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple

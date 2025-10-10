@@ -1,3 +1,14 @@
+"""
+Media/device helpers for disks, samples, speakers, and sound channels.
+
+Includes:
+- disk_required_and_regions(): returns 'yes'/'no', unique sorted regions, and
+  overall per-region counts.
+- summarise_device_refs(): summarises <device_ref name="samples|speaker"> into
+  {"samples": "yes"/"no", "speaker": int}.
+- extract_sound_channels(): parses <sound channels="..."> into Optional[int].
+"""
+
 from __future__ import annotations
 import re
 from collections import Counter

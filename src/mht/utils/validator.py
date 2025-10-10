@@ -1,3 +1,11 @@
+"""
+Warning-only invariant checks for parsed outputs.
+
+Includes:
+- check_mame_parse_invariants(): cross-checks per-machine records against
+  aggregated counters and emits warnings when mismatches are detected.
+"""
+
 from __future__ import annotations
 
 import json

@@ -1,3 +1,13 @@
+"""
+Summary shaping utilities and the MAME summary builder.
+
+Includes:
+- bucket_key_int(): stable key for optional ints ('unknown' vs 'N').
+- sorted_* helpers: produce deterministic distributions with 'unknown' last.
+- build_mame_summary(): constructs the totals/QA summary document used by the
+  CLI validator and provenance outputs.
+"""
+
 from __future__ import annotations
 from typing import Dict, Any, List, Set
 import re

@@ -1,4 +1,11 @@
-# src/mht/utils/roms.py
+"""
+ROM aggregation helpers.
+
+Includes:
+- rom_count_and_bytes(): counts <rom> children and sums numeric size attributes
+  (non-numeric sizes ignored), returning (count, total_bytes).
+"""
+
 from __future__ import annotations
 from collections import Counter
 from typing import Sequence, Tuple

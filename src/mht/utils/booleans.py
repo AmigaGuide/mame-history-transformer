@@ -1,3 +1,11 @@
+"""
+Boolean parsing and formatting helpers.
+
+Includes:
+- truthy_flag(): tolerant bool coercion from common string/number forms.
+- yesno_str(): canonical 'yes'/'no' formatter for booleans across outputs.
+"""
+
 from __future__ import annotations
 
 _TRUES = {"1","true","yes","y","t"}
