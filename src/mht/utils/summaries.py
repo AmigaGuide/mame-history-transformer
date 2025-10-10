@@ -9,7 +9,7 @@ Includes:
 """
 
 from __future__ import annotations
-from typing import Dict, Any, List, Set, Optional
+from typing import Dict, Any, List, Set, Optional, Tuple
 import re
 from collections import Counter
 
@@ -474,3 +474,50 @@ def update_counters(
     examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
     if len(examples) < 5:
         examples.append(mame_name)
+
+def update_totals(
+    total_machines: int,
+    total_parents: int,
+    total_clones: int,
+    total_isbios: int,
+    total_isdevice: int,
+    total_ismechanical: int,
+    total_requires_samples: int,
+    *,
+    cloneof: str | None,
+    isbios: str,
+    isdevice: str,
+    ismechanical: str,
+    requires_samples: bool,
+) -> Tuple[int, int, int, int, int, int, int]:
+    """
+    Apply one machine's contributions to the running totals.
+
+    - Increments total_machines by 1.
+    - Classifies parent vs clone using 'cloneof'.
+    - Adds to is* counts when string flags are 'yes'.
+    - Adds to total_requires_samples when True.
+    """
+    total_machines += 1
+    if cloneof:
+        total_clones += 1
+    else:
+        total_parents += 1
+    if isbios == "yes":
+        total_isbios += 1
+    if isdevice == "yes":
+        total_isdevice += 1
+    if ismechanical == "yes":
+        total_ismechanical += 1
+    if requires_samples:
+        total_requires_samples += 1
+
+    return (
+        total_machines,
+        total_parents,
+        total_clones,
+        total_isbios,
+        total_isdevice,
+        total_ismechanical,
+        total_requires_samples,
+    )

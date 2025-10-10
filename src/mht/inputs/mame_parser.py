@@ -54,6 +54,7 @@ from mht.utils.summaries import (
     sort_numeric_str,
     build_mame_summary,
     update_counters,
+    update_totals,
 )
 from mht.utils.validator import check_mame_parse_invariants
 from mht.utils.booleans import yesno_str
@@ -246,8 +247,37 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     #requires_samples = bool(sampleof or sample_children)
                     #if requires_samples:
                     #    total_requires_samples += 1
-                    if requires_samples_flag(elem, sampleof):
-                        total_requires_samples += 1
+                    #if requires_samples_flag(elem, sampleof):
+                    #    total_requires_samples += 1
+
+                    # requires-samples (unchanged logic, just capture the bool once)
+                    req_samples = requires_samples_flag(elem, sampleof)
+
+                    (
+                        total_machines,
+                        total_parents,
+                        total_clones,
+                        total_isbios,
+                        total_isdevice,
+                        total_ismechanical,
+                        total_requires_samples,
+                    ) = update_totals(
+                        total_machines,
+                        total_parents,
+                        total_clones,
+                        total_isbios,
+                        total_isdevice,
+                        total_ismechanical,
+                        total_requires_samples,
+                        cloneof=cloneof,
+                        isbios=isbios,
+                        isdevice=isdevice,
+                        ismechanical=ismechanical,
+                        requires_samples=req_samples,
+                    )
+
+                    if (total_machines % 5000) == 0:
+                        log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
 
                     # ROMS
                     rom_count, rom_bytes_total = rom_count_and_bytes(elem)
@@ -291,20 +321,20 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     )
 
                     # Totals
-                    total_machines += 1
-                    if (total_machines % 5000) == 0:
-                        log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
+                    #total_machines += 1
+                    #if (total_machines % 5000) == 0:
+                    #    log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
 
-                    if cloneof:
-                        total_clones += 1
-                    else:
-                        total_parents += 1
-                    if isbios == "yes":
-                        total_isbios += 1
-                    if isdevice == "yes":
-                        total_isdevice += 1
-                    if ismechanical == "yes":
-                        total_ismechanical += 1
+                    #if cloneof:
+                    #    total_clones += 1
+                    #else:
+                    #    total_parents += 1
+                    #if isbios == "yes":
+                    #    total_isbios += 1
+                    #if isdevice == "yes":
+                    #    total_isdevice += 1
+                    #if ismechanical == "yes":
+                    #    total_ismechanical += 1
 
                     #years_ctr[year_key] += 1
                     #manuf_ctr[manufacturer_key] += 1
