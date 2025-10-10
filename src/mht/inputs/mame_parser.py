@@ -53,6 +53,7 @@ from mht.utils.summaries import (
     sorted_alpha_with_unknown_last,
     sort_numeric_str,
     build_mame_summary,
+    update_counters,
 )
 from mht.utils.validator import check_mame_parse_invariants
 from mht.utils.booleans import yesno_str
@@ -213,12 +214,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     #if sound_el is not None:
                     #    channels_attr = (sound_el.attrib.get("channels") or "").strip()
                     #    sound_channels = _int_or_none(sound_el.attrib.get("channels"))
-                    sound_channels_per_machine_ctr[bucket_key_int(sound_channels)] += 1
+                    #sound_channels_per_machine_ctr[bucket_key_int(sound_channels)] += 1
 
                     # DEVICE REFS (samples/speaker)
                     device_ref_summary = summarise_device_refs(elem)
                     #speakers_per_machine_ctr[str(device_ref_summary["speaker"])] += 1
-                    speakers_per_machine_ctr[bucket_key_int(device_ref_summary["speaker"])] += 1
+                    #speakers_per_machine_ctr[bucket_key_int(device_ref_summary["speaker"])] += 1
 
                     # CHIPS
                     chips_list, cpu_count, audio_count = extract_chips_for_parser(elem)
@@ -254,15 +255,40 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     # DISKS (regions only)
                     disk_required, disk_regions, _regions_overall = disk_required_and_regions(elem)
                     # Preserve the original per-disk region counting behaviour
-                    for k, v in _regions_overall.items():
-                        disk_regions_overall_ctr[k] += v
+                    #for k, v in _regions_overall.items():
+                    #    disk_regions_overall_ctr[k] += v
 
                     disk_media_platforms_count = len(disk_regions)
                     #disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
-                    disk_media_platforms_per_machine_ctr[bucket_key_int(disk_media_platforms_count)] += 1
-                    examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
-                    if len(examples) < 5:
-                        examples.append(mame_name)
+                    #disk_media_platforms_per_machine_ctr[bucket_key_int(disk_media_platforms_count)] += 1
+                    #examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
+                    #if len(examples) < 5:
+                    #    examples.append(mame_name)
+
+                    update_counters(
+                        year_key=year_key,
+                        manufacturer_key=manufacturer_key,
+                        players_key=players_key,
+                        cpu_count=cpu_count,
+                        audio_count=audio_count,
+                        display_count=display_count,
+                        sound_channels=sound_channels,
+                        speaker_ref_count=device_ref_summary["speaker"],
+                        disk_regions_overall_add=_regions_overall,
+                        disk_media_platforms_count=disk_media_platforms_count,
+                        mame_name=mame_name,
+                        years_ctr=years_ctr,
+                        manuf_ctr=manuf_ctr,
+                        players_ctr=players_ctr,
+                        cpus_per_machine_ctr=cpus_per_machine_ctr,
+                        sound_devices_per_machine_ctr=sound_devices_per_machine_ctr,
+                        displays_per_machine_ctr=displays_per_machine_ctr,
+                        sound_channels_per_machine_ctr=sound_channels_per_machine_ctr,
+                        speakers_per_machine_ctr=speakers_per_machine_ctr,
+                        disk_regions_overall_ctr=disk_regions_overall_ctr,
+                        disk_media_platforms_per_machine_ctr=disk_media_platforms_per_machine_ctr,
+                        disk_media_examples=disk_media_examples,
+                    )
 
                     # Totals
                     total_machines += 1
@@ -280,15 +306,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     if ismechanical == "yes":
                         total_ismechanical += 1
 
-                    years_ctr[year_key] += 1
-                    manuf_ctr[manufacturer_key] += 1
-                    players_ctr[players_key] += 1
+                    #years_ctr[year_key] += 1
+                    #manuf_ctr[manufacturer_key] += 1
+                    #players_ctr[players_key] += 1
                     #cpus_per_machine_ctr[str(cpu_count)] += 1
-                    cpus_per_machine_ctr[bucket_key_int(cpu_count)] += 1
+                    #cpus_per_machine_ctr[bucket_key_int(cpu_count)] += 1
                     #sound_devices_per_machine_ctr[str(audio_count)] += 1
-                    sound_devices_per_machine_ctr[bucket_key_int(audio_count)] += 1
+                    #sound_devices_per_machine_ctr[bucket_key_int(audio_count)] += 1
                     #displays_per_machine_ctr[str(display_count)] += 1
-                    displays_per_machine_ctr[bucket_key_int(display_count)] += 1
+                    #displays_per_machine_ctr[bucket_key_int(display_count)] += 1
 
                     # after computing year_raw / manufacturer_raw:
                     year_out         = (year_raw or "")

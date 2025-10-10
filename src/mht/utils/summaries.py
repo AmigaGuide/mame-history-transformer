@@ -9,7 +9,7 @@ Includes:
 """
 
 from __future__ import annotations
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Optional
 import re
 from collections import Counter
 
@@ -23,6 +23,7 @@ except Exception:  # pragma: no cover
 
 
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
+
 
 def build_transform_header(
     *,
@@ -422,3 +423,54 @@ def build_mame_summary(
         doc.setdefault("anomalies", {}).setdefault("dropped_displays", legacy_drop)
 
     return doc
+
+def update_counters(
+    *,
+    # per-machine inputs
+    year_key: str,
+    manufacturer_key: str,
+    players_key: str,
+    cpu_count: int,
+    audio_count: int,
+    display_count: int,
+    sound_channels: Optional[int],
+    speaker_ref_count: int,
+    disk_regions_overall_add: Dict[str, int],
+    disk_media_platforms_count: int,
+    mame_name: str,
+    # counters to mutate
+    years_ctr: Counter,
+    manuf_ctr: Counter,
+    players_ctr: Counter,
+    cpus_per_machine_ctr: Counter,
+    sound_devices_per_machine_ctr: Counter,
+    displays_per_machine_ctr: Counter,
+    sound_channels_per_machine_ctr: Counter,
+    speakers_per_machine_ctr: Counter,
+    disk_regions_overall_ctr: Counter,
+    disk_media_platforms_per_machine_ctr: Counter,
+    disk_media_examples: Dict[str, list],
+) -> None:
+    """
+    Mutate aggregate counters for one parsed machine. No return value.
+    Mirrors the previous inline updates in mame_parser.
+    """
+    years_ctr[year_key] += 1
+    manuf_ctr[manufacturer_key] += 1
+    players_ctr[players_key] += 1
+
+    cpus_per_machine_ctr[bucket_key_int(cpu_count)] += 1
+    sound_devices_per_machine_ctr[bucket_key_int(audio_count)] += 1
+    displays_per_machine_ctr[bucket_key_int(display_count)] += 1
+    sound_channels_per_machine_ctr[bucket_key_int(sound_channels)] += 1
+    speakers_per_machine_ctr[bucket_key_int(speaker_ref_count)] += 1
+
+    # per-region overall counts (not deduped)
+    for k, v in (disk_regions_overall_add or {}).items():
+        disk_regions_overall_ctr[k] += v
+
+    # disk platforms per machine + examples (cap handled by caller if needed)
+    disk_media_platforms_per_machine_ctr[bucket_key_int(disk_media_platforms_count)] += 1
+    examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
+    if len(examples) < 5:
+        examples.append(mame_name)
