@@ -4,6 +4,8 @@ from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 from xml.etree.ElementTree import Element
 
+from mht.utils.summaries import bucket_key_int
+
 
 __all__ = [
     "CONTROL_TYPE_LABELS",
@@ -213,3 +215,21 @@ def extract_controls_for_parser(input_el: Element | None) -> Tuple[List[Dict[str
         _count(metrics["reqbuttons_overall"], str(c_reqbuttons) if c_reqbuttons is not None else None)
 
     return controls_list, metrics
+
+def extract_players_bucket(input_el: Element | None) -> Tuple[str, Optional[int]]:
+    """
+    Read the <input> element's players attribute and return:
+      - players_key: the stable bucket label used for counters (e.g. "1","2","unknown")
+      - players_value: the parsed integer value or None if missing/invalid
+
+    Behaviour matches the original parser logic:
+    - Missing or non-numeric -> "unknown" and None.
+    - Numeric strings -> that integer and its string bucket key.
+    """
+    if input_el is None:
+        return "unknown", None
+    raw = (input_el.attrib.get("players") or "").strip()
+    if raw.isdigit():
+        val = int(raw)
+        return bucket_key_int(val), val
+    return "unknown", None

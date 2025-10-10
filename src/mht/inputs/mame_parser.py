@@ -40,7 +40,7 @@ from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
 from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text
 from mht.utils.displays import extract_displays_for_parser
-from mht.utils.controls import extract_controls_for_parser
+from mht.utils.controls import extract_controls_for_parser, extract_players_bucket
 from mht.utils.chips import extract_chips_for_parser
 from mht.utils.roms import rom_count_and_bytes
 from mht.utils.media import disk_required_and_regions, summarise_device_refs
@@ -187,14 +187,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         manufacturer_key = "unknown"
 
                     # INPUT - Players
-                    players_key = "unknown"
                     input_el = elem.find("input")
-                    if input_el is not None:
-                        players_attr = (input_el.attrib.get("players") or "").strip()
-                        #if players_attr.isdigit():
-                        #    players_key = players_attr
-                        players_val = _int_or_none(input_el.attrib.get("players"))
-                        players_key = bucket_key_int(players_val)   
+                    players_key, players_value = extract_players_bucket(input_el)
 
                     # INPUT - Controls
                     controls_list, _ctrl_metrics = extract_controls_for_parser(input_el)
@@ -314,7 +308,8 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         "sampleof": sampleof,
                         "display_count": display_count,
                         "displays": displays_list,
-                        "players": None if players_key == "unknown" else int(players_key),
+                        #"players": None if players_key == "unknown" else int(players_key),
+                        "players": players_value,
                         "controls": controls_list,
                     }
 

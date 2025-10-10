@@ -1,4 +1,3 @@
-# src/mht/utils/booleans.py
 from __future__ import annotations
 
 _TRUES = {"1","true","yes","y","t"}
