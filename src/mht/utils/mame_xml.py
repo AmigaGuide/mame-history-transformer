@@ -133,3 +133,17 @@ def get_machine_header(elem) -> Dict[str, str | None]:
         "sourcefile": sourcefile,
         "romof": romof,
     }
+
+def get_core_text_fields(elem) -> Tuple[Optional[str], str, str]:
+    """
+    Return (description, year_raw, manufacturer_raw) from a <machine> element.
+
+    Behaviour matches the existing parser:
+    - description: normalised text or None when missing/blank
+    - year_raw: normalised text, '' when missing
+    - manufacturer_raw: normalised text, '' when missing
+    """
+    description = element_text(elem, "description", default=None) or None
+    year_raw = element_text(elem, "year", default="")
+    manufacturer_raw = element_text(elem, "manufacturer", default="")
+    return description, year_raw, manufacturer_raw

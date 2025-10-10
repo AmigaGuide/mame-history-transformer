@@ -38,7 +38,10 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
-from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text, int_or_none, capture_root_attrs, get_machine_header
+from mht.utils.mame_xml import (
+    attr_text, attr_yesno_bool, element_text, int_or_none, 
+    capture_root_attrs, get_machine_header, get_core_text_fields,
+)
 # Backwards-compat for older tests that import _int_or_none from this module
 _int_or_none = int_or_none
 from mht.utils.displays import extract_displays_for_parser, extend_examples_capped
@@ -182,9 +185,10 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     romof = hdr["romof"]
 
                     # CHILD FIELDS
-                    description      = element_text(elem, "description", default=None) or None
-                    year_raw         = element_text(elem, "year", default="")
-                    manufacturer_raw = element_text(elem, "manufacturer", default="")
+                    #description      = element_text(elem, "description", default=None) or None
+                    #year_raw         = element_text(elem, "year", default="")
+                    #manufacturer_raw = element_text(elem, "manufacturer", default="")
+                    description, year_raw, manufacturer_raw = get_core_text_fields(elem)
 
                     # normalised keys for dists
                     #year_key = "unknown"
