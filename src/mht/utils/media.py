@@ -1,7 +1,7 @@
 from __future__ import annotations
 import re
 from collections import Counter
-from typing import Iterable, Sequence, Dict, List, Tuple
+from typing import Iterable, Sequence, Dict, List, Tuple, Optional
 from xml.etree.ElementTree import Element
 
 _MEDIA_ORDER = {
@@ -131,3 +131,19 @@ def summarise_device_refs(machine_elem: Element) -> Dict[str, object]:
         elif name == "speaker":
             speaker_ref_count += 1
     return {"samples": "yes" if has_samples else "no", "speaker": speaker_ref_count}
+
+def extract_sound_channels(machine_elem: Element) -> Optional[int]:
+    """
+    Read <sound channels="..."> from a <machine> element and return an int or None.
+
+    - If <sound> is absent, returns None.
+    - If the 'channels' attribute is present and purely digits, returns int(channels).
+    - Otherwise returns None.
+
+    This mirrors the previous inline logic from mame_parser.
+    """
+    sound_el = machine_elem.find("sound")
+    if sound_el is None:
+        return None
+    raw = (sound_el.attrib.get("channels") or "").strip()
+    return int(raw) if raw.isdigit() else None

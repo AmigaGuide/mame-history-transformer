@@ -43,7 +43,7 @@ from mht.utils.displays import extract_displays_for_parser
 from mht.utils.controls import extract_controls_for_parser, extract_players_bucket
 from mht.utils.chips import extract_chips_for_parser
 from mht.utils.roms import rom_count_and_bytes
-from mht.utils.media import disk_required_and_regions, summarise_device_refs
+from mht.utils.media import disk_required_and_regions, summarise_device_refs, extract_sound_channels
 from mht.utils.selection import build_parent_index
 from mht.utils.summaries import (
     bucket_key_int,
@@ -54,6 +54,8 @@ from mht.utils.summaries import (
 )
 from mht.utils.validator import check_mame_parse_invariants
 from mht.utils.booleans import yesno_str
+# Backwards-compat for older tests that import _yesno_str from this module
+_yesno_str = yesno_str
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -207,11 +209,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         control_reqbuttons_overall_ctr[k] += v
 
                     # SOUND
-                    sound_channels = None
-                    sound_el = elem.find("sound")
-                    if sound_el is not None:
-                        channels_attr = (sound_el.attrib.get("channels") or "").strip()
-                        sound_channels = _int_or_none(sound_el.attrib.get("channels"))
+                    sound_channels = extract_sound_channels(elem)
+                    #sound_channels = None
+                    #sound_el = elem.find("sound")
+                    #if sound_el is not None:
+                    #    channels_attr = (sound_el.attrib.get("channels") or "").strip()
+                    #    sound_channels = _int_or_none(sound_el.attrib.get("channels"))
                     sound_channels_per_machine_ctr[bucket_key_int(sound_channels)] += 1
 
                     # DEVICE REFS (samples/speaker)
