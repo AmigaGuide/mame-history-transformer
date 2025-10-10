@@ -38,7 +38,9 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
-from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text
+from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text, int_or_none
+# Backwards-compat for older tests that import _int_or_none from this module
+_int_or_none = int_or_none
 from mht.utils.displays import extract_displays_for_parser
 from mht.utils.controls import extract_controls_for_parser, extract_players_bucket
 from mht.utils.chips import extract_chips_for_parser
@@ -59,19 +61,8 @@ _yesno_str = yesno_str
 
 
 log = setup_logger(log_level=LOG_LEVEL)
-
 __all__ = ["parse_mame_xml"]
 
-def _int_or_none(s: str | None) -> int | None:
-    """
-    Parse an integer or return None when value is empty/invalid.
-
-    Notes
-    -----
-    Keeps 'unknown' distinct from 0 (important for summaries/buckets).
-    """           
-    s = (s or "").strip()
-    return int(s) if s.isdigit() else None
 
 def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
     """

@@ -73,3 +73,13 @@ def element_text(parent: ET.Element, tag: str, *, default: str | None = None) ->
         return default
     t = child.text.strip()
     return t if t else default
+
+def int_or_none(s: str | None) -> int | None:
+    """
+    Parse an integer from a string, or return None when missing/invalid.
+
+    - Accepts only pure digit strings (e.g. "123").
+    - Returns None for empty, None, or non-numeric input.
+    """
+    s = (s or "").strip()
+    return int(s) if s.isdigit() else None
