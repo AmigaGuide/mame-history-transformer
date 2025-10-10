@@ -8,8 +8,11 @@ Notable helpers:
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Dict
 import xml.etree.ElementTree as ET
+
+from mht.utils.booleans import yesno_str
+
 
 def attr_text(el, name: str, *, default: str | None = None) -> str | None:
     """Get a trimmed attribute as text, or default if missing/empty."""
@@ -99,3 +102,34 @@ def capture_root_attrs(event: str, elem) -> Tuple[str | None, str | None]:
     if event == "start" and getattr(elem, "tag", None) == "mame":
         return elem.attrib.get("build"), elem.attrib.get("mameconfig")
     return None, None
+
+def get_machine_header(elem) -> Dict[str, str | None]:
+    """
+    Extract core header attributes from a <machine> element.
+
+    Returns a dict with the same keys the parser used to set:
+      - cloneof: Optional[str]
+      - isbios:  "yes"/"no"
+      - isdevice:"yes"/"no"
+      - ismechanical:"yes"/"no"
+      - sampleof: Optional[str]
+      - sourcefile: Optional[str]
+      - romof: Optional[str]  # legacy; may be empty in modern MAME
+    """
+    cloneof      = attr_text(elem, "cloneof")
+    isbios       = yesno_str(attr_yesno_bool(elem, "isbios"))
+    isdevice     = yesno_str(attr_yesno_bool(elem, "isdevice"))
+    ismechanical = yesno_str(attr_yesno_bool(elem, "ismechanical"))
+    sampleof     = attr_text(elem, "sampleof")
+    sourcefile   = attr_text(elem, "sourcefile")
+    romof        = attr_text(elem, "romof")  # retained for completeness
+
+    return {
+        "cloneof": cloneof,
+        "isbios": isbios,
+        "isdevice": isdevice,
+        "ismechanical": ismechanical,
+        "sampleof": sampleof,
+        "sourcefile": sourcefile,
+        "romof": romof,
+    }

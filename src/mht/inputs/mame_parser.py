@@ -38,7 +38,7 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
-from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text, int_or_none, capture_root_attrs
+from mht.utils.mame_xml import attr_text, attr_yesno_bool, element_text, int_or_none, capture_root_attrs, get_machine_header
 # Backwards-compat for older tests that import _int_or_none from this module
 _int_or_none = int_or_none
 from mht.utils.displays import extract_displays_for_parser, extend_examples_capped
@@ -165,13 +165,21 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         current_machine = None
                         continue
 
-                    cloneof      = attr_text(elem, "cloneof")
-                    isbios       = yesno_str(attr_yesno_bool(elem, "isbios"))
-                    isdevice     = yesno_str(attr_yesno_bool(elem, "isdevice"))
-                    ismechanical = yesno_str(attr_yesno_bool(elem, "ismechanical"))
-                    sampleof     = attr_text(elem, "sampleof")
-                    sourcefile   = attr_text(elem, "sourcefile")
-                    romof        = attr_text(elem, "romof")  # Not sure if this is still used
+                    #cloneof      = attr_text(elem, "cloneof")
+                    #isbios       = yesno_str(attr_yesno_bool(elem, "isbios"))
+                    #isdevice     = yesno_str(attr_yesno_bool(elem, "isdevice"))
+                    #ismechanical = yesno_str(attr_yesno_bool(elem, "ismechanical"))
+                    #sampleof     = attr_text(elem, "sampleof")
+                    #sourcefile   = attr_text(elem, "sourcefile")
+                    #romof        = attr_text(elem, "romof")  # Not sure if this is still used
+                    hdr = get_machine_header(elem)
+                    cloneof = hdr["cloneof"]
+                    isbios = hdr["isbios"]
+                    isdevice = hdr["isdevice"]
+                    ismechanical = hdr["ismechanical"]
+                    sampleof = hdr["sampleof"]
+                    sourcefile = hdr["sourcefile"]
+                    romof = hdr["romof"]
 
                     # CHILD FIELDS
                     description      = element_text(elem, "description", default=None) or None
