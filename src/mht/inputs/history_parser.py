@@ -17,7 +17,6 @@ Inputs:
 Outputs:
 - output/gh_system_ports.json (per-system structured PORTS data, sorted)
 - data/history_parsing_summary.json (totals, distributions, anomalies, audits)
-Schema: HISTORY_PARSER_SCHEMA = "1.0"
 """
 
 from __future__ import annotations
@@ -58,6 +57,7 @@ from mht.inputs.history_ports import (
 )
 from mht.inputs.history_text import segment_text_sections
 from mht.inputs.history_summary import build_history_summary
+from mht.utils.history_xml import iter_history_events
 
 
 __all__ = [
@@ -65,7 +65,6 @@ __all__ = [
 ]
 
 log = setup_logger(log_level=LOG_LEVEL)
-# HISTORY_PARSER_SCHEMA = "1.0"
 
 
 def parse_history_entries(file_path: Path, encoding: str) -> bool:
@@ -92,7 +91,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         return True
 
     try:
-        for event, elem in ET.iterparse(file_path, events=("start",)):
+        for event, elem in iter_history_events(file_path, encoding):           
             if elem.tag.lower() == "history":
                 history_version = elem.attrib.get("version")
                 history_date = elem.attrib.get("date")
