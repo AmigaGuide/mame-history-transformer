@@ -348,3 +348,21 @@ def build_mame_machine_record(
         "players": players_value,
         "controls": controls,
     }
+
+def build_history_system_record(
+    *,
+    gh_id: Optional[int] = None,
+    aliases: List[str] | None = None,
+    port_overview: str = "",
+    ports: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """
+    Assemble the per-system record for history parsing.
+    Shape identical to previous inline dict in history_parser.
+    """
+    return {
+        "gh_id": gh_id,
+        "aliases": aliases or [],
+        "port_overview": port_overview,
+        "ports": ports or {},
+    }

@@ -3,7 +3,7 @@ History XML iteration helpers.
 """
 
 from __future__ import annotations
-from typing import Iterator, Tuple, Optional, Dict, Iterable
+from typing import Iterator, Tuple, Optional, Dict, Iterable, List
 from xml.etree import ElementTree as ET
 from pathlib import Path
 from mht.utils.mame_xml import element_text
@@ -52,3 +52,29 @@ def get_entry_texts(elem: Element, spec: Dict[str, str]) -> Dict[str, str]:
     for tag, default in spec.items():
         out[tag] = element_text(elem, tag, default=default)
     return out
+
+def classify_entry(elem: Element) -> Tuple[str, Optional[str], List[str]]:
+    """
+    Classify a history <entry> element and return:
+      - kind: "systems", "software", or "unknown"
+      - primary: primary system name (first <system name="...">) or None
+      - aliases: remaining system names (possibly empty)
+
+    Behaviour mirrors the inline logic previously in history_parser:
+    - If <systems> exists, we read its <system name="..."> children.
+      * If there are names, primary = names[0], aliases = names[1:].
+      * If there are no names, kind stays "systems" with primary=None (caller should skip).
+    - If <software> exists (and <systems> does not), kind is "software".
+    - Otherwise "unknown".
+    """
+    systems_elem = elem.find("systems")
+    if systems_elem is not None:
+        names = [s.attrib.get("name") for s in systems_elem.findall("system") if s.attrib.get("name")]
+        if names:
+            return "systems", names[0], names[1:]
+        return "systems", None, []  # no names → caller should skip
+
+    if elem.find("software") is not None:
+        return "software", None, []
+
+    return "unknown", None, []

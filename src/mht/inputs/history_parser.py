@@ -62,8 +62,10 @@ from mht.utils.history_xml import (
     capture_history_root_attrs,
     get_entry_header,
     get_entry_texts,
+    classify_entry,
 )
 from mht.utils.validator import check_history_parse_invariants
+from mht.utils.records import build_history_system_record
 
 
 __all__ = [
@@ -159,27 +161,22 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                     fmt="{prefix} Parsed {count:,} entries so far...",
                 )
 
-                entry_data = {"gh_id": None, "aliases": [], "port_overview": "", "ports": {}}
+                kind, primary, aliases = classify_entry(elem)
 
-                systems_elem = elem.find("systems")
-                software_elem = elem.find("software")
-
-                if systems_elem is not None:
+                if kind == "systems":
                     systems_count += 1
-                    system_names = [s.attrib.get("name") for s in systems_elem.findall("system") if s.attrib.get("name")]
-                    if system_names:
-                        primary = system_names[0]
-                        aliases = system_names[1:]
-                        if aliases:
-                            systems_with_aliases += 1
-                            entry_data["aliases"] = aliases
-                    else:
+                    if not primary:
                         elem.clear()
                         continue
-                elif software_elem is not None:
+                    entry_data = build_history_system_record(aliases=aliases)
+                    if aliases:
+                        systems_with_aliases += 1
+
+                elif kind == "software":
                     software_count += 1
                     elem.clear()
                     continue
+
                 else:
                     elem.clear()
                     continue
