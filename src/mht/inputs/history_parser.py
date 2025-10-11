@@ -1,22 +1,26 @@
 """
-Filename: history_parser.py
-Author: XtC
+Gaming-History XML → structured JSON orchestrator (stage: history)
 
-Project:
-"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+Streams `history.xml` <entry> elements and delegates work to focused helpers:
+- Section segmentation, PORTS parsing (with banners/inheritance)
+- Per-system record assembly
+- Totals/distributions summary and invariants
 
-Purpose:
-Stream-parse Gaming-History's history.xml <entry> elements and extract structured,
-arcade-relevant metadata for ExoticA's LiT. Handles section segmentation, PORTS
-parsing (including platform banners and inheritance), and emits a rich summary.
+Inputs
+------
+- history.xml (Gaming-History export), with encoding provided by caller.
+- Optional CONTRIBUTE lines containing a gh_id in the form 'id=<int>'.
 
-Inputs:
-- history.xml (Gaming-History export), encoding determined externally and passed in.
-- Optional: CONTRIBUTE section lines containing gh_id (format: 'id=<int>').
+Outputs
+-------
+- output/gh_system_ports.json         (per-system structured PORTS data, sorted)
+- data/history_parsing_summary.json   (totals, distributions, anomalies, audits)
 
-Outputs:
-- output/gh_system_ports.json (per-system structured PORTS data, sorted)
-- data/history_parsing_summary.json (totals, distributions, anomalies, audits)
+Notes
+-----
+- No selection/filtering beyond excluding non-arcade <software> entries.
+- Progress is logged every 10,000 entries.
+- Stage is stamped for reproducibility; includes encodings.json in the stamp.
 """
 
 from __future__ import annotations
@@ -78,8 +82,41 @@ log = setup_logger(log_level=LOG_LEVEL)
 
 def parse_history_entries(file_path: Path, encoding: str) -> bool:
     """
-    Stream-parse history.xml <entry> elements and emit structured outputs.
+    Stream-parse `history.xml` and emit per-system PORTS JSON plus a summary.
+
+    Parameters
+    ----------
+    file_path : Path
+        Path to the Gaming-History XML (history.xml).
+    encoding : str
+        Text encoding for the XML, supplied by the caller.
+
+    Returns
+    -------
+    bool
+        True on success or when the stage is up-to-date (stamp matched);
+        False only on XML parse error or failed writes.
+
+    Side effects
+    ------------
+    - Writes:
+        * output/gh_system_ports.json
+        * data/history_parsing_summary.json
+    - Maintains a stage stamp at data/.stamps/history.json.
+    - Logs progress every 10,000 entries.
+    - Emits warnings-only invariants via utils.validator.
+
+    Implementation notes
+    --------------------
+    This function is an orchestrator; parsing/logic lives in helpers:
+      * utils.history_xml: event iterator, root attr capture, entry classification
+      * inputs.history_text: text sectioning and CONTRIBUTE gh_id extraction
+      * inputs.history_ports: PORTS parsing and banner/inheritance handling
+      * utils.summaries: counters, PORTS result application, summary builder
+      * utils.records: per-system record assembly and sorted map builder
+      * utils.validator: invariants (warnings-only)
     """
+
     start = time.perf_counter()
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 

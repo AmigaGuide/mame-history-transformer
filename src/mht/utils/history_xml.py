@@ -1,5 +1,12 @@
 """
-History XML iteration helpers.
+History XML helpers: event streaming and small accessors.
+
+Includes:
+- iter_history_events(): yields ('start'|'end', Element) pairs for history.xml.
+- capture_history_root_attrs(): returns <history> root attributes on the 'start' event.
+- classify_entry(): classifies an <entry> as 'systems'/'software' and extracts names.
+- get_entry_header(): picks specific attributes from an <entry>.
+- get_entry_texts(): reads specific child text nodes from an <entry>.
 """
 
 from __future__ import annotations
