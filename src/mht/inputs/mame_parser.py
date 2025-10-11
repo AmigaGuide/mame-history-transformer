@@ -1,18 +1,21 @@
 """
-Filename: mame_parser.py
-Author: XtC
+MAME XML → canonical JSON orchestrator (stage: mame)
 
-Project:
-"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+This module streams the full MAME XML and delegates all extraction/normalisation to
+focused utils, then writes:
+  - output/mame_machines.json          (canonical per-machine records; unfiltered)
+  - data/mame_parsing_summary.json     (totals-only summary with distributions)
+  - output/mame_parent_index.json      (parent→clones + reverse map)
 
-Purpose:
-Parse the full MAME XML and write:
-  - output/mame_machines.json              (canonical, unfiltered dump)
-  - data/mame_parsing_summary.json         (totals-only summary)
-  - output/mame_parent_index.json          (parent -> clones index + reverse map)
-
-No classification or filtering is applied here. Downstream modules will handle
-selection (using .ini metadata) and the join with Gaming-History.
+Notes
+-----
+- No selection or filtering occurs here; downstream joins/selection happen in the
+  transform pipeline.
+- Text-field convention: missing text becomes "", but 'description' currently preserves
+  None to match historic outputs (revisit in a later logic pass).
+- Booleans in machine attributes are represented as "yes"/"no" strings.
+- Stamped for reproducibility: stage uses data/.stamps/mame.json and includes
+  both the XML and encodings.json as inputs.
 """
 
 from __future__ import annotations
@@ -73,14 +76,43 @@ __all__ = ["parse_mame_xml"]
 
 def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
     """
-    Parse the entire mame.xml and write:
-      - output/mame_machines.json
-      - data/mame_parsing_summary.json
-      - output/mame_parent_index.json
+    Stream-parse a MAME XML file and emit canonical JSON, summary, and parent index.
 
-    Returns:
-        bool: True on success, False if XML parse error occurs.
+    Parameters
+    ----------
+    file_path : Path
+        Path to the MAME XML (e.g., mame.xml).
+    encodings : dict[str, str]
+        Mapping of input filenames to encodings; uses encodings["mame.xml"].
+    max_records : int, optional
+        If > 0, stop after writing at most this many machines (useful for smoke tests).
+
+    Returns
+    -------
+    bool
+        True on success or when the stage is up-to-date (stamp matched);
+        False only on XML parse error or failed writes.
+
+    Side effects
+    ------------
+    - Writes:
+        * output/mame_machines.json
+        * data/mame_parsing_summary.json
+        * output/mame_parent_index.json
+    - Maintains a stage stamp at data/.stamps/mame.json and skips work if fresh.
+    - Logs progress every 5,000 machines and emits warnings for invariants via utils.validator.
+
+    Implementation notes
+    --------------------
+    - This function is an orchestrator: XML access, players/controls/chips/displays/media,
+      summary shaping, invariants and record assembly are delegated to utils modules:
+        * utils.mame_xml: root attrs, core text fields, event iteration
+        * utils.controls / utils.chips / utils.displays / utils.media / utils.roms
+        * utils.summaries: bucketing, distributions, per-machine counter updates, totals
+        * utils.validator: warnings-only invariant checks
+        * utils.records: final per-machine record assembly
     """
+    
     start = time.perf_counter()
     log.info(
         f"Starting full MAME XML parsing: {file_path.name}"
