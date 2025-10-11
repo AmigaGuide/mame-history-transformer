@@ -32,7 +32,7 @@ from collections import Counter, defaultdict
 import datetime
 
 from mht.utils.config import LOG_LEVEL
-from mht.utils.logger import setup_logger, debug_log
+from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.date_utils import parse_date_string
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
@@ -148,8 +148,15 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                     continue
 
                 total_entries += 1
-                if (total_entries % 10000) == 0:
-                    log.info(f"[history_parser::parse_history_entries] Parsed {total_entries:,} entries so far...")
+                #if (total_entries % 10000) == 0:
+                #    log.info(f"[history_parser::parse_history_entries] Parsed {total_entries:,} entries so far...")
+                maybe_log_progress(
+                    log,
+                    total_entries,
+                    step=10000,
+                    prefix="[history_parser::parse_history_entries]",
+                    fmt="{prefix} Parsed {count:,} entries so far...",
+                )
 
                 entry_data = {"gh_id": None, "aliases": [], "port_overview": "", "ports": {}}
 

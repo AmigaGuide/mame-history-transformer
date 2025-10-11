@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from mht.utils.config import LOG_LEVEL
-from mht.utils.logger import setup_logger
+from mht.utils.logger import setup_logger, maybe_log_progress
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
 from mht.utils.paths import (
@@ -288,8 +288,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                         requires_samples=req_samples,
                     )
 
-                    if (total_machines % 5000) == 0:
-                        log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
+                    #if (total_machines % 5000) == 0:
+                    #    log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
+                    maybe_log_progress(
+                        log,
+                        total_machines,
+                        step=5000,
+                        prefix="[mame_parser::parse_mame_xml]",
+                        fmt="{prefix} Parsed {count:,} machines so far...",
+                    )
 
                     # ROMS
                     rom_count, rom_bytes_total = rom_count_and_bytes(elem)
