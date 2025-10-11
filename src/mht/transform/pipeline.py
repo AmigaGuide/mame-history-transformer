@@ -19,6 +19,7 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json, read_json as _read_json
+from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.media import (
     normalise_device_to_media,
     normalise_device_list_to_media,
@@ -123,10 +124,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     t0 = time.perf_counter()
 
-    # --- Stage stamp: skip unchanged (using centralised stamp path) ---
-    STAMPS_DIR.mkdir(parents=True, exist_ok=True)
-    stamp_path = STAMPS_DIR / "transform.json"
-
+    # --- Stage stamp: skip unchanged (centralised helper) ---
     stamp_inputs = [
         MAME_MACHINES_PATH,
         INI_CLASS_PATH,
@@ -138,15 +136,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         DATA_DIR / "title_overrides.json",
     ]
 
-    current_stamp = make_stamp(
+    fresh, stamp_path, current_stamp = stage_is_fresh(
+        "transform.json",
         schema_id="mht.stage.transform",
-        tool_version=tool_version("transformer"),
+        tool="transformer",           # keep tool name stable for stamp lineage
         inputs=stamp_inputs,
-        #extra={"selection_rules": "v1", "title_parser": "v1"},
     )
-
-    prev = load_stamp(stamp_path)
-    if is_fresh(current_stamp, prev):
+    if fresh:
         log.info("Transform stage up-to-date (stamp matched) — skipping transform")
         return True
 
@@ -610,9 +606,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     log.info(f"Transformer completed in {duration:.2f}s "
              f"(eligible_parents={len(eligible_parents)}, included={len(out_map)})")
     return bool(ok_out and ok_sum)
-
-# Stage stamps helpers (imported at end to avoid circular imports complaints in some setups)
-from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
 
 if __name__ == "__main__":
     ok = run_transformer(DATA_DIR)

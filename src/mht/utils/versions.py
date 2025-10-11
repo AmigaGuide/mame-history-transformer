@@ -16,10 +16,10 @@ SCHEMA_INFO = {
 
 # Tool/module versions (your code)
 TOOL_VERSIONS = {
-    "mame_parser":    "1.0.31",
-    "history_parser": "1.0.17",
-    "ini_summary":    "1.0.5",
-    "transformer":    "1.0.25",
+    "mame_parser":    "1.0.32",
+    "history_parser": "1.0.18",
+    "ini_summary":    "1.0.6",
+    "transformer":    "1.0.26",
 }
 
 # ===== Output dataset schemas (centralise the IDs + versions your transformer emits) =====

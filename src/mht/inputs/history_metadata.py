@@ -33,7 +33,8 @@ import re
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
-from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
+#from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh, stage_is_fresh
+from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
     DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
     INI_GAME, INI_CATEGORY, INI_TYPE,
@@ -345,17 +346,15 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
 
     # --- Stage stamp: skip unchanged ---
-    STAMPS_DIR.mkdir(parents=True, exist_ok=True)
-    stamp_path = STAMPS_DIR / "ini.json"
     ini_paths = list(INI_FILES.values())
-    current_stamp = make_stamp(
+
+    fresh, stamp_path, current_stamp = stage_is_fresh(
+        "ini.json",
         schema_id="mht.stage.ini",
-        tool_version=tool_version("ini_summary"),
-        #inputs=ini_paths,
-        inputs = [*ini_paths, ENCODINGS_JSON],
+        tool="ini_summary",
+        inputs=[*ini_paths, ENCODINGS_JSON],
     )
-    prev = load_stamp(stamp_path)
-    if is_fresh(current_stamp, prev):
+    if fresh:
         log.info("INI stage up-to-date (stamp matched) — skipping rebuild")
         return True
 

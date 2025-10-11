@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 import json, os, tempfile, hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Dict, Any
+from typing import Iterable, Dict, Any, Tuple
 from datetime import datetime, timezone
+
+
+from mht.utils.paths import STAMPS_DIR
+from mht.utils.versions import tool_version
+
 
 # Canonical dump (used for digest)
 def _canon(obj: Any) -> str:
@@ -103,3 +109,30 @@ def is_fresh(current: Dict[str, Any], previous: Dict[str, Any] | None) -> bool:
     if not previous or not isinstance(previous, dict):
         return False
     return previous.get("digest") == current.get("digest")
+
+def stage_is_fresh(
+    stamp_filename: str,
+    *,
+    schema_id: str,
+    tool: str,
+    inputs: Iterable[Path],
+) -> Tuple[bool, Path, dict]:
+    """
+    Convenience wrapper for stage stamps:
+    - Ensures STAMPS_DIR exists.
+    - Builds the current stamp (including tool version and inputs).
+    - Loads the previous stamp and checks freshness.
+
+    Returns
+    -------
+    (is_fresh, stamp_path, current_stamp_dict)
+    """
+    STAMPS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp_path = STAMPS_DIR / stamp_filename
+    current = make_stamp(
+        schema_id=schema_id,
+        tool_version=tool_version(tool),
+        inputs=list(inputs),
+    )
+    prev = load_stamp(stamp_path)
+    return is_fresh(current, prev), stamp_path, current

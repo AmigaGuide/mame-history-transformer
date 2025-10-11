@@ -38,7 +38,7 @@ from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.date_utils import parse_date_string
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
-from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
+from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh, stage_is_fresh
 from mht.utils.paths import (
     STAMPS_DIR,
     GH_SYSTEM_PORTS_PATH,
@@ -124,15 +124,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     history_version, history_date = None, None
 
     # --- Stage stamp: skip unchanged ---
-    STAMPS_DIR.mkdir(parents=True, exist_ok=True)
-    stamp_path = STAMPS_DIR / "history.json"
-    current_stamp = make_stamp(
+    fresh, stamp_path, current_stamp = stage_is_fresh(
+        "history.json",
         schema_id="mht.stage.history",
-        tool_version=tool_version("history_parser"),
+        tool="history_parser",
         inputs=[file_path, ENCODINGS_JSON],
     )
-    prev = load_stamp(stamp_path)
-    if is_fresh(current_stamp, prev):
+    if fresh:
         log.info("History stage up-to-date (stamp matched) — skipping parse")
         return True
 

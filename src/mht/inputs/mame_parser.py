@@ -31,7 +31,7 @@ from typing import Any, Dict
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, maybe_log_progress
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
-from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh
+from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh, stage_is_fresh
 from mht.utils.paths import (
     STAMPS_DIR,
     MAME_MACHINES_PATH,
@@ -121,18 +121,15 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     # Inputs / encoding
     mame_encoding = encodings["mame.xml"]
-
+    
     # Stage stamp (skip-unchanged)
-    STAMPS_DIR.mkdir(parents=True, exist_ok=True)
-    stamp_path = STAMPS_DIR / "mame.json"
-    current_stamp = make_stamp(
+    fresh, stamp_path, current_stamp = stage_is_fresh(
+        "mame.json",
         schema_id="mht.stage.mame",
-        tool_version=tool_version("mame_parser"),
-        #inputs = [file_path],
-        inputs = [file_path, ENCODINGS_JSON],
+        tool="mame_parser",
+        inputs=[file_path, ENCODINGS_JSON],
     )
-    prev = load_stamp(stamp_path)
-    if is_fresh(current_stamp, prev):
+    if fresh:
         log.info("MAME stage up-to-date (stamp matched) — skipping parse")
         return True
 
