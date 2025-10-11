@@ -39,8 +39,8 @@ from mht.utils.paths import (
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
 from mht.utils.mame_xml import (
-    attr_text, attr_yesno_bool, element_text, int_or_none, 
-    capture_root_attrs, get_machine_header, get_core_text_fields,
+    attr_text, attr_yesno_bool, element_text, int_or_none, capture_root_attrs, 
+    get_machine_header, get_core_text_fields, iter_mame_events
 )
 # Backwards-compat for older tests that import _int_or_none from this module
 _int_or_none = int_or_none
@@ -146,262 +146,177 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     # Parse
     try:
-        with open(file_path, encoding=mame_encoding) as f:
-            it = ET.iterparse(f, events=("start", "end"))
-            current_machine = None
+        for event, elem in iter_mame_events(file_path, mame_encoding):
+            # Root attributes (build/mameconfig)
+            b, mc = capture_root_attrs(event, elem)
+            if b is not None or mc is not None:
+                mame_build, mame_mameconfig = b, mc
 
-            for event, elem in it:
-                #if event == "start" and elem.tag == "mame":
-                #    mame_build = elem.attrib.get("build")
-                #    mame_mameconfig = elem.attrib.get("mameconfig")
-                b, mc = capture_root_attrs(event, elem)
-                if b is not None or mc is not None:
-                    mame_build, mame_mameconfig = b, mc
-
-                if event == "start" and elem.tag == "machine":
-                    current_machine = elem
-
-                if event == "end" and elem.tag == "machine" and current_machine is elem:
-                    mame_name = elem.attrib.get("name")
-                    if not mame_name:
-                        elem.clear()
-                        current_machine = None
-                        continue
-
-                    #cloneof      = attr_text(elem, "cloneof")
-                    #isbios       = yesno_str(attr_yesno_bool(elem, "isbios"))
-                    #isdevice     = yesno_str(attr_yesno_bool(elem, "isdevice"))
-                    #ismechanical = yesno_str(attr_yesno_bool(elem, "ismechanical"))
-                    #sampleof     = attr_text(elem, "sampleof")
-                    #sourcefile   = attr_text(elem, "sourcefile")
-                    #romof        = attr_text(elem, "romof")  # Not sure if this is still used
-                    hdr = get_machine_header(elem)
-                    cloneof = hdr["cloneof"]
-                    isbios = hdr["isbios"]
-                    isdevice = hdr["isdevice"]
-                    ismechanical = hdr["ismechanical"]
-                    sampleof = hdr["sampleof"]
-                    sourcefile = hdr["sourcefile"]
-                    romof = hdr["romof"]
-
-                    # CHILD FIELDS
-                    #description      = element_text(elem, "description", default=None) or None
-                    #year_raw         = element_text(elem, "year", default="")
-                    #manufacturer_raw = element_text(elem, "manufacturer", default="")
-                    description, year_raw, manufacturer_raw = get_core_text_fields(elem)
-
-                    # normalised keys for dists
-                    #year_key = "unknown"
-                    #if year_raw and len(year_raw) == 4 and year_raw.isdigit():
-                    #    year_key = year_raw
-                    #manufacturer_key = manufacturer_raw if manufacturer_raw else "unknown"
-                    #if manufacturer_key.strip().strip("-.,;:/()[]{}") == "":
-                    #    manufacturer_key = "unknown"
-                    year_key = year_bucket_key(year_raw)
-                    manufacturer_key = manufacturer_bucket_key(manufacturer_raw)
-
-                    # INPUT - Players
-                    input_el = elem.find("input")
-                    players_key, players_value = extract_players_bucket(input_el)
-
-                    # INPUT - Controls
-                    controls_list, _ctrl_metrics = extract_controls_for_parser(input_el)
-                    # Merge control metrics into your existing overall counters
-                    for k, v in _ctrl_metrics["type_overall"].items():
-                        control_type_overall_ctr[k] += v
-                    for k, v in _ctrl_metrics["ways_overall"].items():
-                        control_ways_overall_ctr[k] += v
-                    for k, v in _ctrl_metrics["ways2_overall"].items():
-                        control_ways2_overall_ctr[k] += v
-                    for k, v in _ctrl_metrics["ways3_overall"].items():
-                        control_ways3_overall_ctr[k] += v
-                    for k, v in _ctrl_metrics["buttons_overall"].items():
-                        control_buttons_overall_ctr[k] += v
-                    for k, v in _ctrl_metrics["reqbuttons_overall"].items():
-                        control_reqbuttons_overall_ctr[k] += v
-
-                    # SOUND
-                    sound_channels = extract_sound_channels(elem)
-                    #sound_channels = None
-                    #sound_el = elem.find("sound")
-                    #if sound_el is not None:
-                    #    channels_attr = (sound_el.attrib.get("channels") or "").strip()
-                    #    sound_channels = _int_or_none(sound_el.attrib.get("channels"))
-                    #sound_channels_per_machine_ctr[bucket_key_int(sound_channels)] += 1
-
-                    # DEVICE REFS (samples/speaker)
-                    device_ref_summary = summarise_device_refs(elem)
-                    #speakers_per_machine_ctr[str(device_ref_summary["speaker"])] += 1
-                    #speakers_per_machine_ctr[bucket_key_int(device_ref_summary["speaker"])] += 1
-
-                    # CHIPS
-                    chips_list, cpu_count, audio_count = extract_chips_for_parser(elem)
-
-                    # DISPLAYS
-                    displays_list, display_count, _disp_metrics = extract_displays_for_parser(elem, mame_name)
-
-                    # Merge display metrics into the existing overall counters and dropped stats
-                    for k, v in _disp_metrics["types_overall"].items():
-                        display_types_overall_ctr[k] += v
-                    for k, v in _disp_metrics["tags_overall"].items():
-                        display_tags_overall_ctr[k] += v
-
-                    dropped_displays_total += _disp_metrics["dropped_total"]
-                    if _disp_metrics["dropped_examples"]:
-                        # Keep your original cap of 10 total examples
-                        #remaining = max(0, 10 - len(dropped_displays_examples))
-                        #if remaining:
-                        #    dropped_displays_examples.extend(_disp_metrics["dropped_examples"][:remaining])
-                        extend_examples_capped(dropped_displays_examples, _disp_metrics["dropped_examples"], cap=10)
-
-                    # SAMPLES flags
-                    #sample_children = elem.findall("sample")
-                    #requires_samples = bool(sampleof or sample_children)
-                    #if requires_samples:
-                    #    total_requires_samples += 1
-                    #if requires_samples_flag(elem, sampleof):
-                    #    total_requires_samples += 1
-
-                    # requires-samples (unchanged logic, just capture the bool once)
-                    req_samples = requires_samples_flag(elem, sampleof)
-
-                    (
-                        total_machines,
-                        total_parents,
-                        total_clones,
-                        total_isbios,
-                        total_isdevice,
-                        total_ismechanical,
-                        total_requires_samples,
-                    ) = update_totals(
-                        total_machines,
-                        total_parents,
-                        total_clones,
-                        total_isbios,
-                        total_isdevice,
-                        total_ismechanical,
-                        total_requires_samples,
-                        cloneof=cloneof,
-                        isbios=isbios,
-                        isdevice=isdevice,
-                        ismechanical=ismechanical,
-                        requires_samples=req_samples,
-                    )
-
-                    #if (total_machines % 5000) == 0:
-                    #    log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
-                    maybe_log_progress(
-                        log,
-                        total_machines,
-                        step=5000,
-                        prefix="[mame_parser::parse_mame_xml]",
-                        fmt="{prefix} Parsed {count:,} machines so far...",
-                    )
-
-                    # ROMS
-                    rom_count, rom_bytes_total = rom_count_and_bytes(elem)
-
-                    # DISKS (regions only)
-                    disk_required, disk_regions, _regions_overall = disk_required_and_regions(elem)
-                    # Preserve the original per-disk region counting behaviour
-                    #for k, v in _regions_overall.items():
-                    #    disk_regions_overall_ctr[k] += v
-
-                    disk_media_platforms_count = len(disk_regions)
-                    #disk_media_platforms_per_machine_ctr[str(disk_media_platforms_count)] += 1
-                    #disk_media_platforms_per_machine_ctr[bucket_key_int(disk_media_platforms_count)] += 1
-                    #examples = disk_media_examples.setdefault(str(disk_media_platforms_count), [])
-                    #if len(examples) < 5:
-                    #    examples.append(mame_name)
-
-                    update_counters(
-                        year_key=year_key,
-                        manufacturer_key=manufacturer_key,
-                        players_key=players_key,
-                        cpu_count=cpu_count,
-                        audio_count=audio_count,
-                        display_count=display_count,
-                        sound_channels=sound_channels,
-                        speaker_ref_count=device_ref_summary["speaker"],
-                        disk_regions_overall_add=_regions_overall,
-                        disk_media_platforms_count=disk_media_platforms_count,
-                        mame_name=mame_name,
-                        years_ctr=years_ctr,
-                        manuf_ctr=manuf_ctr,
-                        players_ctr=players_ctr,
-                        cpus_per_machine_ctr=cpus_per_machine_ctr,
-                        sound_devices_per_machine_ctr=sound_devices_per_machine_ctr,
-                        displays_per_machine_ctr=displays_per_machine_ctr,
-                        sound_channels_per_machine_ctr=sound_channels_per_machine_ctr,
-                        speakers_per_machine_ctr=speakers_per_machine_ctr,
-                        disk_regions_overall_ctr=disk_regions_overall_ctr,
-                        disk_media_platforms_per_machine_ctr=disk_media_platforms_per_machine_ctr,
-                        disk_media_examples=disk_media_examples,
-                    )
-
-                    # Totals
-                    #total_machines += 1
-                    #if (total_machines % 5000) == 0:
-                    #    log.info(f"[mame_parser::parse_mame_xml] Parsed {total_machines:,} machines so far...")
-
-                    #if cloneof:
-                    #    total_clones += 1
-                    #else:
-                    #    total_parents += 1
-                    #if isbios == "yes":
-                    #    total_isbios += 1
-                    #if isdevice == "yes":
-                    #    total_isdevice += 1
-                    #if ismechanical == "yes":
-                    #    total_ismechanical += 1
-
-                    #years_ctr[year_key] += 1
-                    #manuf_ctr[manufacturer_key] += 1
-                    #players_ctr[players_key] += 1
-                    #cpus_per_machine_ctr[str(cpu_count)] += 1
-                    #cpus_per_machine_ctr[bucket_key_int(cpu_count)] += 1
-                    #sound_devices_per_machine_ctr[str(audio_count)] += 1
-                    #sound_devices_per_machine_ctr[bucket_key_int(audio_count)] += 1
-                    #displays_per_machine_ctr[str(display_count)] += 1
-                    #displays_per_machine_ctr[bucket_key_int(display_count)] += 1
-
-                    # after computing year_raw / manufacturer_raw:
-                    year_out         = (year_raw or "")
-                    manufacturer_out = (manufacturer_raw or "")
-
-                    # Per-machine record
-                    machines_out[mame_name] = build_mame_machine_record(
-                        description=description,
-                        sourcefile=sourcefile,
-                        cloneof=cloneof,
-                        isbios=isbios,
-                        isdevice=isdevice,
-                        ismechanical=ismechanical,
-                        year=year_out,
-                        manufacturer=manufacturer_out,
-                        rom_count=rom_count,
-                        rom_bytes_total=rom_bytes_total,
-                        disk_required=disk_required,
-                        disk_regions=disk_regions,
-                        disk_media_platforms_count=disk_media_platforms_count,
-                        cpu_count=cpu_count,
-                        sound_chip_count=audio_count,
-                        chips=chips_list,
-                        sound_channels=sound_channels,
-                        device_ref_summary=device_ref_summary,
-                        sampleof=sampleof,
-                        display_count=display_count,
-                        displays=displays_list,
-                        players_value=players_value,   # from extract_players_bucket
-                        controls=controls_list,
-                    )
-
-                    if max_records and total_machines >= max_records:
-                        elem.clear()
-                        break
-
+            # Process one machine when its end tag arrives
+            if event == "end" and elem.tag == "machine":
+                mame_name = elem.attrib.get("name")
+                if not mame_name:
                     elem.clear()
-                    current_machine = None
+                    continue
+
+                # --- header attributes (now via helper) ---
+                hdr = get_machine_header(elem)
+                cloneof = hdr["cloneof"]
+                isbios = hdr["isbios"]
+                isdevice = hdr["isdevice"]
+                ismechanical = hdr["ismechanical"]
+                sampleof = hdr["sampleof"]
+                sourcefile = hdr["sourcefile"]
+                romof = hdr["romof"]  # retained, even if unused
+
+                # --- core text fields (now via helper) ---
+                description, year_raw, manufacturer_raw = get_core_text_fields(elem)
+
+                # --- bucketing for summary dists ---
+                year_key = year_bucket_key(year_raw)
+                manufacturer_key = manufacturer_bucket_key(manufacturer_raw)
+
+                # --- input & players/controls (helpers already in use) ---
+                input_el = elem.find("input")
+                players_key, players_value = extract_players_bucket(input_el)
+                controls_list, _ctrl_metrics = extract_controls_for_parser(input_el)
+                for k, v in _ctrl_metrics["type_overall"].items():
+                    control_type_overall_ctr[k] += v
+                for k, v in _ctrl_metrics["ways_overall"].items():
+                    control_ways_overall_ctr[k] += v
+                for k, v in _ctrl_metrics["ways2_overall"].items():
+                    control_ways2_overall_ctr[k] += v
+                for k, v in _ctrl_metrics["ways3_overall"].items():
+                    control_ways3_overall_ctr[k] += v
+                for k, v in _ctrl_metrics["buttons_overall"].items():
+                    control_buttons_overall_ctr[k] += v
+                for k, v in _ctrl_metrics["reqbuttons_overall"].items():
+                    control_reqbuttons_overall_ctr[k] += v
+
+                # --- audio/sound channels (helper) ---
+                sound_channels = extract_sound_channels(elem)
+
+                # device_ref summary (helper already in use)
+                device_ref_summary = summarise_device_refs(elem)
+
+                # --- chips (helper) ---
+                chips_list, cpu_count, audio_count = extract_chips_for_parser(elem)
+
+                # --- displays (helper) ---
+                displays_list, display_count, _disp_metrics = extract_displays_for_parser(elem, mame_name)
+                for k, v in _disp_metrics["types_overall"].items():
+                    display_types_overall_ctr[k] += v
+                for k, v in _disp_metrics["tags_overall"].items():
+                    display_tags_overall_ctr[k] += v
+                dropped_displays_total += _disp_metrics["dropped_total"]
+                extend_examples_capped(dropped_displays_examples, _disp_metrics["dropped_examples"], cap=10)
+
+                # --- samples? (helper) ---
+                req_samples = requires_samples_flag(elem, sampleof)
+
+                # --- ROMs (helper) ---
+                rom_count, rom_bytes_total = rom_count_and_bytes(elem)
+
+                # --- disks (helper) ---
+                disk_required, disk_regions, _regions_overall = disk_required_and_regions(elem)
+                disk_media_platforms_count = len(disk_regions)
+
+                # --- per-machine counters & examples ---
+                update_counters(
+                    year_key=year_key,
+                    manufacturer_key=manufacturer_key,
+                    players_key=players_key,
+                    cpu_count=cpu_count,
+                    audio_count=audio_count,
+                    display_count=display_count,
+                    sound_channels=sound_channels,
+                    speaker_ref_count=device_ref_summary["speaker"],
+                    disk_regions_overall_add=_regions_overall,
+                    disk_media_platforms_count=disk_media_platforms_count,
+                    mame_name=mame_name,
+                    years_ctr=years_ctr,
+                    manuf_ctr=manuf_ctr,
+                    players_ctr=players_ctr,
+                    cpus_per_machine_ctr=cpus_per_machine_ctr,
+                    sound_devices_per_machine_ctr=sound_devices_per_machine_ctr,
+                    displays_per_machine_ctr=displays_per_machine_ctr,
+                    sound_channels_per_machine_ctr=sound_channels_per_machine_ctr,
+                    speakers_per_machine_ctr=speakers_per_machine_ctr,
+                    disk_regions_overall_ctr=disk_regions_overall_ctr,
+                    disk_media_platforms_per_machine_ctr=disk_media_platforms_per_machine_ctr,
+                    disk_media_examples=disk_media_examples,
+                )
+
+                # --- totals ---
+                (
+                    total_machines,
+                    total_parents,
+                    total_clones,
+                    total_isbios,
+                    total_isdevice,
+                    total_ismechanical,
+                    total_requires_samples,
+                ) = update_totals(
+                    total_machines,
+                    total_parents,
+                    total_clones,
+                    total_isbios,
+                    total_isdevice,
+                    total_ismechanical,
+                    total_requires_samples,
+                    cloneof=cloneof,
+                    isbios=isbios,
+                    isdevice=isdevice,
+                    ismechanical=ismechanical,
+                    requires_samples=req_samples,
+                )
+
+                # --- outputs (unchanged shaping) ---
+                year_out = (year_raw or "")
+                manufacturer_out = (manufacturer_raw or "")
+
+                machines_out[mame_name] = build_mame_machine_record(
+                    description=description,
+                    sourcefile=sourcefile,
+                    cloneof=cloneof,
+                    isbios=isbios,
+                    isdevice=isdevice,
+                    ismechanical=ismechanical,
+                    year=year_out,
+                    manufacturer=manufacturer_out,
+                    rom_count=rom_count,
+                    rom_bytes_total=rom_bytes_total,
+                    disk_required=disk_required,
+                    disk_regions=disk_regions,
+                    disk_media_platforms_count=disk_media_platforms_count,
+                    cpu_count=cpu_count,
+                    sound_chip_count=audio_count,
+                    chips=chips_list,
+                    sound_channels=sound_channels,
+                    device_ref_summary=device_ref_summary,
+                    sampleof=sampleof,
+                    display_count=display_count,
+                    displays=displays_list,
+                    players_value=players_value,
+                    controls=controls_list,
+                )
+
+                # progress log (unchanged cadence/message)
+                maybe_log_progress(
+                    log,
+                    total_machines,
+                    step=5000,
+                    prefix="[mame_parser::parse_mame_xml]",
+                    fmt="{prefix} Parsed {count:,} machines so far...",
+                )
+
+                # honour max_records
+                if max_records and total_machines >= max_records:
+                    elem.clear()
+                    break
+
+                # free memory for this <machine>
+                elem.clear()
 
     except ET.ParseError as e:
         log.error(f"XML parse error while reading {file_path.name}: {e}")

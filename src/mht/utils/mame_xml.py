@@ -8,8 +8,9 @@ Notable helpers:
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple, Dict
-import xml.etree.ElementTree as ET
+from typing import Any, Optional, Tuple, Dict, Iterator
+from xml.etree import ElementTree as ET
+from pathlib import Path
 
 from mht.utils.booleans import yesno_str
 
@@ -147,3 +148,20 @@ def get_core_text_fields(elem) -> Tuple[Optional[str], str, str]:
     year_raw = element_text(elem, "year", default="")
     manufacturer_raw = element_text(elem, "manufacturer", default="")
     return description, year_raw, manufacturer_raw
+
+def iter_mame_events(file_path: Path, encoding: str) -> Iterator[Tuple[str, ET.Element]]:
+    """
+    Stream (event, elem) pairs from a MAME XML file using ElementTree.iterparse.
+
+    - Opens the file with the provided encoding.
+    - Yields both 'start' and 'end' events.
+    - Caller is responsible for calling elem.clear() after handling an 'end' event
+      for large elements (e.g., <machine>) to keep memory usage low.
+
+    Usage pattern (typical):
+        for event, elem in iter_mame_events(path, enc):
+            # capture root attrs on 'start' 'mame'
+            # process 'end' 'machine' blocks, then elem.clear()
+    """
+    with open(file_path, encoding=encoding) as f:
+        yield from ET.iterparse(f, events=("start", "end"))
