@@ -70,7 +70,7 @@ from mht.utils.history_xml import (
 )
 from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
-from mht.utils.summaries import apply_ports_results
+from mht.utils.summaries import apply_ports_results, update_history_totals
 
 
 __all__ = [
@@ -190,7 +190,20 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
             # Process each <entry> at its end tag
             if event == "end" and elem.tag == "entry":
-                total_entries += 1
+                # Classify first so we know which counters to bump
+                kind, primary, aliases = classify_entry(elem)
+
+                # Totals update (replaces manual increments)
+                total_entries, systems_count, software_count, systems_with_aliases = update_history_totals(
+                    total_entries,
+                    systems_count,
+                    software_count,
+                    systems_with_aliases,
+                    kind=kind,
+                    aliases=aliases,
+                )
+
+                # Progress log using the updated total_entries
                 maybe_log_progress(
                     log,
                     total_entries,
@@ -199,19 +212,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                     fmt="{prefix} Parsed {count:,} entries so far...",
                 )
 
-                kind, primary, aliases = classify_entry(elem)
-
                 if kind == "systems":
-                    systems_count += 1
                     if not primary:
                         elem.clear()
                         continue
                     entry_data = build_history_system_record(aliases=aliases)
-                    if aliases:
-                        systems_with_aliases += 1
 
                 elif kind == "software":
-                    software_count += 1
                     elem.clear()
                     continue
 

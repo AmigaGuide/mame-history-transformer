@@ -555,3 +555,28 @@ def apply_ports_results(
             parsing_state["platform_categories_found"][cat] += c
 
     return systems_with_ports, port_overview_count, total_port_lines_all, entry_data
+
+def update_history_totals(
+    total_entries: int,
+    systems_count: int,
+    software_count: int,
+    systems_with_aliases: int,
+    *,
+    kind: str,            # "systems" | "software" | "unknown"
+    aliases: list[str],
+) -> Tuple[int, int, int, int]:
+    """
+    Apply one entry's contributions to the running history totals.
+
+    - Increments total_entries by 1.
+    - Increments systems_count or software_count based on 'kind'.
+    - Increments systems_with_aliases if aliases is non-empty (only meaningful for 'systems').
+    """
+    total_entries += 1
+    if kind == "systems":
+        systems_count += 1
+        if aliases:
+            systems_with_aliases += 1
+    elif kind == "software":
+        software_count += 1
+    return total_entries, systems_count, software_count, systems_with_aliases
