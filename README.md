@@ -12,9 +12,9 @@ This repository contains code developed for the Open University TM470 project:
 
 This project parses and reconciles multiple sources:
 
-- **MAME XML** — structured data describing arcade machines, ROMs, chips, devices, displays, controls, and clone relationships.  
-- **Gaming-History XML** — semi-structured trivia including arcade-to-home conversion details under headings such as `PORTS`.  
-- **Gaming-History INI files** — structured classification lists identifying whether a machine is a game, its category (e.g. Arcade, Computers, Consoles), and its hardware type.
+* **MAME XML** — structured data describing arcade machines, ROMs, chips, devices, displays, controls, and clone relationships.
+* **Gaming-History XML** — semi-structured trivia including arcade-to-home conversion details under headings such as `PORTS`.
+* **Gaming-History INI files** — structured classification lists identifying whether a machine is a game, its category (e.g. Arcade, Computers, Consoles), and its hardware type.
 
 The pipeline produces **ExoticA-ready JSON** for the *Lost in Translation* wiki, plus diagnostic summaries and manifests for quality assurance and reproducibility.
 
@@ -22,84 +22,106 @@ The pipeline produces **ExoticA-ready JSON** for the *Lost in Translation* wiki,
 
 ## Status & approach
 
-This v2 branch focuses on **schema-first, test-driven** correctness. I’ve used **ChatGPT** to help formalise JSON Schemas, add targeted pytest invariants, and align the code with those contracts. A refactor pass is planned to reduce duplication and improve module boundaries; for now the priority is correctness and repeatability.
+This v2 branch focuses on **schema-first, test-driven** correctness with a clear module boundary refactor:
+
+* `mame_parser.py` and `history_parser.py` are **orchestrators** — they stream XML and delegate all extraction, normalisation, counting and record assembly to focused helpers under `utils/` and `inputs/`.
+* Small, reusable utilities remove duplication (XML accessors, counters/totals, progress logging, stamps).
+* Pytest is green; the CLI validator reports successful.
 
 Some tests are intentionally strict: they surface real upstream data anomalies (e.g. impossible display dimensions, `null` platform names) so they act as prompts for manual review rather than being silently normalised.
 
-**Stamps (skip-unchanged):** stages now write a small JSON “stamp” under `data/.stamps/` capturing input file signatures and the tool version. When inputs and tool versions are unchanged, the stage is skipped. This keeps dev iterations fast while preserving reproducibility.
+**Stamps (skip-unchanged):** stages write a small JSON “stamp” under `data/.stamps/` capturing input file signatures and the tool version. When inputs and tool versions are unchanged, the stage is skipped. This keeps dev iterations fast while preserving reproducibility.
 
-**JSON writes:** `utils.io.write_json` pretty-prints and sorts keys by default for stable diffs. Pass `sort_keys=False` when you need to preserve insertion order (e.g. specific displays you already control via sorted inserts).
+**JSON writes:** `utils.io.write_json` pretty-prints and sorts keys by default for stable diffs. Pass `sort_keys=False` when you need to preserve insertion order.
 
 ---
 
 ## Data flow (modules)
 
-| Module | Purpose |
-|---|---|
-| `config.py` | Global constants, including log level and schema versions |
-| `date_utils.py` | Normalises date strings (e.g. fuzzy `198?` → `198X-XX-XX`) |
-| `encoding_utils.py` | Detects file encodings using `chardet` |
-| `history_metadata.py` | Aggregates `.ini` metadata for classifications (game status, category, type) |
-| `history_parser.py` | Extracts and normalises `PORTS` from Gaming-History XML |
-| `logger.py` | Shared logging (file + console) with `[file::function]` prefixes |
-| `main.py` | Entry point; orchestrates pipeline, validates encodings/versions, builds per-run manifest |
-| `mame_parser.py` | Streams MAME XML; extracts machines, years, manufacturers, ROM stats, disk/media flags, displays, controls, and parent/clone relations |
-| `transformer.py` | Final stage: applies selection rules, parses titles, formats manufacturers, chips, ROM/media/controls/displays, merges GH ports, and emits wiki-ready JSON |
-| `utils/headers.py` | Builds unified JSON summary headers (schema_id, schema_version, generated_at, versions) |
-| `utils/io.py` | Safe JSON writer: atomic, pretty, sorted by default (pass sort_keys=False to preserve insertion order) |
-| `utils/versions.py` | Centralised schema IDs/versions (summaries and outputs) and tool versions |
-| `utils/stamps.py`   | Stamp helpers for skip-unchanged execution (pretty JSON + stable digest)  |
+| Module                                                                                        | Purpose                                                                                                                                               |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mht/__main__.py`, `mht/cli.py`                                                               | CLI entrypoints and subcommands (`run`, `status`, `clean`, `validate`)                                                                                |
+| `main.py`                                                                                     | Compatibility entry that calls the pipeline (kept for convenience)                                                                                    |
+| `inputs/mame_parser.py`                                                                       | Streams MAME XML; orchestrates helpers; writes `mame_machines.json`, `mame_parent_index.json`, `mame_parsing_summary.json`                            |
+| `inputs/history_parser.py`                                                                    | Streams Gaming-History XML; orchestrates sectioning + PORTS parsing; writes `gh_system_ports.json`, `history_parsing_summary.json`                    |
+| `inputs/history_metadata.py`                                                                  | Aggregates `.ini` metadata for classifications; writes `gh_ini_classifications.json`, `ini_parsing_summary.json`                                      |
+| `transform/pipeline.py`                                                                       | Final stage: selection + joins + title/manufacturer formatting + chips/ROM/media/controls/displays; writes ExoticA JSONs and `transform_summary.json` |
+| `transform/transformer.py`                                                                    | **Shim** that re-exports/forwards to `transform/pipeline.py`                                                                                          |
+| `utils/mame_xml.py`                                                                           | XML helpers for MAME: attribute/text accessors, yes/no mapping, event iterator, root attr capture, core field reads                                   |
+| `utils/history_xml.py`                                                                        | XML helpers for GH: event iterator, root attr capture, entry classification, attribute/text utilities                                                 |
+| `utils/controls.py`, `utils/displays.py`, `utils/chips.py`, `utils/media.py`, `utils/roms.py` | Focused extractors and formatters used by the parsers and transform                                                                                   |
+| `utils/strings.py`                                                                            | String utilities incl. bucketing keys for year/manufacturer                                                                                           |
+| `utils/summaries.py`                                                                          | Counter bucketing, per-machine/per-entry counter updates, totals update, ports result application, summary builders                                   |
+| `utils/records.py`                                                                            | Per-record assembly helpers (MAME machine record; GH system record; sorted maps)                                                                      |
+| `utils/validator.py`                                                                          | Invariant checks (warnings-only) for MAME and GH parsing                                                                                              |
+| `utils/logger.py`                                                                             | Logging setup + `maybe_log_progress` helper                                                                                                           |
+| `utils/headers.py`                                                                            | Unified JSON summary header builder                                                                                                                   |
+| `utils/io.py`                                                                                 | Safe JSON read/write (atomic, pretty)                                                                                                                 |
+| `utils/stamps.py`                                                                             | Stamp helpers, including `stage_is_fresh()` convenience wrapper                                                                                       |
+| `utils/versions.py`                                                                           | Schema IDs/versions and tool versions (single source of truth)                                                                                        |
+| `inputs/history_ports.py`, `inputs/history_text.py`, `inputs/history_constants.py`            | GH-specific sectioning, PORTS parsing and constants                                                                                                   |
 
 ---
 
 ## Current capabilities
 
-- **Parent/clone handling**  
+* **Parent/clone handling**
   Parents included if `.ini` → `game_status == "game"` and `category` contains Arcade. Clones linked under parents; their ports are unioned into the parent’s record.
 
-- **Title parsing & redirects**  
+* **Title parsing & redirects**
   Splits titles into numbered blocks + `global_version`. Builds wiki page names and sorted redirects. Title anomalies logged; optional overrides from `data/title_overrides.json`.
 
-- **Manufacturer formatting**  
+* **Manufacturer formatting**
   Splits on `/` outside parentheses, rejoins with `&`. Example: `ADK / SNK` → `ADK & SNK`.
 
-- **ROM/media block**  
+* **ROM/media block**
   Multi-line: ROM count, total bytes (binary units), plus optional “Plus:” line for disks. Media normalisation (CD-ROM, DVD-ROM, GD-ROM, LaserDisc, CED, HDD, CompactFlash, SD card, NAND flash, USB storage, VHS tape). Multiplicities shown as `(Nx) Label`.
 
-- **Chips (CPU/Audio)**  
+* **Chips (CPU/Audio)**
   Groups identical chips; frequency formatted to 3dp. Audio tail lines include “Requires additional samples”, “Audio Channel(s): N”, and “Speaker(s): N”.
 
-- **Displays**  
+* **Displays**
   Groups identical screens and outputs `(Nx)` form. Shows type, orientation, resolution, refresh Hz.
 
-- **Controls**  
+* **Controls**
   Player count, control types, ways (including half-ways), buttons vs reqbuttons. Human-readable labels, with pluralisation and “No Buttons” handled. For entries with unknown control layouts but non-zero players, per-player placeholders are emitted to keep the schema consistent.
 
-- **Ports (from GH XML)**  
-  Extracts parent + clone ports with provenance. Preserves GH order and quirks (no silent deduplication). Wiki projection: one-line per port, embedding `[Model]` in title when present, plus a provenance sentence when clone-sourced.  
+* **Ports (from GH XML)**
+  Extracts parent + clone ports with provenance. Preserves GH order and quirks (no silent deduplication). Wiki projection: one-line per port, embedding `[Model]` in title when present, plus a provenance sentence when clone-sourced.
   *Note:* output always contains **both** `parent_source` and `clone_sources` keys to keep the schema fixed, even if one side has no categories.
 
-- **Diagnostics & QA**  
+* **Diagnostics & QA**
   Summaries for encodings, INIs, MAME, GH XML, and transforms. Per-run manifest (`run_manifest.json`) records inputs, outputs, hashes, and timings. Title, media, platform, and publisher anomalies logged for audit.
 
 ---
 
 ## Outputs
 
-- `data/encodings.json` — cached encodings + version strings  
-- `data/run_manifest.json` — per-run provenance (inputs, outputs, hashes, timings)  
-- `data/mame_parsing_summary.json` — MAME totals, distributions, anomalies  
-- `data/history_parsing_summary.json` — GH systems/ports metadata, anomalies, audit trails  
-- `data/ini_parsing_summary.json` — INI coverage, duplicates, unknowns  
-- `data/transform_summary.json` — transformer metrics, title/media/port stats
+* `data/encodings.json` — cached encodings + version strings
 
-- `output/mame_machines.json` — canonical per-machine MAME dataset  
-- `output/mame_parent_index.json` — parent→clones map (and optional clone→parent reverse map)  
-- `output/gh_system_ports.json` — parsed GH systems + PORTS  
-- `output/gh_ini_classifications.json` — per-machine INI classifications  
-- `output/exotica_lit_raw_data.json` — full structured per-parent records (debug/validation)  
-- `output/exotica_lit_wiki.json` — slimmed, wiki-ready JSON for ExoticA infoboxes  
-- `output/exotica_wiki_pages_and_redirects.json` — page list, redirects, collisions
+* `data/run_manifest.json` — per-run provenance (inputs, outputs, hashes, timings)
+
+* `data/mame_parsing_summary.json` — MAME totals, distributions, anomalies
+
+* `data/history_parsing_summary.json` — GH systems/ports metadata, anomalies, audit trails
+
+* `data/ini_parsing_summary.json` — INI coverage, duplicates, unknowns
+
+* `data/transform_summary.json` — transformer metrics, title/media/port stats
+
+* `output/mame_machines.json` — canonical per-machine MAME dataset
+
+* `output/mame_parent_index.json` — parent→clones map (and optional clone→parent reverse map)
+
+* `output/gh_system_ports.json` — parsed GH systems + PORTS
+
+* `output/gh_ini_classifications.json` — per-machine INI classifications
+
+* `output/exotica_lit_raw_data.json` — full structured per-parent records (debug/validation)
+
+* `output/exotica_lit_wiki.json` — slimmed, wiki-ready JSON for ExoticA infoboxes
+
+* `output/exotica_wiki_pages_and_redirects.json` — page list, redirects, collisions
 
 ---
 
@@ -116,9 +138,9 @@ All four summary files include a unified header:
 }
 ```
 
-* **MAME** (`mht.mame.summary`): `versions.mame_xml_version`, `mame_build`, `mameconfig`, *(optionally)* `mame_parser_version`.
-* **History** (`mht.history.summary`): `versions.gh_version`, `gh_date`, *(optionally)* `history_parser_version`.
-* **INI** (`mht.ini.summary`): `versions.ini_generated_at` (+ consensus `mame_*` if present), *(optionally)* `ini_summary_version`.
+* **MAME** (`mht.mame.summary`): `versions.mame_xml_version`, `mame_build`, `mameconfig`, `mame_parser_version`.
+* **History** (`mht.history.summary`): `versions.gh_version`, `gh_date`, `history_parser_version`.
+* **INI** (`mht.ini.summary`): `versions.ini_generated_at` (+ consensus `mame_*` if present), `ini_summary_version`.
 * **Transform** (`mht.transform.summary`): timings are **top-level** (`started_utc`, `finished_utc`, `duration_seconds`). `versions.transformer_version` is in the header.
 
 Back-compat:
@@ -150,31 +172,34 @@ We use semantic versioning independently for **tools** and **schemas**:
 
 Each stage writes a human-friendly stamp JSON under `data/.stamps/`, then compares it on the next run:
 
-* `data/.stamps/mame.json` — for `mame_parser.py`
-* `data/.stamps/history.json` — for `history_parser.py`
-* `data/.stamps/ini.json` — for `history_metadata.py` (INI coverage)
-* `data/.stamps/transform.json` — for `transformer.py`
+* `data/.stamps/mame.json` — for `inputs/mame_parser.py`
+* `data/.stamps/history.json` — for `inputs/history_parser.py`
+* `data/.stamps/ini.json` — for `inputs/history_metadata.py`
+* `data/.stamps/transform.json` — for `transform/pipeline.py`
 
-**Stamp fields (pretty-printed):**
+We use a convenience wrapper:
 
-```json
-{
-  "schema_id": "mht.stage.stamp",
-  "schema_version": "1.0.0",
-  "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
-  "stage_id": "mht.stage.<name>",
-  "tool_version": "1.0.1",
-  "inputs": [
-    {"path": "data/mame.xml", "size": 303629308, "size_h": "289.6 MiB",
-     "mtime_ns": 1759160055721273900, "mtime_iso": "2025-09-29T15:34:15.721274Z"}
-  ],
-  "digest": "<sha256>"
-}
+```python
+from mht.utils.stamps import stage_is_fresh, save_stamp
+
+fresh, stamp_path, current_stamp = stage_is_fresh(
+    "transform.json",
+    schema_id="mht.stage.transform",
+    tool="transformer",
+    inputs=[...],
+)
+if fresh:
+    # skip work
+    return True
+
+# ...do work...
+
+save_stamp(stamp_path, current_stamp)
 ```
 
-* **Freshness rule:** a stage is skipped when the new digest matches the saved one.
-* **What changes the digest?** input path/size/mtime, and the stage’s `tool_version` (from `src/mht/utils/versions.py`).
-* **Housekeeping:** stamps are ignored by Git; delete a stamp file to force a rebuild of that stage.
+**Freshness rule:** a stage is skipped when the new digest matches the saved one.
+**What changes the digest?** input path/size/mtime, and the stage’s `tool_version`.
+**Housekeeping:** stamps are ignored by Git; delete a stamp file to force a rebuild.
 
 ---
 
@@ -182,19 +207,19 @@ Each stage writes a human-friendly stamp JSON under `data/.stamps/`, then compar
 
 Schemas live in `src/mht/contracts/` and are versioned using semantic versions:
 
-- `exotica_lit_raw_data.schema.json` (`exotica_lit_raw_data`, **1.1.0**)  
-- `exotica_lit_wiki.schema.json` (`exotica_lit_wiki`, **1.1.0**)  
-- `exotica_wiki_pages_and_redirects.schema.json` (`exotica_wiki_pages_and_redirects`, **1.1.0**)  
-- `gh_ini_classifications.schema.json` (`gh_ini_classifications`, **1.1.0**)  
-- `gh_system_ports.schema.json` (`gh_system_ports`, **1.1.0**)  
-- `mame_machines.schema.json` (`mame_machines`, **1.1.0**)  
-- `mame_parent_index.schema.json` (`mame_parent_index`, **1.1.0**)
+* `exotica_lit_raw_data.schema.json` (`exotica_lit_raw_data`, **1.1.0**)
+* `exotica_lit_wiki.schema.json` (`exotica_lit_wiki`, **1.1.0**)
+* `exotica_wiki_pages_and_redirects.schema.json` (`exotica_wiki_pages_and_redirects`, **1.1.0**)
+* `gh_ini_classifications.schema.json` (`gh_ini_classifications`, **1.1.0**)
+* `gh_system_ports.schema.json` (`gh_system_ports`, **1.1.0**)
+* `mame_machines.schema.json` (`mame_machines`, **1.1.0**)
+* `mame_parent_index.schema.json` (`mame_parent_index`, **1.1.0**)
 
 ---
 
 ### Centralised versions
 
-`src/mht/versions.py` is the single source of truth for:
+`src/mht/utils/versions.py` is the single source of truth for:
 
 * **Summary schema IDs/versions:** `SCHEMA_IDS`, `SCHEMA_INFO`
 * **Tool versions:** `TOOL_VERSIONS`
@@ -206,9 +231,9 @@ Usage example:
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
 
 header = {
-    "schema_id": SCHEMA_IDS["transform"],
-    "schema_version": schema_version(SCHEMA_IDS["transform"]),
-    "versions": {"transformer_version": tool_version("transformer")},
+  "schema_id": SCHEMA_IDS["transform"],
+  "schema_version": schema_version(SCHEMA_IDS["transform"]),
+  "versions": {"transformer_version": tool_version("transformer")},
 }
 
 SCHEMA_ID_WIKI  = output_schema("wiki")["id"]
@@ -223,7 +248,7 @@ Run the full suite:
 
 ```bash
 python -m pytest -q
-
+```
 
 ## CLI quick start
 

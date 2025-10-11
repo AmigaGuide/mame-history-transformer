@@ -7,6 +7,34 @@ All notable changes to this project will be documented here.
 - Centralise data-source versions (optional) and minor header utilities
 - Plan removal of legacy summary fields in a future major release
 
+## [1.0.2] - 2025-10-11
+### Added
+- `utils.stamps.stage_is_fresh()` helper to centralise stamp ceremony (ensures stamps dir, builds current stamp, loads previous, checks freshness).
+- `utils.logger.maybe_log_progress()` used by MAME and History parsers.
+- `utils/history_xml.py` module with event iterator, root-attr capture, and entry classification helpers.
+- `utils/records.py` helpers for GH (`build_history_system_record`, `build_history_systems_sorted`).
+
+### Changed
+- **Parsers now act as orchestrators:**
+  - `inputs/mame_parser.py` delegates header reads, core fields, players/controls/chips/displays/media/roms, counters and record assembly to utils.
+  - `inputs/history_parser.py` delegates root capture, entry classification, text sectioning, PORTS handling, counters and record assembly.
+- **Stamps:** MAME/History/INI/Transform stages now use `stage_is_fresh()` + `save_stamp` (replaces repeated `make_stamp/load_stamp/is_fresh` boilerplate).
+- **Transform pipeline:** work moved to `transform/pipeline.py`; `transform/transformer.py` retained as a shim for compatibility.
+- **Invariants:** warnings-only checks moved to `utils.validator` for both MAME and History.
+- **Housekeeping:** progress logs consolidated via `maybe_log_progress`; minor import tidies.
+
+### Fixed
+- Duplicate `inputs=` argument in `history_metadata.py` stamp setup.
+- Several small ordering issues in `history_parser.py` after refactor (initialisation before loop).
+
+### Documentation
+- README updated: module map reflects orchestrator architecture, stamps wrapper, and pipeline rename.
+- ROADMAP updated: Phase 1 largely complete; stamps helper noted; next CLI/validator items clarified.
+- Parser module docstrings refreshed to describe orchestrator role and side-effects.
+
+### Notes
+- Behaviour is unchanged; refactor focuses on structure, duplication reduction, and clarity.
+
 ## [1.0.1] - 2025-09-29
 ### Added
 - Unified `header` in all summary JSONs (MAME, History, INI, Transform) with:
