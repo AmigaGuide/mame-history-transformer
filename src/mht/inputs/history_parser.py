@@ -57,7 +57,12 @@ from mht.inputs.history_ports import (
 )
 from mht.inputs.history_text import segment_text_sections
 from mht.inputs.history_summary import build_history_summary
-from mht.utils.history_xml import iter_history_events
+from mht.utils.history_xml import (
+    iter_history_events,
+    capture_history_root_attrs,
+    get_entry_header,
+    get_entry_texts,
+)
 
 
 __all__ = [
@@ -90,18 +95,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         log.info("History stage up-to-date (stamp matched) — skipping parse")
         return True
 
-    try:
-        for event, elem in iter_history_events(file_path, encoding):           
-            if elem.tag.lower() == "history":
-                history_version = elem.attrib.get("version")
-                history_date = elem.attrib.get("date")
-                break
-    except ET.ParseError:
-        log.warning("Could not read history root attributes for summary header")
-
-    # ----------------------------
-    # Parsing state
-    # ----------------------------
     parsing_state = {
         "platforms_found": defaultdict(lambda: {"count": 0, "systems": []}),
         "ports_with_comments": 0,
@@ -141,14 +134,22 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     # Streaming parse of history.xml
     try:
-        with open(file_path, encoding=encoding) as f:
-            for event, elem in ET.iterparse(f, events=("end",)):
-                if elem.tag != "entry":
-                    continue
+        for event, elem in iter_history_events(file_path, encoding):
 
+            # Capture <history> root attributes on the start event (once)
+            hdr = capture_history_root_attrs(event, elem)
+            if hdr is not None:
+                # Only set if not already captured
+                if history_version is None:
+                    history_version = hdr.get("version")
+                if history_date is None:
+                    history_date = hdr.get("date")
+                # Continue the loop; entries are handled on 'end'
+                continue
+
+            # Process each <entry> at its end tag
+            if event == "end" and elem.tag == "entry":
                 total_entries += 1
-                #if (total_entries % 10000) == 0:
-                #    log.info(f"[history_parser::parse_history_entries] Parsed {total_entries:,} entries so far...")
                 maybe_log_progress(
                     log,
                     total_entries,
@@ -214,6 +215,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 parsing_state["platform_categories_found"][cat] += c
 
                 gh_systems[primary] = entry_data
+
+                # free memory for this <entry>
                 elem.clear()
 
     except ET.ParseError as e:
@@ -249,12 +252,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     if not write_json(HISTORY_SUMMARY, summary):  # default sort_keys=True is fine for summaries
         return False
     debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
-
-
-    if not write_json(HISTORY_SUMMARY, summary):  # sorted keys are fine for summaries (default True)
-        return False
-    debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
-
+    
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
     # Invariants (warnings only)
