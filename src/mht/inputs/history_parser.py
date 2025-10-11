@@ -63,6 +63,7 @@ from mht.utils.history_xml import (
     get_entry_header,
     get_entry_texts,
 )
+from mht.utils.validator import check_history_parse_invariants
 
 
 __all__ = [
@@ -237,7 +238,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         return False
     log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")        
 
-
     summary = build_history_summary(
         history_version=history_version,
         history_date=history_date,
@@ -255,44 +255,20 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
-    # Invariants (warnings only)
-    issues = 0
+    # Cache some tallies for the checker (read-only convenience)
+    parsing_state["total_port_lines_all"] = total_port_lines_all
+    parsing_state["systems_with_ports_count"] = systems_with_ports
+    parsing_state["port_overview_count"] = port_overview_count
 
-    def _warn_ok(cond: bool, msg: str):
-        nonlocal issues
-        if not cond:
-            issues += 1
-            log.warning(msg)
-
-    _warn_ok(
-        systems_count + software_count == total_entries,
-        f"[history_parser] systems+software != total_entries ({systems_count}+{software_count}!={total_entries})",
+    check_history_parse_invariants(
+        log=log,
+        systems_count=systems_count,
+        software_count=software_count,
+        total_entries=total_entries,
+        gh_systems=gh_systems,
+        parsing_state=parsing_state,
+        KNOWN_PLATFORMS=KNOWN_PLATFORMS,
     )
-    _warn_ok(len(gh_systems) == systems_count, f"[history_parser] gh_systems count {len(gh_systems)} != systems_count {systems_count}")
-    platform_hits = sum(d["count"] for d in parsing_state["platforms_found"].values())
-    null_pl = parsing_state["null_platform_ports_total"]
-    _warn_ok(
-        platform_hits + null_pl == total_port_lines_all,
-        "[history_parser] platforms_found + null_platforms != port_lines_parsed",
-    )
-    _warn_ok(sum(parsing_state["null_platform_ports_by_system"].values()) == null_pl,
-             "[history_parser] per-system null platform sum mismatch")
-    banner_total_calc = sum(sum(c.values()) for c in parsing_state["platform_banners_by_system"].values())
-    _warn_ok(banner_total_calc == parsing_state["platform_banner_total"],
-             "[history_parser] platform_banner_total mismatch")
-    _warn_ok(systems_with_ports <= systems_count,
-             f"[history_parser] systems_with_ports {systems_with_ports} > systems_count {systems_count}")
-    _warn_ok(port_overview_count <= systems_with_ports,
-             f"[history_parser] port_overview_count {port_overview_count} > systems_with_ports {systems_with_ports}")
-    unknown_cats = [k for k in parsing_state["platform_categories_found"].keys() if k.upper() not in KNOWN_PLATFORMS]
-    if unknown_cats:
-        log.info("[history_parser] unexpected PORTS categories: %s", ", ".join(sorted(set(unknown_cats))))
-    _warn_ok(
-        len(parsing_state.get("systems_with_residue", set())) >= len(parsing_state.get("unparsable_dates", {})),
-        "[history_parser] systems_with_residue fewer than unparsable_dates keys",
-    )
-    if issues == 0:
-        log.info("[history_parser] invariants passed")
 
     # Success: write the stamp now both outputs are good
     save_stamp(stamp_path, current_stamp)

@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Iterable, Tuple, Dict, Any
 from jsonschema import Draft202012Validator
-from collections import Counter
+from collections import Counter, defaultdict
 
 from mht.utils.paths import (
     # output docs
@@ -180,3 +180,86 @@ def check_mame_parse_invariants(
             audio_mismatch += 1
     if cpu_mismatch or audio_mismatch:
         log.warning(f"{log_prefix} Chip count mismatches: cpu={cpu_mismatch}, audio={audio_mismatch}")
+
+def check_history_parse_invariants(
+    *,
+    log,  # logger with .warning() / .info()
+    systems_count: int,
+    software_count: int,
+    total_entries: int,
+    gh_systems: Dict[str, Dict[str, Any]],
+    parsing_state: Dict[str, Any],
+    KNOWN_PLATFORMS: set[str] | Dict[str, Any],  # accepts set or dict-like
+) -> None:
+    """
+    Emit warnings when parsed history counters disagree with expectations.
+
+    Mirrors the inline checks previously in history_parser.parse_history_entries:
+    - systems_count + software_count equals total_entries
+    - gh_systems size equals systems_count
+    - platform hit totals match parsed port lines (including null platform lines)
+    - banner totals are consistent with per-system tallies
+    - monotonic relations (systems_with_ports <= systems_count, etc.)
+    - unexpected PORTS categories listed informatively
+    """
+    issues = 0
+
+    def _warn_ok(cond: bool, msg: str):
+        nonlocal issues
+        if not cond:
+            issues += 1
+            log.warning(msg)
+
+    _warn_ok(
+        systems_count + software_count == total_entries,
+        f"[history_parser] systems+software != total_entries ({systems_count}+{software_count}!={total_entries})",
+    )
+    _warn_ok(len(gh_systems) == systems_count,
+             f"[history_parser] gh_systems count {len(gh_systems)} != systems_count {systems_count}")
+
+    platform_hits = sum(d["count"] for d in parsing_state["platforms_found"].values())
+    null_pl = parsing_state["null_platform_ports_total"]
+    total_port_lines_all = parsing_state.get("total_port_lines_all", 0) or 0  # optional cache
+    # fall back if not provided in parsing_state
+    if not total_port_lines_all:
+        total_port_lines_all = sum(parsing_state.get("platform_banners_by_system", {}).get(sys, Counter()).total()
+                                   for sys in parsing_state.get("platform_banners_by_system", {}))  # best-effort
+
+    _warn_ok(
+        platform_hits + null_pl == parsing_state.get("total_port_lines_all", total_port_lines_all),
+        "[history_parser] platforms_found + null_platforms != port_lines_parsed",
+    )
+
+    _warn_ok(sum(parsing_state["null_platform_ports_by_system"].values()) == null_pl,
+             "[history_parser] per-system null platform sum mismatch")
+
+    banner_total_calc = sum(sum(c.values()) for c in parsing_state["platform_banners_by_system"].values())
+    _warn_ok(banner_total_calc == parsing_state["platform_banner_total"],
+             "[history_parser] platform_banner_total mismatch")
+
+    systems_with_ports = parsing_state.get("systems_with_ports_count")
+    if systems_with_ports is None:
+        # derive defensively if not cached
+        systems_with_ports = len(parsing_state.get("systems_with_port_overview", {})) or 0
+    _warn_ok(systems_with_ports <= systems_count,
+             f"[history_parser] systems_with_ports {systems_with_ports} > systems_count {systems_count}")
+
+    port_overview_count = parsing_state.get("port_overview_count", 0)
+    _warn_ok(port_overview_count <= systems_with_ports,
+             f"[history_parser] port_overview_count {port_overview_count} > systems_with_ports {systems_with_ports}")
+
+    # Unexpected categories (case-insensitive)
+    kp = set(k.upper() for k in (KNOWN_PLATFORMS.keys() if hasattr(KNOWN_PLATFORMS, "keys") else KNOWN_PLATFORMS))
+    found = parsing_state["platform_categories_found"].keys()
+    unknown_cats = sorted({k for k in found if k.upper() not in kp})
+    if unknown_cats:
+        log.info("[history_parser] unexpected PORTS categories: %s", ", ".join(unknown_cats))
+
+    # Residue vs unparsable_dates sanity check
+    _warn_ok(
+        len(parsing_state.get("systems_with_residue", set())) >= len(parsing_state.get("unparsable_dates", {})),
+        "[history_parser] systems_with_residue fewer than unparsable_dates keys",
+    )
+
+    if issues == 0:
+        log.info("[history_parser] invariants passed")
