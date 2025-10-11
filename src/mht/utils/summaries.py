@@ -521,3 +521,37 @@ def update_totals(
         total_ismechanical,
         total_requires_samples,
     )
+
+def apply_ports_results(
+    *,
+    parsing_state: Dict[str, Any],
+    primary: str,
+    entry_data: Dict[str, Any],
+    overview: str | None,
+    platform_counts: Dict[str, int] | None,
+    platform_ports: Dict[str, Any] | None,
+    port_lines: int,
+    systems_with_ports: int,
+    port_overview_count: int,
+    total_port_lines_all: int,
+) -> Tuple[int, int, int, Dict[str, Any]]:
+    """
+    Apply PORTS parsing results to counters/state and return updated tallies
+    and entry_data (shape unchanged).
+    """
+    systems_with_ports += 1
+    total_port_lines_all += port_lines
+
+    if overview:
+        entry_data["port_overview"] = overview
+        parsing_state["systems_with_port_overview"][primary] = overview
+        port_overview_count += 1
+
+    if platform_ports:
+        entry_data["ports"] = platform_ports
+
+    if platform_counts:
+        for cat, c in platform_counts.items():
+            parsing_state["platform_categories_found"][cat] += c
+
+    return systems_with_ports, port_overview_count, total_port_lines_all, entry_data

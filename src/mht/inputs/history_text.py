@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from typing import Dict, List, Iterable, Optional
+from typing import Dict, List, Iterable, Optional, Any
 
 
 __all__ = ["SECTION_PATTERN", "segment_text_sections"]
@@ -50,3 +50,12 @@ def parse_gh_id_from_contribute(lines: Iterable[str]) -> Optional[int]:
         if m:
             return int(m.group(1))
     return None
+
+def extract_text_sections(entry_elem, parsing_state) -> Optional[Dict[str, Any]]:
+    import html
+    text_elem = entry_elem.find("text")
+    if text_elem is None or not text_elem.text:
+        return None
+    raw_text = html.unescape(text_elem.text)
+    from .history_text import segment_text_sections
+    return segment_text_sections(raw_text, parsing_state)

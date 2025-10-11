@@ -55,7 +55,7 @@ from mht.inputs.history_constants import (
 from mht.inputs.history_ports import (
     extract_ports_section,
 )
-from mht.inputs.history_text import segment_text_sections, parse_gh_id_from_contribute
+from mht.inputs.history_text import segment_text_sections, parse_gh_id_from_contribute, extract_text_sections
 from mht.inputs.history_summary import build_history_summary
 from mht.utils.history_xml import (
     iter_history_events,
@@ -66,6 +66,7 @@ from mht.utils.history_xml import (
 )
 from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record
+from mht.utils.summaries import apply_ports_results
 
 
 __all__ = [
@@ -181,34 +182,29 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                     elem.clear()
                     continue
 
-                text_elem = elem.find("text")
-                if text_elem is not None and text_elem.text:
-                    raw_text = html.unescape(text_elem.text)
-                    sectioned = segment_text_sections(raw_text, parsing_state)
-
+                sectioned = extract_text_sections(elem, parsing_state)
+                if sectioned:
                     if "CONTRIBUTE" in sectioned:
                         gh_id = parse_gh_id_from_contribute(sectioned["CONTRIBUTE"])
                         if gh_id is not None:
                             entry_data["gh_id"] = gh_id
 
                     if "PORTS" in sectioned:
-                        systems_with_ports += 1
                         overview, platform_counts, platform_ports, port_lines = extract_ports_section(
                             sectioned["PORTS"], primary, parsing_state
                         )
-                        total_port_lines_all += port_lines
-
-                        if overview:
-                            entry_data["port_overview"] = overview
-                            parsing_state["systems_with_port_overview"][primary] = overview
-                            port_overview_count += 1
-
-                        if platform_ports:
-                            entry_data["ports"] = platform_ports
-
-                        if platform_counts:
-                            for cat, c in platform_counts.items():
-                                parsing_state["platform_categories_found"][cat] += c
+                        systems_with_ports, port_overview_count, total_port_lines_all, entry_data = apply_ports_results(
+                            parsing_state=parsing_state,
+                            primary=primary,
+                            entry_data=entry_data,
+                            overview=overview,
+                            platform_counts=platform_counts,
+                            platform_ports=platform_ports,
+                            port_lines=port_lines,
+                            systems_with_ports=systems_with_ports,
+                            port_overview_count=port_overview_count,
+                            total_port_lines_all=total_port_lines_all,
+                        )
 
                 gh_systems[primary] = entry_data
 
