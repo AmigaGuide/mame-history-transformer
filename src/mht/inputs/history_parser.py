@@ -65,7 +65,7 @@ from mht.utils.history_xml import (
     classify_entry,
 )
 from mht.utils.validator import check_history_parse_invariants
-from mht.utils.records import build_history_system_record
+from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results
 
 
@@ -220,10 +220,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
     log.info(f"  - {port_overview_count} entries contained a port overview")
 
-    # ----------------------------
     # Write parsed per-system output (sorted)
-    # ----------------------------
-    systems_sorted = {k: gh_systems[k] for k in sorted(gh_systems.keys(), key=str.lower)}
+    systems_sorted = build_history_systems_sorted(gh_systems)
     
     if not write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False):  # preserve your explicit order
         return False

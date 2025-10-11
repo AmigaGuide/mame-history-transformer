@@ -10,10 +10,10 @@ out of transformer.py while preserving identical behaviour.
 """
 
 from __future__ import annotations
+
 from typing import Dict, Any, Tuple, List, Set, Optional
 from pathlib import Path
 
-# Local utilities
 from mht.utils.strings import format_manufacturers_for_wiki
 from mht.utils.roms import format_rom_block
 from mht.utils.chips import (
@@ -366,3 +366,10 @@ def build_history_system_record(
         "port_overview": port_overview,
         "ports": ports or {},
     }
+
+def build_history_systems_sorted(gh_systems: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Return a case-insensitively sorted mapping of system name -> record.
+    Matches the previous comprehension in history_parser.
+    """
+    return {k: gh_systems[k] for k in sorted(gh_systems.keys(), key=str.lower)}
