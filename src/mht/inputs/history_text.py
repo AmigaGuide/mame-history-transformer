@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from typing import Dict, List
+from typing import Dict, List, Iterable, Optional
+
 
 __all__ = ["SECTION_PATTERN", "segment_text_sections"]
 
 # ----- dashed headings like "----- PORTS -----" (case-insensitive)
 SECTION_PATTERN = re.compile(r"^-+\s+([A-Z0-9 &]+)\s+-+$", re.IGNORECASE)
+_GH_ID_RE = re.compile(r"id=(\d+)")
 
 def segment_text_sections(text: str, parsing_state: Dict) -> Dict[str, List[str]]:
     """
@@ -37,3 +39,14 @@ def segment_text_sections(text: str, parsing_state: Dict) -> Dict[str, List[str]
         sections[current_section].append(line)
 
     return sections
+
+def parse_gh_id_from_contribute(lines: Iterable[str]) -> Optional[int]:
+    """
+    Given the lines from a CONTRIBUTE section, return the first gh_id found (as int),
+    or None if no 'id=<int>' pattern exists.
+    """
+    for line in lines:
+        m = _GH_ID_RE.search(line)
+        if m:
+            return int(m.group(1))
+    return None

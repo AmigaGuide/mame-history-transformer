@@ -55,7 +55,7 @@ from mht.inputs.history_constants import (
 from mht.inputs.history_ports import (
     extract_ports_section,
 )
-from mht.inputs.history_text import segment_text_sections
+from mht.inputs.history_text import segment_text_sections, parse_gh_id_from_contribute
 from mht.inputs.history_summary import build_history_summary
 from mht.utils.history_xml import (
     iter_history_events,
@@ -187,11 +187,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                     sectioned = segment_text_sections(raw_text, parsing_state)
 
                     if "CONTRIBUTE" in sectioned:
-                        for line in sectioned["CONTRIBUTE"]:
-                            m = re.search(r"id=(\d+)", line)
-                            if m:
-                                entry_data["gh_id"] = int(m.group(1))
-                                break
+                        gh_id = parse_gh_id_from_contribute(sectioned["CONTRIBUTE"])
+                        if gh_id is not None:
+                            entry_data["gh_id"] = gh_id
 
                     if "PORTS" in sectioned:
                         systems_with_ports += 1
