@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
+from pathlib import Path
+import datetime
+
 
 from mht.utils.titles import build_redirect_sources, collapse_ws
+from mht.utils.io import write_json
 
 
 WIKI_PREFIX = "Lost In Translation/"
@@ -108,3 +112,37 @@ def compute_pages_and_redirects(out_map: Dict[str, dict], prefix: str) -> dict:
         },
         "stats": stats,
     }
+
+def write_pages_and_redirects(
+    *,
+    out_map: Dict[str, Dict[str, Any]],
+    prefix: str,
+    schema_id: str,
+    schema_version: str,
+    output_path: Path,
+) -> Tuple[bool, Dict[str, Any]]:
+    """
+    Compute page/redirect info from `out_map` and write the pages artefact.
+
+    Returns
+    -------
+    (ok_written, pages_info)
+    """
+    pages_info = compute_pages_and_redirects(out_map, prefix)
+
+    generated_at_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    doc = {
+        "header": {
+            "schema_id": schema_id,
+            "schema_version": schema_version,
+            "generated_at": generated_at_iso,
+        },
+        "prefix": prefix,
+        "stats": pages_info["stats"],
+        "pages": pages_info["pages"],
+        "page_names": pages_info["page_names"],
+        "redirects": pages_info["redirects"],
+        "conflicts": pages_info["conflicts"],
+    }
+    ok = write_json(output_path, doc)
+    return ok, pages_info

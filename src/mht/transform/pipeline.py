@@ -72,7 +72,7 @@ from mht.utils.titles import (
     collapse_ws              as _collapse_ws,
 )
 from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
-from mht.utils.wiki_pages import compute_pages_and_redirects, WIKI_PREFIX
+from mht.utils.wiki_pages import compute_pages_and_redirects, WIKI_PREFIX, write_pages_and_redirects
 from mht.utils.roms import format_rom_block
 from mht.utils.selection import (
     classify as _classify,
@@ -391,22 +391,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     # --- Build pages + redirects (now via helper) ---
     generated_at_iso = datetime.datetime.utcnow().isoformat() + "Z"
 
-    pages_info = compute_pages_and_redirects(out_map, WIKI_PREFIX)
-
-    wiki_pages_redirects = {
-        "header": {
-            "schema_id": SCHEMA_ID_PAGES,
-            "schema_version": SCHEMA_VER_PAGES,
-            "generated_at": generated_at_iso,
-        },
-        "prefix": WIKI_PREFIX,
-        "stats": pages_info["stats"],
-        "pages": pages_info["pages"],
-        "page_names": pages_info["page_names"],
-        "redirects": pages_info["redirects"],
-        "conflicts": pages_info["conflicts"],
-    }
-    ok_pages = write_json(EXOTICA_PAGES, wiki_pages_redirects)
+    ok_pages, pages_info = write_pages_and_redirects(
+        out_map=out_map,
+        prefix=WIKI_PREFIX,
+        schema_id=SCHEMA_ID_PAGES,
+        schema_version=SCHEMA_VER_PAGES,
+        output_path=EXOTICA_PAGES,
+    )
 
     ok_out = ok_out_wiki and ok_out_raw and ok_pages
 
