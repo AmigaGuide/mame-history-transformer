@@ -11,7 +11,7 @@ out of transformer.py while preserving identical behaviour.
 
 from __future__ import annotations
 
-from typing import Dict, Any, Tuple, List, Set, Optional
+from typing import Dict, Any, Tuple, List, Set, Optional, Callable
 from pathlib import Path
 
 from mht.utils.strings import format_manufacturers_for_wiki
@@ -39,7 +39,7 @@ from mht.utils.media import (
     normalise_device_to_media,
     normalise_device_list_to_media,
 )
-from mht.utils.selection import classify as _classify
+from mht.utils.selection import classify as _classify, classify_from_ini
 from mht.utils.booleans import truthy_flag as _truthy_flag
 
 # --- small helpers kept here to avoid reintroducing transformer-level noise ---
@@ -373,3 +373,34 @@ def build_history_systems_sorted(gh_systems: Dict[str, Any]) -> Dict[str, Any]:
     Matches the previous comprehension in history_parser.
     """
     return {k: gh_systems[k] for k in sorted(gh_systems.keys(), key=str.lower)}
+
+def build_ini_class_map(
+    parsed: Dict[str, dict],
+    *,
+    classifier: Callable[[str, Dict[str, dict]], Dict[str, object]] = classify_from_ini,
+) -> Dict[str, dict]:
+    """
+    Assemble the machine-centric map for output/gh_ini_classifications.json.
+
+    Parameters
+    ----------
+    parsed : dict
+        Bundle returned by load_ini_classifications().
+    classifier : callable
+        Function that maps (machine_name, parsed) -> classification dict.
+        Defaults to utils.selection.classify_from_ini.
+
+    Returns
+    -------
+    dict
+        { machine_name -> {game_status, category[], type} }, names sorted A–Z.
+    """
+    union_names: Set[str] = set()
+    for key in ("game_status", "category", "type"):
+        union_names |= set((parsed.get(key, {}) or {}).get("machine_sections", {}).keys())
+
+    names_sorted = sorted(union_names)
+    out_map: Dict[str, dict] = {}
+    for name in names_sorted:
+        out_map[name] = classifier(name, parsed)
+    return out_map

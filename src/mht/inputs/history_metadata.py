@@ -51,6 +51,7 @@ from mht.utils.ini import (
 )
 from mht.inputs.ini_summary import build_ini_summary
 from mht.utils.selection import classify_from_ini
+from mht.utils.records import build_ini_class_map
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -58,7 +59,6 @@ log = setup_logger(log_level=LOG_LEVEL)
 __all__ = [
     "parse_history_inis",
     "load_ini_classifications",
-    "build_machine_classifications",
     "INI_FILES",
 ]
 
@@ -114,23 +114,6 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
     log.info(f"INI classification data loaded in {time.perf_counter() - t0:.2f} seconds")
     return parsed
 
-def build_machine_classifications(parsed: Dict[str, dict]) -> Dict[str, dict]:
-    """
-    Build the machine-centric map for output/gh_ini_classifications.json
-    from the parsed bundle. Pure (no I/O).
-    """
-    union_names: Set[str] = set()
-    for key in ("game_status", "category", "type"):
-        union_names |= set((parsed.get(key, {}) or {}).get("machine_sections", {}).keys())
-
-    names_sorted = sorted(union_names)
-    out_map: Dict[str, dict] = {}
-    #for name in names_sorted:
-    #    out_map[name] = classify_machine(name, parsed)
-    for name in names_sorted:
-        out_map[name] = classify_from_ini(name, parsed)
-    return out_map
-
 # --------------------------------------------------------------------------------------
 # Orchestrator (I/O + stamps)
 # --------------------------------------------------------------------------------------
@@ -163,7 +146,8 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     summary = build_ini_summary(parsed, now_iso)
 
     # 3) Build machine-centric map (pure)
-    class_map = build_machine_classifications(parsed)
+    #class_map = build_machine_classifications(parsed)
+    class_map = build_ini_class_map(parsed)
 
     # 4) Write outputs (I/O only here)
     ok_summary = write_json(INI_SUMMARY, summary, sort_keys=True)
