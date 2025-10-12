@@ -1,24 +1,33 @@
-# Filename: history_metadata.py
-# Author: XtC
-#
-# Purpose:
-# Parse classification metadata from three Gaming-History INI files:
-# - [GAMING HISTORY] Game Or No Game.ini
-# - [GAMING HISTORY] Machine Category.ini
-# - [GAMING HISTORY] Machine Type.ini
-#
-# Pure workers (no I/O, no stamps):
-#   - load_ini_classifications(encodings) -> parsed bundle
-#   - build_ini_summary(parsed, now_iso)  -> summary dict for data/ini_parsing_summary.json
-#   - build_machine_classifications(parsed) -> map for output/gh_ini_classifications.json
-#
-# Orchestrator (I/O + stamps only):
-#   - parse_history_inis(data_dir, encodings) -> bool
-#
-# Outputs (unchanged):
-#   1) data/ini_parsing_summary.json       (diagnostic summary for audit)
-#   2) output/gh_ini_classifications.json  (machine-centric parsed map)
-#
+"""
+History INI → classifications (stage orchestrator)
+
+Parses Gaming-History INI files and emits:
+- data/ini_parsing_summary.json       (diagnostic summary for audit)
+- output/gh_ini_classifications.json  (machine-centric classification map)
+
+Design
+------
+This module is an orchestrator:
+- Stamps/IO here only (skip-unchanged via utils.stamps.stage_is_fresh).
+- Pure work is delegated to helpers:
+  * utils.ini: INI parsing/normalisation and header metadata extraction
+  * inputs.ini_summary: builds the summary document from parsed bundle
+  * utils.selection: INI-based machine classification
+  * utils.records: builds the machine-centric output map
+
+Inputs
+------
+- Three GH INIs:
+    - [GAMING HISTORY] Game Or No Game.ini
+    - [GAMING HISTORY] Machine Category.ini
+    - [GAMING HISTORY] Machine Type.ini
+- encodings.json (included in the stamp for reproducibility)
+
+Notes
+-----
+- Behaviour: no filtering/selection policy here; we only surface what the INIs say.
+- Writes the stamp only after both outputs are written successfully.
+"""
 
 from __future__ import annotations
 
@@ -80,8 +89,36 @@ UNKNOWN = "unknown"
 
 def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
     """
-    Load and parse all three INIs. No file writes, no stamps.
-    Returns a dict keyed by {"game_status","category","type"} with extended stats.
+    Parse the three GH INIs into an extended, analysis-friendly bundle (pure).
+
+    Parameters
+    ----------
+    encodings : dict
+        Map of filename -> text encoding, typically read from encodings.json.
+
+    Returns
+    -------
+    dict
+        {
+          "game_status": {
+            "machine_sections": {name -> set(section)},
+            "section_listed_counts": {section -> listed_count},
+            "section_unique_sets": {section -> set(unique_names)},
+            "entries_listed": int,
+            "machines_with_multiple_sections": int,
+            "duplicates_across_sections": int,
+            "duplicates_within_section": int,
+            "version": {mame_version?, mame_build?, generated_date?},
+            "encoding": "<encoding>"
+          },
+          "category": { ... },
+          "type":     { ... }
+        }
+
+    Notes
+    -----
+    - Missing INIs yield empty structures with an informative warning.
+    - Version metadata is scraped from the INI header region (first ~16 KiB).
     """
     t0 = time.perf_counter()
     parsed: Dict[str, dict] = {}
@@ -106,8 +143,6 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
 
         ext = parse_ini_file_extended(path, enc)
         ext["version"] = ini_version_info(path, encoding=enc)
-        #ext = _parse_ini_file_extended(path, enc)
-        #ext["version"] = _ini_version_info(path, encoding=enc)
         ext["encoding"] = enc
         parsed[key] = ext
 
@@ -120,9 +155,28 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
 
 def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     """
-    Entry point expected by main.py.
-    Performs stamp check, delegates to pure workers, writes files, and saves stamp.
-    """
+    Orchestrate the History INI stage: stamp check → parse → summarise → write.
+
+    Parameters
+    ----------
+    data_dir : Path
+        Base directory for data files (unused directly here; paths come from utils.paths).
+    encodings : dict
+        Map of filename -> encoding for the three INIs.
+
+    Returns
+    -------
+    bool
+        True on success (or when the stage is fresh and skipped). False on write failure
+        or XML/IO errors (stamp is not saved in that case).
+
+    Side effects
+    ------------
+    - Writes:
+        * data/ini_parsing_summary.json
+        * output/gh_ini_classifications.json
+    - Maintains a stage stamp at data/.stamps/ini.json (created only on success).
+    """    
     t0 = time.perf_counter()
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
 
@@ -146,7 +200,6 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     summary = build_ini_summary(parsed, now_iso)
 
     # 3) Build machine-centric map (pure)
-    #class_map = build_machine_classifications(parsed)
     class_map = build_ini_class_map(parsed)
 
     # 4) Write outputs (I/O only here)

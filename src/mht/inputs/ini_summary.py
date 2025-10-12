@@ -1,9 +1,13 @@
 """
-INI summary builder for history metadata stage.
+INI summary builder for the History INI stage (pure).
 
-This module assembles the data/ini_parsing_summary.json document from the
-pure-parsed INI bundle produced by load_ini_classifications().
-It intentionally does not read files or touch stamps.
+Takes the parsed INI bundle (from load_ini_classifications) and assembles
+data/ini_parsing_summary.json, including:
+- per-file stats (encoding, version hints, section counts, duplicates)
+- union/missing coverage across game_status/category/type
+- a unified header with schema/tool versions
+
+No file I/O or stamps here; callers handle writing and stamping.
 """
 
 from __future__ import annotations
