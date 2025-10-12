@@ -251,9 +251,27 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "ini_versions":                {fn: (ini_versions_raw.get(fn) or "Unknown") for fn in ini_versions_raw}
     }
 
-    all_names = sorted(mame.keys())
-    eligible_parents: Set[str] = {n for n in all_names if _is_eligible_parent(n, mame, ini_map)}
-    included_parents: Set[str] = eligible_parents
+    #all_names = sorted(mame.keys())
+    #eligible_parents: Set[str] = {n for n in all_names if _is_eligible_parent(n, mame, ini_map)}
+    #included_parents: Set[str] = eligible_parents
+
+    # Compute the final parent set via the central selection helper
+    _result = _build_final_set(mame, ini_map)
+
+    # Support either signature: Set[str] or (eligible_set, included_set, excluded_reasons)
+    if isinstance(_result, tuple) and len(_result) >= 2:
+        eligible_parents, included_parents = _result[0], _result[1]
+        # Optional third return: reasons dict; keep if provided, else preserve existing local dict
+        if len(_result) >= 3 and isinstance(_result[2], dict):
+            excluded_reasons = _result[2]
+    else:
+        # Older helper that returns only the included set
+        included_parents = set(_result)
+        # Derive eligible via the older per-item check for parity with previous behaviour
+        eligible_parents = {n for n in mame.keys() if _is_eligible_parent(n, mame, ini_map)}
+
+    # A tiny sanity log (debug)
+    debug_log(f"[transform::pipeline] eligible={len(eligible_parents):,}, included={len(included_parents):,}")
 
     out_map: Dict[str, Dict[str, Any]] = {}
     excluded_reasons = {"not_game": 0, "not_arcade": 0, "unknown_classification": 0}

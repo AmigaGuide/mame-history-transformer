@@ -10,6 +10,7 @@ Includes:
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+
 from xml.etree.ElementTree import Element
 
 from mht.utils.chips import format_hz_3dp  # <-- import from chips
@@ -51,10 +52,13 @@ def build_displays_section(displays: Optional[List[Dict[str, Any]]],
     """Group identical screen specs into tidy buckets."""
     disp_list = displays or []
     groups: Dict[tuple, int] = {}
+
     for d in disp_list:
         typ = type_title(d.get("type"))
         ori = orientation_from_rotate(d.get("rotate")) or ""
         hz_str = format_hz_3dp(d.get("refresh_hz"))
+
+        # Dimensions are meaningful only for raster-like displays
         w = h = None
         if typ in {"Raster", "LCD"}:
             try:
@@ -64,6 +68,7 @@ def build_displays_section(displays: Optional[List[Dict[str, Any]]],
                     w = h = None
             except Exception:
                 w = h = None
+
         key = (typ, ori, w, h, hz_str)
         groups[key] = groups.get(key, 0) + 1
 
@@ -80,14 +85,21 @@ def build_displays_section(displays: Optional[List[Dict[str, Any]]],
 
     grouped_list: List[Dict[str, Any]] = []
     for (typ, ori, w, h, hz), c in sorted(groups.items(), key=_ord_key):
-        grouped_list.append({
+        group: Dict[str, Any] = {
             "count": c,
             "type": typ or "",
             "orientation": ori,
-            "width": w,
-            "height": h,
             "refresh": hz,
-        })
+        }
+
+        # Only include pixel dimensions for raster-like displays
+        if (typ in {"Raster", "LCD"}) and (w is not None and h is not None):
+            group["width"] = w
+            group["height"] = h
+        # For SVG/Vector, leave width/height absent (schema forbids them)
+
+        grouped_list.append(group)
+
     return {
         "heading": _pluralise("Screen", cnt),
         "count": cnt,
@@ -107,13 +119,14 @@ def displays_section_to_display(section: Dict[str, Any]) -> str:
         w   = g.get("width")
         h   = g.get("height")
         hz  = g.get("refresh")
+
         type_label = typ + (f" ({ori})" if ori else "")
-        if c > 1:
-            lines.append(f"({c}x) {type_label}")
-        else:
-            lines.append(type_label)
-        if w is not None and h is not None:
+        lines.append(f"({c}x) {type_label}" if c > 1 else type_label)
+
+        # Only show pixel dimensions for raster-like displays
+        if typ in ("Raster", "LCD") and w is not None and h is not None:
             lines.append(f"{w} x {h} pixels")
+
         if hz:
             lines.append(hz)
     return "\n".join(lines)

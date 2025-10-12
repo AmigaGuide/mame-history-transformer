@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:exotica:schema:exotica_lit_raw_data:1.1.0",
+  "$id": "urn:exotica:schema:exotica_lit_raw_data:1.1.1",
   "title": "ExoticA Lost in Translation - Raw Data",
   "description": "Schema for the verbose/raw LiT output used for validation and review.",
   "type": "object",
@@ -13,7 +13,7 @@
       "required": ["schema_id", "schema_version", "versions", "generated_at"],
       "properties": {
         "schema_id":      { "const": "exotica_lit_raw_data" },
-        "schema_version": { "const": "1.1.0" },
+        "schema_version": { "const": "1.1.1" },
         "generated_at":   { "type":  "string", "format": "date-time" },
         "versions": {
           "type": "object",
@@ -156,36 +156,39 @@
       }
     },
 
-    "DisplayGroup": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["count", "type", "orientation", "width", "height", "refresh"],
-      "properties": {
-        "count": { "type": "integer", "minimum": 0 },
-        "type": { "type": "string", "enum": ["Raster", "Vector", "LCD", "SVG"] },
-        "orientation": { "type": "string" },
-        "width": { "type": ["integer", "null"], "minimum": 1 },
-        "height": { "type": ["integer", "null"], "minimum": 1 },
-        "refresh": { "$ref": "#/$defs/RefreshHzString" }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "type": { "const": "Vector" } }, "required": ["type"] },
-          "then": {
-            "properties": {
-              "width":  { "type": ["integer", "null"], "minimum": 1 },
-              "height": { "type": ["integer", "null"], "minimum": 1 }
-            }
-          },
-          "else": {
-            "properties": {
-              "width":  { "type": "integer", "minimum": 1 },
-              "height": { "type": "integer", "minimum": 1 }
-            }
-          }
-        }
-      ]
-    },
+	"DisplayGroup": {
+	  "type": "object",
+	  "additionalProperties": false,
+	  "properties": {
+		"count":       { "type": "integer", "minimum": 0 },
+		"type":        { "type": "string", "enum": ["Raster", "Vector", "LCD", "SVG"] },
+		"orientation": { "type": "string" },
+		"width":       { "type": "integer", "minimum": 1 },
+		"height":      { "type": "integer", "minimum": 1 },
+		"refresh":     { "$ref": "#/$defs/RefreshHzString" }
+	  },
+
+	  "required": ["count", "type", "orientation", "refresh"],
+
+	  "allOf": [
+		{
+		  "if": { "properties": { "type": { "enum": ["Raster", "LCD"] } }, "required": ["type"] },
+		  "then": { "required": ["width", "height"] }
+		},
+
+		{
+		  "if": { "properties": { "type": { "enum": ["SVG", "Vector"] } }, "required": ["type"] },
+		  "then": {
+			"not": {
+			  "anyOf": [
+				{ "required": ["width"] },
+				{ "required": ["height"] }
+			  ]
+			}
+		  }
+		}
+	  ]
+	},
 
     "GameRecord": {
       "type": "object",
