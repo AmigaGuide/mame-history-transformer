@@ -146,3 +146,23 @@ def classify_from_ini(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, o
         machine_type = sorted(type_set)[0]
 
     return {"game_status": game_status, "category": category_list, "type": machine_type}
+
+def build_eligible_parents_set(mame: Dict[str, Dict[str, Any]], ini_map: Dict[str, Any]) -> Set[str]:
+    """
+    Return the set of parent machine names that are eligible according to INI classification.
+    Mirrors the inline comprehension previously in the pipeline.
+    """
+    from mht.utils.selection import is_eligible_parent  # local reuse without circulars
+    return {
+        n
+        for n, v in mame.items()
+        if not (v or {}).get("cloneof") and is_eligible_parent(n, mame, ini_map)
+    }
+
+def universe_parent_clone_counts(mame: Dict[str, Dict[str, Any]]) -> Tuple[int, int]:
+    """
+    Compute total parents and total clones from the canonical mame_machines map.
+    """
+    parents_total = sum(1 for v in mame.values() if not (v or {}).get("cloneof"))
+    clones_total  = sum(1 for v in mame.values() if (v or {}).get("cloneof"))
+    return parents_total, clones_total

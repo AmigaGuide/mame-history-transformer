@@ -78,6 +78,8 @@ from mht.utils.selection import (
     classify as _classify,
     is_eligible_parent as _is_eligible_parent,
     build_final_set as _build_final_set,
+    build_eligible_parents_set,
+    universe_parent_clone_counts,
 )
 from mht.utils.mame_overrides import (
     load_title_overrides as _load_title_overrides,
@@ -180,10 +182,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})
 
-    mame_sum = read_json(MAME_SUMMARY) or {}
-    hist_sum = read_json(HISTORY_SUMMARY) or {}
-    ini_sum  = read_json(INI_SUMMARY) or {}
-
     versions, wiki_header_versions = extract_stage_versions_for_transform(
         MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY
     )
@@ -198,11 +196,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if len(_result) >= 3 and isinstance(_result[2], dict):
             excluded_reasons = _result[2]
     else:
-        # Older helper that returns only the included set
         included_parents = set(_result)
-        # Derive eligible via the older per-item check for parity with previous behaviour
-        eligible_parents = {n for n in mame.keys() if _is_eligible_parent(n, mame, ini_map)}
-
+        eligible_parents = build_eligible_parents_set(mame, ini_map)
+            
     # A tiny sanity log (debug)
     debug_log(f"[transform::pipeline] eligible={len(eligible_parents):,}, included={len(included_parents):,}")
 
@@ -373,7 +369,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     }
     ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc)
 
-
     raw_header = build_summary_header(
         schema_id=SCHEMA_ID_RAW,
         schema_version=SCHEMA_VER_RAW,
@@ -385,8 +380,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     }
     ok_out_raw  = write_json(EXOTICA_RAW,  raw_doc)
 
-    parents_total = sum(1 for v in mame.values() if not v.get("cloneof"))
-    clones_total  = sum(1 for v in mame.values() if v.get("cloneof"))
+    parents_total, clones_total = universe_parent_clone_counts(mame)
 
     # --- Build pages + redirects (now via helper) ---
     generated_at_iso = datetime.datetime.utcnow().isoformat() + "Z"
