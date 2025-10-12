@@ -229,21 +229,11 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     for name in sorted(included_parents):
         minfo = mame.get(name)
         if not minfo:
-            continue
-        cls = _classify(name, ini_map)                      
-        raw_desc_original = _raw_mame_title(minfo, name)
-        raw_desc, applied, eligible = apply_title_override_if_eligible(name, raw_desc_original, overrides)
-
-        if eligible:
-            overrides_stats["eligible"] += 1
-        if applied:
-            overrides_applied.append(applied)
-            overrides_stats["applied"] += 1
-
-        # 1) Raw MAME description
+            continue        
+        # --- Titles: original → pre-override anomalies → single override → parse final ---
         raw_desc_original = _raw_mame_title(minfo, name)
 
-        # 2) Capture pre-override anomalies for audit (based on original)
+        # Capture pre-override anomalies from the original description
         _, pre_anoms = parse_description(raw_desc_original)
         for k, lst in pre_anoms.items():
             for item in lst:
@@ -251,7 +241,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
                 item["pre_override"] = True
             title_anomalies[k].extend(lst)
 
-        # 3) Apply title override using the single helper (source of truth)
+        # Apply title override (once) and track stats
         raw_desc, applied, eligible = apply_title_override_if_eligible(name, raw_desc_original, overrides)
         if eligible:
             overrides_stats["eligible"] += 1
@@ -259,7 +249,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             overrides_applied.append(applied)
             overrides_stats["applied"] += 1
 
-        # 4) Parse the (possibly overridden) description and carry on
+        # Parse the final (possibly overridden) description and derive page name
         desc_fields, _ = parse_description(raw_desc)
         wiki_page_name = _wiki_page_name_from_desc(desc_fields)
 
@@ -496,7 +486,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
-
 
     orphans = [k for k, v in out_map.items() if "mame_titles" not in v]
     if orphans:
