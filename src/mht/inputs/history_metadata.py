@@ -33,7 +33,6 @@ import re
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
-#from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh, stage_is_fresh
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
     DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
@@ -51,13 +50,13 @@ from mht.utils.ini import (
     sorted_counts_from_unique_sets,
 )
 from mht.inputs.ini_summary import build_ini_summary
+from mht.utils.selection import classify_from_ini
 
 
 log = setup_logger(log_level=LOG_LEVEL)
 
 __all__ = [
     "parse_history_inis",
-    "classify_machine",
     "load_ini_classifications",
     "build_machine_classifications",
     "INI_FILES",
@@ -115,42 +114,6 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
     log.info(f"INI classification data loaded in {time.perf_counter() - t0:.2f} seconds")
     return parsed
 
-def classify_machine(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, object]:
-    """Pure classification lookup using the parsed INI bundle."""
-    gs_set = (parsed.get("game_status", {}) or {}).get("machine_sections", {}).get(machine_name, set())
-    if is_not_available_label(next(iter(gs_set), None)) and len(gs_set) == 1:
-        game_status = UNKNOWN
-    elif "Game" in gs_set:
-        game_status = "game"
-    elif "No Game" in gs_set:
-        game_status = "no_game"
-    elif gs_set:
-        game_status = UNKNOWN
-    else:
-        game_status = UNKNOWN
-
-    # Category (array)
-    cat_set = (parsed.get("category", {}) or {}).get("machine_sections", {}).get(machine_name, set()).copy()
-    cat_labels = []
-    for c in cat_set:
-        cat_labels.append(UNKNOWN if is_not_available_label(c) else c)
-    if not cat_labels:
-        cat_labels = [UNKNOWN]
-    if len(cat_labels) > 1 and UNKNOWN in cat_labels:
-        cat_labels = [c for c in cat_labels if c != UNKNOWN]
-    category_list = sorted(set(cat_labels))
-
-    # Type (single)
-    type_set = (parsed.get("type", {}) or {}).get("machine_sections", {}).get(machine_name, set())
-    if not type_set:
-        machine_type = UNKNOWN
-    elif any(is_not_available_label(t) for t in type_set):
-        machine_type = UNKNOWN
-    else:
-        machine_type = sorted(type_set)[0]
-
-    return {"game_status": game_status, "category": category_list, "type": machine_type}
-
 def build_machine_classifications(parsed: Dict[str, dict]) -> Dict[str, dict]:
     """
     Build the machine-centric map for output/gh_ini_classifications.json
@@ -162,8 +125,10 @@ def build_machine_classifications(parsed: Dict[str, dict]) -> Dict[str, dict]:
 
     names_sorted = sorted(union_names)
     out_map: Dict[str, dict] = {}
+    #for name in names_sorted:
+    #    out_map[name] = classify_machine(name, parsed)
     for name in names_sorted:
-        out_map[name] = classify_machine(name, parsed)
+        out_map[name] = classify_from_ini(name, parsed)
     return out_map
 
 # --------------------------------------------------------------------------------------

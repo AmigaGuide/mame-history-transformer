@@ -1,8 +1,13 @@
 from __future__ import annotations
+
 from typing import Dict, Any, Set, List, Tuple
+
+from mht.utils.ini import is_not_available_label
 
 
 __all__ = ["classify", "is_eligible_parent", "build_final_set"]
+
+_UNKNOWN = "unknown"
 
 
 def classify(machine: str, ini_map: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
@@ -95,3 +100,49 @@ def build_parent_index(machines: Dict[str, Dict]) -> Dict[str, Dict]:
     parents_sorted = {p: parents_sorted[p] for p in sorted(parents_sorted.keys())}
     child_to_parent_sorted = {c: child_to_parent[c] for c in sorted(child_to_parent.keys())}
     return {"parents": parents_sorted, "child_to_parent": child_to_parent_sorted}
+
+def classify_from_ini(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, object]:
+    """
+    Classify a machine using the parsed INI bundle produced by load_ini_classifications().
+
+    Returns
+    -------
+    dict with keys:
+      - game_status : "game" | "no_game" | "unknown"
+      - category    : list[str] (never empty; "unknown" if none)
+      - type        : str (single; "unknown" if none or '<not available>')
+    """
+    # Game status
+    gs_set: Set[str] = (parsed.get("game_status", {}) or {}).get("machine_sections", {}).get(machine_name, set())
+    if is_not_available_label(next(iter(gs_set), None)) and len(gs_set) == 1:
+        game_status = _UNKNOWN
+    elif "Game" in gs_set:
+        game_status = "game"
+    elif "No Game" in gs_set:
+        game_status = "no_game"
+    elif gs_set:
+        game_status = _UNKNOWN
+    else:
+        game_status = _UNKNOWN
+
+    # Category (array)
+    cat_set: Set[str] = (parsed.get("category", {}) or {}).get("machine_sections", {}).get(machine_name, set()).copy()
+    cat_labels = []
+    for c in cat_set:
+        cat_labels.append(_UNKNOWN if is_not_available_label(c) else c)
+    if not cat_labels:
+        cat_labels = [_UNKNOWN]
+    if len(cat_labels) > 1 and _UNKNOWN in cat_labels:
+        cat_labels = [c for c in cat_labels if c != _UNKNOWN]
+    category_list = sorted(set(cat_labels))
+
+    # Type (single)
+    type_set: Set[str] = (parsed.get("type", {}) or {}).get("machine_sections", {}).get(machine_name, set())
+    if not type_set:
+        machine_type = _UNKNOWN
+    elif any(is_not_available_label(t) for t in type_set):
+        machine_type = _UNKNOWN
+    else:
+        machine_type = sorted(type_set)[0]
+
+    return {"game_status": game_status, "category": category_list, "type": machine_type}
