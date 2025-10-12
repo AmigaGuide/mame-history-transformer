@@ -721,3 +721,65 @@ def build_displays_shape_telemetry(
         "raster_lcd_with_dims_total": raster_lcd_with_dims_total,
         "svg_vector_total": svg_vector_total,
     }
+
+def build_ports_telemetry(
+    *,
+    gh_ports: Dict[str, Any],
+    gh_keys_with_ports: Set[str],
+    out_map: Dict[str, Dict[str, Any]],
+    parents_map: Dict[str, List[str]],
+    parents_with_ports_count: int,
+    clones_with_ports_set: Set[str],
+    systems_with_parent_clone_port_dupes: int,
+    systems_with_parent_clone_port_dupes_list: List[str],
+    gh_not_in_arcade_scope: List[str],
+) -> Dict[str, Any]:
+    """
+    Build the ports summary block used by the transform summary.
+    Pure (no I/O), mirrors the previous in-pipeline shape exactly.
+    """
+    summary_ports: Dict[str, Any] = {
+        "gh_arcade_entries_total": len(gh_ports),
+        "gh_arcade_entries_with_ports_total": len(gh_keys_with_ports),
+        "included_parents_after_ports_gate": len(out_map),
+        "included_parents_with_own_ports": {
+            "count": parents_with_ports_count,
+            "note": "Included parents whose own GH shortname has ≥1 valid port row.",
+        },
+        "included_clones_with_ports": {
+            "count": len(clones_with_ports_set),
+            "list": sorted(clones_with_ports_set),
+            "note": "Clone shortnames (children of included parents) with ≥1 valid GH port row.",
+        },
+        "gh_arcade_entries_with_ports_excluded_by_ini": {
+            "count": len(gh_not_in_arcade_scope),
+            "list": gh_not_in_arcade_scope,
+            "note": "GH/MAME shortnames with ≥1 valid port row that are not in our Arcade/Game export.",
+        },
+    }
+
+    # Derived: parents included due to clone ports only
+    parents_included_due_to_clones_only_list = sorted(
+        m for m, rec in out_map.items()
+        if not ((rec.get("ports") or {}).get("parent_source"))
+    )
+
+    summary_ports.setdefault("derived", {})
+    summary_ports["derived"].update({
+        "parents_included_due_to_clones_only": len(parents_included_due_to_clones_only_list),
+        "parents_included_due_to_clones_only_list": parents_included_due_to_clones_only_list,
+        "note_parents_included_due_to_clones_only": (
+            "Included parents that do not have ports on their own GH key, "
+            "but were included because at least one clone has ports."
+        ),
+    })
+
+    # Duplicate parent/clone ports (not de-duplicated by design)
+    summary_ports["parent_clone_duplicate_ports"] = {
+        "systems_count": systems_with_parent_clone_port_dupes,
+        "systems_list": sorted(systems_with_parent_clone_port_dupes_list),
+        "note": "Systems where at least one port row is identical between the parent GH entry and a clone GH entry (same category).",
+        "note_duplicates": "Ports are not de-duplicated; identical parent/clone rows may appear intentionally for audit."
+    }
+
+    return summary_ports

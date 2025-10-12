@@ -102,6 +102,7 @@ from mht.utils.summaries import (
     extract_stage_versions_for_transform,
     build_selection_telemetry,
     build_displays_shape_telemetry,
+    build_ports_telemetry,
 )
 from mht.utils.redirects import (
     clone_primary_redirects as _clone_primary_redirects,
@@ -437,44 +438,18 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             included_clones_set.add(c)
     included_all = included_parents_set | included_clones_set
     gh_not_in_arcade_scope = sorted(gh_keys_with_ports - included_all)
-    summary_ports = {
-        "gh_arcade_entries_total": len(gh_ports),
-        "gh_arcade_entries_with_ports_total": len(gh_keys_with_ports),
-        "included_parents_after_ports_gate": len(out_map),
-        "included_parents_with_own_ports": {
-            "count": parents_with_ports_count,
-            "note": "Included parents whose own GH shortname has ≥1 valid port row.",
-        },
-        "included_clones_with_ports": {
-            "count": len(clones_with_ports_set),
-            "list": sorted(clones_with_ports_set),
-            "note": "Clone shortnames (children of included parents) with ≥1 valid GH port row.",
-        },
-        "gh_arcade_entries_with_ports_excluded_by_ini": {
-            "count": len(gh_not_in_arcade_scope),
-            "list": gh_not_in_arcade_scope,
-            "note": "GH/MAME shortnames with ≥1 valid port row that are not in our Arcade/Game export.",
-        },
-    }
-    parents_included_due_to_clones_only_list = sorted(
-        m for m, rec in out_map.items()
-        if not ((rec.get("ports") or {}).get("parent_source"))
+    
+    summary_ports = build_ports_telemetry(
+        gh_ports=gh_ports,
+        gh_keys_with_ports=gh_keys_with_ports,
+        out_map=out_map,
+        parents_map=parents_map,
+        parents_with_ports_count=parents_with_ports_count,
+        clones_with_ports_set=clones_with_ports_set,
+        systems_with_parent_clone_port_dupes=systems_with_parent_clone_port_dupes,
+        systems_with_parent_clone_port_dupes_list=systems_with_parent_clone_port_dupes_list,
+        gh_not_in_arcade_scope=gh_not_in_arcade_scope,
     )
-    summary_ports.setdefault("derived", {})
-    summary_ports["derived"].update({
-        "parents_included_due_to_clones_only": len(parents_included_due_to_clones_only_list),
-        "parents_included_due_to_clones_only_list": parents_included_due_to_clones_only_list,
-        "note_parents_included_due_to_clones_only": (
-            "Included parents that do not have ports on their own GH key, "
-            "but were included because at least one clone has ports."
-        ),
-    })
-    summary_ports["parent_clone_duplicate_ports"] = {
-        "systems_count": systems_with_parent_clone_port_dupes,
-        "systems_list": sorted(systems_with_parent_clone_port_dupes_list),
-        "note": "Systems where at least one port row is identical between the parent GH entry and a clone GH entry (same category).",
-        "note_duplicates": "Ports are not de-duplicated; identical parent/clone rows may appear intentionally for audit."
-    }
 
     selection_telemetry = build_selection_telemetry(
         out_map=out_map,
