@@ -1,7 +1,14 @@
-# src/mht/utils/wiki_pages.py
 from __future__ import annotations
+
 from typing import Dict, List, Tuple
+
 from mht.utils.titles import build_redirect_sources, collapse_ws
+
+
+WIKI_PREFIX = "Lost In Translation/"
+
+__all__ = ["compute_pages_and_redirects", "WIKI_PREFIX"]
+
 
 def _pref(name: str, prefix: str) -> str:
     return f"{prefix}{name}"

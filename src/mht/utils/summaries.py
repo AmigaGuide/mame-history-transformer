@@ -9,7 +9,7 @@ Includes:
 """
 
 from __future__ import annotations
-from typing import Dict, Any, List, Set, Optional, Tuple
+from typing import Dict, Any, List, Set, Optional, Tuple, Iterable
 import re
 from collections import Counter
 
@@ -661,3 +661,63 @@ def extract_stage_versions_for_transform(
     }
 
     return versions, wiki_header_versions
+
+def build_selection_telemetry(
+    out_map: Dict[str, Dict[str, Any]],
+    eligible_parents: Iterable[str],
+    excluded_parents_by_reason: Dict[str, int],
+) -> Dict[str, Any]:
+    """
+    Compute high-level selection telemetry for transform_summary.
+    Pure; no I/O.
+    """
+    eligible_parents_total = len(set(eligible_parents))
+    included_parents_after_ports_gate = len(out_map)
+
+    parents_with_own_ports = 0
+    parents_included_via_clones_only = 0
+
+    for rec in out_map.values():
+        ports = rec.get("ports") or {}
+        ps = ports.get("parent_source") or {}
+        cats = ps.get("categories") if isinstance(ps, dict) else None
+        if cats:
+            parents_with_own_ports += 1
+        else:
+            parents_included_via_clones_only += 1
+
+    return {
+        "eligible_parents_total": eligible_parents_total,
+        "included_parents_after_ports_gate": included_parents_after_ports_gate,
+        "parents_with_own_ports": parents_with_own_ports,
+        "parents_included_via_clones_only": parents_included_via_clones_only,
+        "excluded_parents_by_reason": dict(excluded_parents_by_reason or {}),
+    }
+
+def build_displays_shape_telemetry(
+    out_map: Dict[str, Dict[str, Any]],
+) -> Dict[str, int]:
+    """
+    Count grouped screens by raster-like vs non-raster types for sanity checks.
+    Pure; no I/O.
+    """
+    raster_lcd_with_dims_total = 0
+    svg_vector_total = 0
+
+    for rec in out_map.values():
+        groups = (((rec.get("displays") or {}).get("groups")) or [])
+        for g in groups:
+            t = (g.get("type") or "").strip()
+            c = int(g.get("count") or 0) or 1
+            if t in ("Raster", "LCD"):
+                # By contract, width/height exist for raster-like groups
+                if "width" in g and "height" in g:
+                    raster_lcd_with_dims_total += c
+            elif t in ("SVG", "Vector"):
+                # By contract, width/height absent for SVG/Vector
+                svg_vector_total += c
+
+    return {
+        "raster_lcd_with_dims_total": raster_lcd_with_dims_total,
+        "svg_vector_total": svg_vector_total,
+    }

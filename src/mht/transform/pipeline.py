@@ -72,7 +72,7 @@ from mht.utils.titles import (
     collapse_ws              as _collapse_ws,
 )
 from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
-from mht.utils.wiki_pages import compute_pages_and_redirects
+from mht.utils.wiki_pages import compute_pages_and_redirects, WIKI_PREFIX
 from mht.utils.roms import format_rom_block
 from mht.utils.selection import (
     classify as _classify,
@@ -100,6 +100,8 @@ from mht.utils.summaries import (
     build_transform_summary,
     version_core as _core,
     extract_stage_versions_for_transform,
+    build_selection_telemetry,
+    build_displays_shape_telemetry,
 )
 from mht.utils.redirects import (
     clone_primary_redirects as _clone_primary_redirects,
@@ -122,8 +124,6 @@ SCHEMA_VER_RAW  = output_schema("raw")["version"]
 
 SCHEMA_ID_PAGES  = output_schema("pages")["id"]
 SCHEMA_VER_PAGES = output_schema("pages")["version"]
-
-WIKI_PREFIX = "Lost In Translation/"
 
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
@@ -493,38 +493,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "note_duplicates": "Ports are not de-duplicated; identical parent/clone rows may appear intentionally for audit."
     }
 
-    # --- Selection & display-shape telemetry (simple counts only) ---
-    eligible_parents_total = len(eligible_parents)
-    included_parents_after_ports_gate = len(out_map)
-
-    parents_with_own_ports = sum(
-        1
-        for rec in out_map.values()
-        if ((rec.get("ports") or {}).get("parent_source") or {}).get("categories")
+    selection_telemetry = build_selection_telemetry(
+        out_map=out_map,
+        eligible_parents=eligible_parents,
+        excluded_parents_by_reason=excluded_reasons,
     )
 
-    # You already compute this list below; keep both paths consistent
-    parents_included_via_clones_only_list = sorted(
-        m for m, rec in out_map.items()
-        if not ((rec.get("ports") or {}).get("parent_source"))
-    )
-    parents_included_via_clones_only = len(parents_included_via_clones_only_list)
-
-    # Display-shape: count grouped screens by raster-like vs non-raster
-    raster_lcd_with_dims_total = 0
-    svg_vector_total = 0
-    for rec in out_map.values():
-        groups = (((rec.get("displays") or {}).get("groups")) or [])
-        for g in groups:
-            t = (g.get("type") or "").strip()
-            c = int(g.get("count") or 0)
-            if t in ("Raster", "LCD"):
-                # after our recent fix, width/height are present only for Raster/LCD
-                if "width" in g and "height" in g:
-                    raster_lcd_with_dims_total += max(c, 1)
-            elif t in ("SVG", "Vector"):
-                # after our recent fix, width/height are absent for SVG/Vector
-                svg_vector_total += max(c, 1)
+    displays_shape_telemetry = build_displays_shape_telemetry(out_map)
 
     # --- Build standard header for the transform summary
     header = build_transform_header(
@@ -576,22 +551,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         ),
     )
 
-
-
-    summary["selection"] = {
-        "eligible_parents_total": eligible_parents_total,
-        "included_parents_after_ports_gate": included_parents_after_ports_gate,
-        "parents_with_own_ports": parents_with_own_ports,
-        "parents_included_via_clones_only": parents_included_via_clones_only,
-        "excluded_parents_by_reason": excluded_reasons,  # you already compute this
-    }
-
-    summary["displays_shape"] = {
-        "raster_lcd_with_dims_total": raster_lcd_with_dims_total,
-        "svg_vector_total": svg_vector_total,
-    }
-
-
+    summary["selection"] = selection_telemetry
+    summary["displays_shape"] = displays_shape_telemetry
 
 
     orphans = [k for k, v in out_map.items() if "mame_titles" not in v]
