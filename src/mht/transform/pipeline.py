@@ -5,7 +5,7 @@ import datetime
 import time
 from typing import Tuple, Dict, Any, List, Set
 
-from mht.utils.config import LOG_LEVEL
+from mht.utils.config import LOG_LEVEL, _IGNORED_TOP_N
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
 from mht.utils.paths import (
@@ -221,7 +221,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     media_label_counts: dict[str, int] = {}
     parents_with_any_media = 0
     ignored_device_counts: dict[str, int] = {}
-    _IGNORED_TOP_N = 25
     audio_total_with_channels = 0
     audio_channel_speaker_mismatch = 0
     audio_mismatch_examples: list[dict] = []
@@ -243,31 +242,27 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if applied:
             overrides_applied.append(applied)
             overrides_stats["applied"] += 1
-            
+
+        # 1) Raw MAME description
+        raw_desc_original = _raw_mame_title(minfo, name)
+
+        # 2) Capture pre-override anomalies for audit (based on original)
         _, pre_anoms = parse_description(raw_desc_original)
         for k, lst in pre_anoms.items():
             for item in lst:
                 item["machine"] = name
                 item["pre_override"] = True
             title_anomalies[k].extend(lst)
-        orig_unbalanced_round, orig_unbalanced_square = _find_unbalanced(raw_desc_original)
-        ov = overrides.get(name)
-        raw_desc = raw_desc_original
-        if ov and isinstance(ov, dict):
-            apply_if_unbalanced = bool(ov.get("apply_if_unbalanced", True))
-            condition_met = (not apply_if_unbalanced) or orig_unbalanced_round or orig_unbalanced_square
-            if condition_met:
-                overrides_stats["eligible"] += 1
-                new_desc = ov.get("description")
-                if isinstance(new_desc, str) and new_desc.strip():
-                    raw_desc = new_desc.strip()
-                    overrides_applied.append({
-                        "machine": name,
-                        "from": raw_desc_original,
-                        "to": raw_desc,
-                        "reason": ov.get("note", "override")
-                    })
-                    overrides_stats["applied"] += 1
+
+        # 3) Apply title override using the single helper (source of truth)
+        raw_desc, applied, eligible = apply_title_override_if_eligible(name, raw_desc_original, overrides)
+        if eligible:
+            overrides_stats["eligible"] += 1
+        if applied:
+            overrides_applied.append(applied)
+            overrides_stats["applied"] += 1
+
+        # 4) Parse the (possibly overridden) description and carry on
         desc_fields, _ = parse_description(raw_desc)
         wiki_page_name = _wiki_page_name_from_desc(desc_fields)
 
@@ -366,7 +361,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         f"{len(included_parents):,}",
     )
 
-
     wiki_header = build_summary_header(
         schema_id=SCHEMA_ID_WIKI,
         schema_version=SCHEMA_VER_WIKI,
@@ -432,7 +426,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "wiki_pages_and_redirects": str(EXOTICA_PAGES).replace("\\", "/"),
     }
 
-    parents_with_clones = sum(
+    parents_with= sum(
         1 for r in out_map.values()
         if any(t.get("role") == "clone" for t in r.get("mame_titles", []))
     )

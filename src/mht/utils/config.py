@@ -29,8 +29,10 @@ See repository LICENCE for details.
 
 import logging
 
-__all__ = ["LOG_LEVEL"]
+__all__ = ["LOG_LEVEL", "_IGNORED_TOP_N"]
 
 # Set global logging level for the entire project.
 # Options include: logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL
 LOG_LEVEL = logging.DEBUG
+
+_IGNORED_TOP_N = 25
