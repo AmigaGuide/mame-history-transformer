@@ -105,6 +105,7 @@ from mht.utils.redirects import (
     clone_primary_redirects as _clone_primary_redirects,
     dedupe_ci_preserve_order as _dedupe_ci_preserve_order,
 )
+from mht.utils.transform_io import load_stage_inputs
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -124,20 +125,6 @@ SCHEMA_VER_PAGES = output_schema("pages")["version"]
 
 WIKI_PREFIX = "Lost In Translation/"
 
-
-def load_stage_inputs() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    """
-    Load all inputs required by the transform stage using the single-source paths.
-
-    Returns
-    -------
-    (mame_machines, parent_index, gh_system_ports, ini_classifications)
-    """
-    mame_machines     = read_json(MAME_MACHINES_PATH) or {}
-    parent_index      = read_json(PARENT_INDEX_PATH) or {}
-    gh_system_ports   = read_json(GH_SYSTEM_PORTS_PATH) or {}
-    ini_classifications = read_json(INI_CLASS_PATH) or {}
-    return mame_machines, parent_index, gh_system_ports, ini_classifications
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
