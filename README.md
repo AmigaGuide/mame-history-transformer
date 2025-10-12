@@ -34,32 +34,42 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 
 **JSON writes:** `utils.io.write_json` pretty-prints and sorts keys by default for stable diffs. Pass `sort_keys=False` when you need to preserve insertion order.
 
+### Refactor highlights (v2)
+
+- **Parsers as orchestrators:** MAME and History XML now stream and delegate; heavy lifting lives under `utils/` and `inputs/`.
+- **INI stage split:** `history_metadata.py` orchestrates only; parsing/normalisation moved to `utils/ini.py`, summary to `inputs/ini_summary.py`, classification to `utils/selection.py`, and the output map assembly to `utils/records.py`.
+- **Stamps wrapper:** all stages use `utils.stamps.stage_is_fresh()` to cut boilerplate and keep behaviour identical.
+- **Progress logging:** unified via `utils.logger.maybe_log_progress`.
+
 ---
 
 ## Data flow (modules)
 
-| Module                                                                                        | Purpose                                                                                                                                               |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mht/__main__.py`, `mht/cli.py`                                                               | CLI entrypoints and subcommands (`run`, `status`, `clean`, `validate`)                                                                                |
-| `main.py`                                                                                     | Compatibility entry that calls the pipeline (kept for convenience)                                                                                    |
-| `inputs/mame_parser.py`                                                                       | Streams MAME XML; orchestrates helpers; writes `mame_machines.json`, `mame_parent_index.json`, `mame_parsing_summary.json`                            |
-| `inputs/history_parser.py`                                                                    | Streams Gaming-History XML; orchestrates sectioning + PORTS parsing; writes `gh_system_ports.json`, `history_parsing_summary.json`                    |
-| `inputs/history_metadata.py`                                                                  | Aggregates `.ini` metadata for classifications; writes `gh_ini_classifications.json`, `ini_parsing_summary.json`                                      |
-| `transform/pipeline.py`                                                                       | Final stage: selection + joins + title/manufacturer formatting + chips/ROM/media/controls/displays; writes ExoticA JSONs and `transform_summary.json` |
-| `transform/transformer.py`                                                                    | **Shim** that re-exports/forwards to `transform/pipeline.py`                                                                                          |
-| `utils/mame_xml.py`                                                                           | XML helpers for MAME: attribute/text accessors, yes/no mapping, event iterator, root attr capture, core field reads                                   |
-| `utils/history_xml.py`                                                                        | XML helpers for GH: event iterator, root attr capture, entry classification, attribute/text utilities                                                 |
-| `utils/controls.py`, `utils/displays.py`, `utils/chips.py`, `utils/media.py`, `utils/roms.py` | Focused extractors and formatters used by the parsers and transform                                                                                   |
-| `utils/strings.py`                                                                            | String utilities incl. bucketing keys for year/manufacturer                                                                                           |
-| `utils/summaries.py`                                                                          | Counter bucketing, per-machine/per-entry counter updates, totals update, ports result application, summary builders                                   |
-| `utils/records.py`                                                                            | Per-record assembly helpers (MAME machine record; GH system record; sorted maps)                                                                      |
-| `utils/validator.py`                                                                          | Invariant checks (warnings-only) for MAME and GH parsing                                                                                              |
-| `utils/logger.py`                                                                             | Logging setup + `maybe_log_progress` helper                                                                                                           |
-| `utils/headers.py`                                                                            | Unified JSON summary header builder                                                                                                                   |
-| `utils/io.py`                                                                                 | Safe JSON read/write (atomic, pretty)                                                                                                                 |
-| `utils/stamps.py`                                                                             | Stamp helpers, including `stage_is_fresh()` convenience wrapper                                                                                       |
-| `utils/versions.py`                                                                           | Schema IDs/versions and tool versions (single source of truth)                                                                                        |
-| `inputs/history_ports.py`, `inputs/history_text.py`, `inputs/history_constants.py`            | GH-specific sectioning, PORTS parsing and constants                                                                                                   |
+| Module | Purpose |
+|---|---|
+| `mht/__main__.py`, `mht/cli.py` | CLI entrypoints and subcommands (`run`, `status`, `clean`, `validate`) |
+| `main.py` | Compatibility entry that calls the pipeline (kept for convenience) |
+| `inputs/mame_parser.py` | Streams MAME XML; orchestrates helpers; writes `mame_machines.json`, `mame_parent_index.json`, `mame_parsing_summary.json` |
+| `inputs/history_parser.py` | Streams Gaming-History XML; orchestrates sectioning + PORTS parsing; writes `gh_system_ports.json`, `history_parsing_summary.json` |
+| `inputs/history_metadata.py` | **Orchestrator** for GH INIs (stamps + I/O only); delegates parsing/classification/summary to helpers |
+| `inputs/ini_summary.py` | Pure summary builder for INI stage (`data/ini_parsing_summary.json`) |
+| `transform/pipeline.py` | Final stage: selection + joins + title/manufacturer formatting + chips/ROM/media/controls/displays; writes ExoticA JSONs and `transform_summary.json` |
+| `transform/transformer.py` | **Shim** that re-exports/forwards to `transform/pipeline.py` |
+| `utils/mame_xml.py` | XML helpers for MAME: attribute/text accessors, yes/no mapping, event iterator, root attr capture, core field reads |
+| `utils/history_xml.py` | XML helpers for GH: event iterator, root attr capture, entry classification, attribute/text utilities |
+| `utils/ini.py` | INI helpers: header/version sniffing, section parsing, `<not available>` handling, small counters |
+| `utils/controls.py`, `utils/displays.py`, `utils/chips.py`, `utils/media.py`, `utils/roms.py` | Focused extractors and formatters used by the parsers and transform |
+| `utils/strings.py` | String utilities incl. bucketing keys for year/manufacturer |
+| `utils/summaries.py` | Counter bucketing, per-entry/machine totals updates, ports result application, summary helpers |
+| `utils/records.py` | Record assembly helpers (MAME machine; GH system; INI class map; sorted maps) |
+| `utils/selection.py` | Selection/classification helpers (e.g., `classify_from_ini`) |
+| `utils/validator.py` | Invariant checks (warnings-only) for MAME and GH parsing |
+| `utils/logger.py` | Logging setup + `maybe_log_progress` helper |
+| `utils/headers.py` | Unified JSON summary header builder |
+| `utils/io.py` | Safe JSON read/write (atomic, pretty) |
+| `utils/stamps.py` | Stamp helpers, incl. `stage_is_fresh()` wrapper |
+| `utils/versions.py` | Schema IDs/versions and tool versions (single source of truth) |
+| `inputs/history_ports.py`, `inputs/history_text.py`, `inputs/history_constants.py` | GH-specific sectioning, PORTS parsing and constants |
 
 ---
 
