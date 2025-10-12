@@ -3,80 +3,35 @@ from __future__ import annotations
 from pathlib import Path
 import datetime
 import time
-from typing import Tuple, Dict, Any, List, Set
+from typing import Dict, Any, List
 
 from mht.utils.config import LOG_LEVEL, _IGNORED_TOP_N
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
-from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
+from mht.utils.versions import SCHEMA_IDS, schema_version, output_schema
 from mht.utils.paths import (
-    DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
+    DATA_DIR,
     # summaries
     MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY, TRANSFORM_SUMMARY,
     # intermediates / inputs
     MAME_MACHINES_PATH, PARENT_INDEX_PATH, GH_SYSTEM_PORTS_PATH, INI_CLASS_PATH,
     # finals
     EXOTICA_WIKI, EXOTICA_RAW, EXOTICA_PAGES,
-    # helpers
-    ensure_dirs,
 )
 from mht.utils.headers import build_summary_header
-from mht.utils.io import write_json, read_json
+from mht.utils.io import write_json
 from mht.utils.stamps import save_stamp, stage_is_fresh
-from mht.utils.media import (
-    normalise_device_to_media,
-    normalise_device_list_to_media,
-    order_media_labels,
-    bytes_to_binary_human,
-    join_with_ampersand,
-)
-from mht.utils.chips import (
-    hz_to_human         as _hz_to_human,
-    format_hz_3dp       as _format_hz_3dp,
-    _chip_label,
-    _prefix_multiples,
-    sum_device_speakers as _sum_device_speakers,
-    _has_samples_flag,
-)
-from mht.utils.controls import (
-    pluralise                     as _pluralise,
-    control_type_label            as _control_type_label,
-    ways_pretty                   as _ways_pretty,
-    ways_label                    as _ways_label,
-    control_line_from_row         as _control_line_from_row,
-    buttons_count_from_rows       as _buttons_count_from_rows,
-    build_controls_section        as _build_controls_section,
-    controls_section_to_display   as _controls_section_to_display,
-)
-from mht.utils.displays import (
-    orientation_from_rotate      as _orientation_from_rotate,
-    type_title                   as _type_title,
-    format_hz_3dp                as _format_hz_3dp,
-    build_displays_section       as _build_displays_section,
-    displays_section_to_display  as _displays_section_to_display,
-)
 from mht.utils.ports import (
-    canonical_port_key               as _canonical_port_key,
-    has_parent_clone_duplicate_ports as _has_parent_clone_duplicate_ports,
     render_ports_display,
-    collect_valid_ports_by_category  as _collect_valid_ports_by_category,
     gh_keys_with_any_valid_ports     as _gh_keys_with_any_valid_ports,
-    build_ports_for_parent           as _build_ports_for_parent,
-    gh_ids_from_ports_obj            as _gh_ids_from_ports_obj,
 )
 from mht.utils.titles import (
     parse_description,
-    find_unbalanced          as _find_unbalanced,
     wiki_page_name_from_desc as _wiki_page_name_from_desc,
     build_redirect_sources   as _build_redirect_sources,
-    unit_count_from_desc     as _unit_count_from_desc,
     collapse_ws              as _collapse_ws,
 )
-from mht.utils.strings import format_manufacturers_for_wiki, split_outside_parens
-from mht.utils.wiki_pages import compute_pages_and_redirects, WIKI_PREFIX, write_pages_and_redirects
-from mht.utils.roms import format_rom_block
+from mht.utils.wiki_pages import WIKI_PREFIX, write_pages_and_redirects
 from mht.utils.selection import (
-    classify as _classify,
-    is_eligible_parent as _is_eligible_parent,
     build_final_set as _build_final_set,
     build_eligible_parents_set,
     universe_parent_clone_counts,
@@ -91,16 +46,13 @@ from mht.utils.records import (
     project_for_wiki as _project_for_wiki, 
     project_for_raw  as _project_for_raw
 )
-from mht.utils.booleans import truthy_flag as _truthy_flag
 from mht.utils.mame_titles import (
     _raw_mame_title,
-    mame_titles_for_parent     as _mame_titles_for_parent,
     render_mame_titles_display as _render_mame_titles_display,
 )    
 from mht.utils.summaries import (
     build_transform_header,
     build_transform_summary,
-    version_core as _core,
     extract_stage_versions_for_transform,
     build_selection_telemetry,
     build_displays_shape_telemetry,
@@ -373,8 +325,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     parents_total, clones_total = universe_parent_clone_counts(mame)
 
     # --- Build pages + redirects (now via helper) ---
-    generated_at_iso = datetime.datetime.utcnow().isoformat() + "Z"
-
     ok_pages, pages_info = write_pages_and_redirects(
         out_map=out_map,
         prefix=WIKI_PREFIX,
@@ -391,21 +341,21 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     inputs_map = build_inputs_map(have_overrides=have_overrides, overrides_path=overrides_path)
     outputs_map = build_outputs_map()
 
-    parents_with= sum(
-        1 for r in out_map.values()
-        if any(t.get("role") == "clone" for t in r.get("mame_titles", []))
-    )
-    total_clones_linked = sum(
-        sum(1 for t in r.get("mame_titles", []) if t.get("role") == "clone")
-        for r in out_map.values()
-    )
+    #parents_with= sum(
+    #    1 for r in out_map.values()
+    #    if any(t.get("role") == "clone" for t in r.get("mame_titles", []))
+    #)
+    #total_clones_linked = sum(
+    #    sum(1 for t in r.get("mame_titles", []) if t.get("role") == "clone")
+    #    for r in out_map.values()
+    #)
 
     title_anomalies = _dedupe_anomalies_preferring_pre_override(title_anomalies)
-    title_anomaly_counts = {k: len(v) for k, v in title_anomalies.items()}
-    media_label_counts_sorted = dict(sorted(media_label_counts.items(), key=lambda kv: kv[0].casefold()))
+    #title_anomaly_counts = {k: len(v) for k, v in title_anomalies.items()}
+    #media_label_counts_sorted = dict(sorted(media_label_counts.items(), key=lambda kv: kv[0].casefold()))
     ignored_sorted = sorted(ignored_device_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     ignored_top = [{"device": k, "count": v} for k, v in ignored_sorted[:_IGNORED_TOP_N]]
-    ignored_total = sum(ignored_device_counts.values())
+    #ignored_total = sum(ignored_device_counts.values())
     included_parents_set = set(out_map.keys())
     included_clones_set: set[str] = set()
     for p in included_parents_set:

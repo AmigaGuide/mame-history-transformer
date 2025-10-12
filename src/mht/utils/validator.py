@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Iterable, Tuple, Dict, Any, Set
 from jsonschema import Draft202012Validator
-from collections import Counter, defaultdict
+from collections import Counter
 
 from mht.utils.paths import (
     # output docs

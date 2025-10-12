@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import List
-import re
 
 from mht.utils.media import join_with_ampersand  # reuse existing one
 

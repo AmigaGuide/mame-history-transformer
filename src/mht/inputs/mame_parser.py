@@ -20,8 +20,6 @@ Notes
 
 from __future__ import annotations
 
-import datetime
-import json
 import time
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -30,19 +28,16 @@ from typing import Any, Dict
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, maybe_log_progress
-from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
-from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh, stage_is_fresh
+from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    STAMPS_DIR,
     MAME_MACHINES_PATH,
     PARENT_INDEX_PATH,
     MAME_SUMMARY,
     ENCODINGS_JSON,
 )
-from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
 from mht.utils.mame_xml import (
-    attr_text, attr_yesno_bool, element_text, int_or_none, capture_root_attrs, 
+    int_or_none, capture_root_attrs, 
     get_machine_header, get_core_text_fields, iter_mame_events
 )
 # Backwards-compat for older tests that import _int_or_none from this module
@@ -54,10 +49,6 @@ from mht.utils.roms import rom_count_and_bytes
 from mht.utils.media import disk_required_and_regions, summarise_device_refs, extract_sound_channels, requires_samples_flag
 from mht.utils.selection import build_parent_index
 from mht.utils.summaries import (
-    bucket_key_int,
-    sorted_numeric_keys_with_unknown_last,
-    sorted_alpha_with_unknown_last,
-    sort_numeric_str,
     build_mame_summary,
     update_counters,
     update_totals,
@@ -196,7 +187,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                 ismechanical = hdr["ismechanical"]
                 sampleof = hdr["sampleof"]
                 sourcefile = hdr["sourcefile"]
-                romof = hdr["romof"]  # retained, even if unused
 
                 # --- core text fields (now via helper) ---
                 description, year_raw, manufacturer_raw = get_core_text_fields(elem)

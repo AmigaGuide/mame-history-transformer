@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
-from collections import defaultdict
+
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
 
 __all__ = [
     "canonical_port_key",
@@ -17,6 +18,7 @@ __all__ = [
 ]
 
 _TERMINAL_PUNCT = ('.', '!', '?', '…')
+
 
 def _title_case_words(s: str) -> str:
     return " ".join(w[:1].upper() + w[1:].lower() if w else w for w in (s or "").split())

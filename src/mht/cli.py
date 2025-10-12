@@ -1,7 +1,6 @@
 # src/mht/cli.py
 from __future__ import annotations
 import argparse
-import shutil
 from pathlib import Path
 from typing import Iterable
 

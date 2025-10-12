@@ -8,7 +8,12 @@ import os
 from pathlib import Path
 from typing import Any
 
-from mht.utils.logger import debug_log
+from mht.utils.config import LOG_LEVEL
+from mht.utils.logger import setup_logger
+
+
+log = setup_logger(log_level=LOG_LEVEL)
+
 
 def _atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
     """

@@ -12,7 +12,9 @@ Includes:
 from __future__ import annotations
 from typing import Iterator, Tuple, Optional, Dict, Iterable, List
 from xml.etree import ElementTree as ET
+from xml.etree.ElementTree import Element  # for type hints
 from pathlib import Path
+
 from mht.utils.mame_xml import element_text
 
 

@@ -28,44 +28,28 @@ from __future__ import annotations
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import time
-import re
-import json
-import html
 from collections import Counter, defaultdict
-import datetime
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
-from mht.utils.date_utils import parse_date_string
-from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
-from mht.utils.stamps import make_stamp, load_stamp, save_stamp, is_fresh, stage_is_fresh
+from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    STAMPS_DIR,
     GH_SYSTEM_PORTS_PATH,
     HISTORY_SUMMARY,
     ENCODINGS_JSON,
 )
-from mht.utils.headers import build_summary_header
-from mht.utils.io import write_json, read_json
-from mht.utils.ports import (
-    is_valid_port_row as _is_valid_port_row,
-    norm_regions      as _norm_regions,
-    norm_tags         as _norm_tags,
-)
+from mht.utils.io import write_json
 from mht.inputs.history_constants import (
-    CATEGORY_HEADING_PATTERN,
     KNOWN_PLATFORMS,
 )
 from mht.inputs.history_ports import (
     extract_ports_section,
 )
-from mht.inputs.history_text import segment_text_sections, parse_gh_id_from_contribute, extract_text_sections
+from mht.inputs.history_text import parse_gh_id_from_contribute, extract_text_sections
 from mht.inputs.history_summary import build_history_summary
 from mht.utils.history_xml import (
     iter_history_events,
     capture_history_root_attrs,
-    get_entry_header,
-    get_entry_texts,
     classify_entry,
 )
 from mht.utils.validator import check_history_parse_invariants

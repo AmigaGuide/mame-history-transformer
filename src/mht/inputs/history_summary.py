@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from typing import Dict, Tuple
+from typing import Dict
 
 from mht.utils.headers import build_summary_header
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version

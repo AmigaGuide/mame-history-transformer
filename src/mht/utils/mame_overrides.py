@@ -1,12 +1,15 @@
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, Optional, List
 import json
 
 from mht.utils.logger import setup_logger
 from mht.utils.titles import find_unbalanced
 
+
 log = setup_logger()
+
 
 def load_title_overrides(path: Path) -> dict:
     """

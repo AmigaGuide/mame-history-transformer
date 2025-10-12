@@ -33,33 +33,24 @@ from __future__ import annotations
 
 from pathlib import Path
 from collections import defaultdict
-from typing import Dict, Tuple, List, Set
-import json
+from typing import Dict
 import time
 import datetime
-import re
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
-from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
     INI_GAME, INI_CATEGORY, INI_TYPE,
     INI_SUMMARY, INI_CLASS_PATH,
     ENCODINGS_JSON,
 )
-from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
 from mht.utils.ini import (
     ini_version_info,
     parse_ini_file_extended,
-    is_not_available_label,
-    sorted_counts_from_listed,
-    sorted_counts_from_unique_sets,
 )
 from mht.inputs.ini_summary import build_ini_summary
-from mht.utils.selection import classify_from_ini
 from mht.utils.records import build_ini_class_map
 from mht.utils.validator import validate_ini_parsed_bundle
 

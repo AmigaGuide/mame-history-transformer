@@ -12,7 +12,6 @@ out of transformer.py while preserving identical behaviour.
 from __future__ import annotations
 
 from typing import Dict, Any, Tuple, List, Set, Optional, Callable
-from pathlib import Path
 
 from mht.utils.strings import format_manufacturers_for_wiki
 from mht.utils.roms import format_rom_block
