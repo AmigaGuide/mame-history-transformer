@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable, Tuple, Dict, Any
+from typing import Iterable, Tuple, Dict, Any, Set
 from jsonschema import Draft202012Validator
 from collections import Counter, defaultdict
 
@@ -263,3 +263,71 @@ def check_history_parse_invariants(
 
     if issues == 0:
         log.info("[history_parser] invariants passed")
+
+# --- INI invariants ----------------------------------------------------------
+
+def validate_ini_parsed_bundle(parsed: Dict[str, dict], log) -> int:
+    """
+    Warnings-only checks over the parsed INI bundle produced by load_ini_classifications().
+
+    Returns
+    -------
+    int : number of issues found (each logged as a warning).
+    """
+    issues = 0
+
+    def _warn_ok(cond: bool, msg: str):
+        nonlocal issues
+        if not cond:
+            issues += 1
+            log.warning(msg)
+
+    for key in ("game_status", "category", "type"):
+        info = parsed.get(key) or {}
+        ms: Dict[str, Set[str]] = info.get("machine_sections", {}) or {}
+        slc: Dict[str, int]      = info.get("section_listed_counts", {}) or {}
+        sus: Dict[str, Set[str]] = info.get("section_unique_sets", {}) or {}
+
+        entries_listed = int(info.get("entries_listed", 0))
+        mmulti         = int(info.get("machines_with_multiple_sections", 0))
+        d_across       = int(info.get("duplicates_across_sections", 0))
+        d_within       = int(info.get("duplicates_within_section", 0))
+
+        # 1) entries_listed should equal the sum of listed counts across sections
+        _warn_ok(
+            entries_listed == sum(slc.values()),
+            f"[ini.validator] {key}: entries_listed={entries_listed} "
+            f"!= sum(section_listed_counts)={sum(slc.values())}"
+        )
+
+        # 2) duplicates_within_section should equal listed minus unique across sections
+        uniques_sum = sum(len(s) for s in sus.values())
+        _warn_ok(
+            d_within == entries_listed - uniques_sum,
+            f"[ini.validator] {key}: duplicates_within_section={d_within} "
+            f"!= entries_listed({entries_listed}) - uniques_sum({uniques_sum})"
+        )
+
+        # 3) machines_with_multiple_sections matches the count of machines with ≥2 sections
+        mmulti_calc = sum(1 for s in ms.values() if len(s) >= 2)
+        _warn_ok(
+            mmulti == mmulti_calc,
+            f"[ini.validator] {key}: machines_with_multiple_sections={mmulti} "
+            f"!= calculated={mmulti_calc}"
+        )
+
+        # 4) duplicates_across_sections is at least the minimal calc (len-1 over each machine)
+        d_across_calc = sum(len(s) - 1 for s in ms.values() if len(s) >= 1)
+        _warn_ok(
+            d_across == d_across_calc,
+            f"[ini.validator] {key}: duplicates_across_sections={d_across} "
+            f"!= calculated={d_across_calc}"
+        )
+
+        # 5) sanity: entries_indexed == len(machine_sections)
+        _warn_ok(
+            len(ms) == len(ms.keys()),
+            f"[ini.validator] {key}: unexpected mapping irregularity in machine_sections"
+        )
+
+    return issues

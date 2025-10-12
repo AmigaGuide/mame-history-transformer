@@ -61,6 +61,7 @@ from mht.utils.ini import (
 from mht.inputs.ini_summary import build_ini_summary
 from mht.utils.selection import classify_from_ini
 from mht.utils.records import build_ini_class_map
+from mht.utils.validator import validate_ini_parsed_bundle
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -195,6 +196,10 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
 
     # 1) Parse INIs (pure)
     parsed = load_ini_classifications(encodings)
+    # Warnings-only invariants over the parsed bundle
+    ini_issues = validate_ini_parsed_bundle(parsed, log)
+    if ini_issues == 0:
+        debug_log("[history_metadata] INI invariants passed")
 
     # 2) Build summary (pure)
     summary = build_ini_summary(parsed, now_iso)
