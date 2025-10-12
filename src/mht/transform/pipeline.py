@@ -99,11 +99,13 @@ from mht.utils.summaries import (
     build_transform_header,
     build_transform_summary,
     version_core as _core,
+    extract_stage_versions_for_transform,
 )
 from mht.utils.redirects import (
     clone_primary_redirects as _clone_primary_redirects,
     dedupe_ci_preserve_order as _dedupe_ci_preserve_order,
 )
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -194,67 +196,10 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     hist_sum = read_json(HISTORY_SUMMARY) or {}
     ini_sum  = read_json(INI_SUMMARY) or {}
 
-    def _get(d, *path, default=None):
-        cur = d
-        for k in path:
-            if not isinstance(cur, dict) or k not in cur:
-                return default
-            cur = cur[k]
-        return cur
-
-    mame_build_val       = _get(mame_sum, "header", "versions", "mame_build")       or _get(mame_sum, "mame", "build")
-    history_version_val  = _get(hist_sum, "header", "versions", "gh_version")       or _get(hist_sum, "history", "version")
-    history_date_val     = _get(hist_sum, "header", "versions", "gh_date")          or _get(hist_sum, "history", "date")
-    ini_generated_at_val = _get(ini_sum,  "header", "generated_at")                  or _get(ini_sum,  "ini", "generated_at")
-
-    versions = {
-        "mame_build":       mame_build_val,
-        "history_version":  history_version_val,
-        "history_date":     history_date_val,
-        "ini_generated_at": ini_generated_at_val,
-    }
-
-    mame_build_raw   = mame_build_val
-    mame_core        = _core(mame_build_raw) or _get(mame_sum, "header", "versions", "mame_xml_version")
-    hist_version_raw = history_version_val
-
-    ini_versions_raw: dict[str, str] = {}
-    ini_root = (ini_sum.get("ini") or {}) if isinstance(ini_sum, dict) else {}
-    files_node = ini_root.get("files")
-    if isinstance(files_node, dict):
-        for item in files_node.values():
-            fn = (item.get("filename") or item.get("path") or "").strip()
-            v  = item.get("version") or {}
-            ver = v.get("mame_version") or v.get("raw") or "Unknown"
-            if fn:
-                ini_versions_raw[fn] = ver
-    if not ini_versions_raw:
-        files_list = ini_sum.get("files")
-        if isinstance(files_list, list):
-            for item in files_list:
-                fn = (item.get("filename") or item.get("path") or "").strip()
-                v  = item.get("version") or {}
-                ver = v.get("mame_version") or v.get("raw") or "Unknown"
-                if fn:
-                    ini_versions_raw[fn] = ver
-    if not ini_versions_raw:
-        for item in (ini_root.get("inputs") or ini_sum.get("inputs") or []):
-            fn = (item.get("filename") or item.get("path") or "").strip()
-            v  = item.get("version") or {}
-            ver = v.get("mame_version") or v.get("raw") or "Unknown"
-            if fn:
-                ini_versions_raw[fn] = ver
-
-    wiki_header_versions = {
-        "mame_xml_version":            mame_core or "Unknown",
-        "gaming_history_xml_version":  hist_version_raw or "Unknown",
-        "ini_versions":                {fn: (ini_versions_raw.get(fn) or "Unknown") for fn in ini_versions_raw}
-    }
-
-    #all_names = sorted(mame.keys())
-    #eligible_parents: Set[str] = {n for n in all_names if _is_eligible_parent(n, mame, ini_map)}
-    #included_parents: Set[str] = eligible_parents
-
+    versions, wiki_header_versions = extract_stage_versions_for_transform(
+        MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY
+    )
+   
     # Compute the final parent set via the central selection helper
     _result = _build_final_set(mame, ini_map)
 
@@ -596,20 +541,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     # --- Build standard header for the transform summary
     header = build_transform_header(
-        versions={
-            "mame_build":       mame_build_val,
-            "history_version":  history_version_val,
-            "history_date":     history_date_val,
-            "ini_generated_at": ini_generated_at_val,
-            # transformer_version is added automatically if missing
-        },
+        versions=versions,  # from extract_stage_versions_for_transform
         started_utc=started_utc,
         finished_utc=finished_utc,
         duration_seconds=duration,
     )
-
+    
     # Inputs/outputs maps are already constructed earlier as `inputs_map` and `outputs_map`
-
     summary = build_transform_summary(
         header=header,
         inputs=inputs_map,

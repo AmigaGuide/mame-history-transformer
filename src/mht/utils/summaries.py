@@ -20,6 +20,7 @@ try:
     from mht.utils.headers import make_standard_header as _make_standard_header  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover
     _make_standard_header = None  # fallback below
+from mht.utils.io import read_json
 
 
 _VERSION_CORE_RX = re.compile(r"\d+(?:\.\d+)+")
@@ -580,3 +581,83 @@ def update_history_totals(
     elif kind == "software":
         software_count += 1
     return total_entries, systems_count, software_count, systems_with_aliases
+
+# --- Transform versions extraction (centralised) ---
+def extract_stage_versions_for_transform(
+    mame_summary_path,
+    history_summary_path,
+    ini_summary_path,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Read stage summaries and derive:
+      - 'versions' for transform summary header
+      - 'wiki_header_versions' for wiki/raw headers
+    Returns (versions_dict, wiki_header_versions_dict).
+    """
+
+    def _get(d, *path, default=None):
+        cur = d
+        for k in path:
+            if not isinstance(cur, dict) or k not in cur:
+                return default
+            cur = cur[k]
+        return cur
+
+    mame_sum = read_json(mame_summary_path) or {}
+    hist_sum = read_json(history_summary_path) or {}
+    ini_sum  = read_json(ini_summary_path) or {}
+
+    # Canonical (header-first), with legacy fallbacks
+    mame_build_val       = _get(mame_sum, "header", "versions", "mame_build")       or _get(mame_sum, "mame", "build")
+    history_version_val  = _get(hist_sum, "header", "versions", "gh_version")       or _get(hist_sum, "history", "version")
+    history_date_val     = _get(hist_sum, "header", "versions", "gh_date")          or _get(hist_sum, "history", "date")
+    ini_generated_at_val = _get(ini_sum,  "header", "generated_at")                  or _get(ini_sum,  "ini", "generated_at")
+
+    versions = {
+        "mame_build":       mame_build_val,
+        "history_version":  history_version_val,
+        "history_date":     history_date_val,
+        "ini_generated_at": ini_generated_at_val,
+    }
+
+    # mame_xml core version for wiki header
+    from mht.utils.summaries import version_core as _core  # already in this module
+    mame_core = _get(mame_sum, "header", "versions", "mame_xml_version") or _core(mame_build_val)
+    hist_version_raw = history_version_val
+
+    # ini_versions map for wiki header (filename -> version string)
+    ini_versions_raw: dict[str, str] = {}
+
+    ini_root = (ini_sum.get("ini") or {}) if isinstance(ini_sum, dict) else {}
+    files_node = ini_root.get("files")
+    if isinstance(files_node, dict):
+        for item in files_node.values():
+            fn = (item.get("filename") or item.get("path") or "").strip()
+            v  = item.get("version") or {}
+            ver = v.get("mame_version") or v.get("raw") or "Unknown"
+            if fn:
+                ini_versions_raw[fn] = ver
+    if not ini_versions_raw:
+        files_list = ini_sum.get("files")
+        if isinstance(files_list, list):
+            for item in files_list:
+                fn = (item.get("filename") or item.get("path") or "").strip()
+                v  = item.get("version") or {}
+                ver = v.get("mame_version") or v.get("raw") or "Unknown"
+                if fn:
+                    ini_versions_raw[fn] = ver
+    if not ini_versions_raw:
+        for item in (ini_root.get("inputs") or ini_sum.get("inputs") or []):
+            fn = (item.get("filename") or item.get("path") or "").strip()
+            v  = item.get("version") or {}
+            ver = v.get("mame_version") or v.get("raw") or "Unknown"
+            if fn:
+                ini_versions_raw[fn] = ver
+
+    wiki_header_versions = {
+        "mame_xml_version":            mame_core or "Unknown",
+        "gaming_history_xml_version":  hist_version_raw or "Unknown",
+        "ini_versions":                {fn: (ini_versions_raw.get(fn) or "Unknown") for fn in ini_versions_raw}
+    }
+
+    return versions, wiki_header_versions
