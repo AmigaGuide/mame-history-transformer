@@ -107,7 +107,7 @@ from mht.utils.redirects import (
     clone_primary_redirects as _clone_primary_redirects,
     dedupe_ci_preserve_order as _dedupe_ci_preserve_order,
 )
-from mht.utils.transform_io import load_stage_inputs
+from mht.utils.transform_io import load_stage_inputs, build_inputs_map, build_outputs_map
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -412,19 +412,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     duration = round(time.perf_counter() - t0, 3)
 
-    inputs_map = {
-        "mame_machines":       str(MAME_MACHINES_PATH).replace("\\", "/"),
-        "ini_classifications": str(INI_CLASS_PATH).replace("\\", "/"),
-        "mame_parent_index":   str(PARENT_INDEX_PATH).replace("\\", "/"),
-    }
-    if have_overrides:
-        inputs_map["title_overrides"] = str(overrides_path).replace("\\", "/")
-
-    outputs_map = {
-        "exotica_lit_wiki":         str(EXOTICA_WIKI).replace("\\", "/"),
-        "exotica_lit_raw_data":     str(EXOTICA_RAW).replace("\\", "/"),
-        "wiki_pages_and_redirects": str(EXOTICA_PAGES).replace("\\", "/"),
-    }
+    inputs_map = build_inputs_map(have_overrides=have_overrides, overrides_path=overrides_path)
+    outputs_map = build_outputs_map()
 
     parents_with= sum(
         1 for r in out_map.values()
