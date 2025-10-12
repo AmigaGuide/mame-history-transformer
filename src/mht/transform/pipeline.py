@@ -1,10 +1,12 @@
 from __future__ import annotations
+
 from pathlib import Path
 import datetime
 import time
+from typing import Tuple, Dict, Any, List, Set
 
 from mht.utils.config import LOG_LEVEL
-from mht.utils.logger import setup_logger, debug_log
+from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version, output_schema
 from mht.utils.paths import (
     DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
@@ -18,7 +20,7 @@ from mht.utils.paths import (
     ensure_dirs,
 )
 from mht.utils.headers import build_summary_header
-from mht.utils.io import write_json, read_json as _read_json
+from mht.utils.io import write_json, read_json
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.media import (
     normalise_device_to_media,
@@ -120,6 +122,21 @@ SCHEMA_VER_PAGES = output_schema("pages")["version"]
 
 WIKI_PREFIX = "Lost In Translation/"
 
+
+def load_stage_inputs() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+    """
+    Load all inputs required by the transform stage using the single-source paths.
+
+    Returns
+    -------
+    (mame_machines, parent_index, gh_system_ports, ini_classifications)
+    """
+    mame_machines     = read_json(MAME_MACHINES_PATH) or {}
+    parent_index      = read_json(PARENT_INDEX_PATH) or {}
+    gh_system_ports   = read_json(GH_SYSTEM_PORTS_PATH) or {}
+    ini_classifications = read_json(INI_CLASS_PATH) or {}
+    return mame_machines, parent_index, gh_system_ports, ini_classifications
+
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     t0 = time.perf_counter()
@@ -158,12 +175,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     overrides_applied: list[dict[str, str]] = []
     overrides_stats = {"configured": len(overrides), "eligible": 0, "applied": 0}
 
-    mame = _read_json(MAME_MACHINES_PATH)
-    ini_map = _read_json(INI_CLASS_PATH)
-    parent_index = _read_json(PARENT_INDEX_PATH)
-    #gh_ports = _read_gh_ports(GH_SYSTEM_PORTS_PATH)
-    gh_ports = _read_json(GH_SYSTEM_PORTS_PATH)
-    gh_ports = gh_ports if isinstance(gh_ports, dict) else {}
+    mame_machines, parent_index, gh_system_ports, ini_classifications = load_stage_inputs()    
+    # Normalise inputs to dicts and bind to names the rest of the file expects
+    mame     = mame_machines or {}
+    ini_map  = ini_classifications or {}
+    gh_ports = gh_system_ports or {}
+    parent_index = parent_index or {}
+
     gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
 
     if not isinstance(mame, dict) or not isinstance(ini_map, dict) or not isinstance(parent_index, dict):
@@ -172,9 +190,9 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
     parents_map: Dict[str, list] = (parent_index or {}).get("parents", {})
 
-    mame_sum = _read_json(MAME_SUMMARY) or {}
-    hist_sum = _read_json(HISTORY_SUMMARY) or {}
-    ini_sum  = _read_json(INI_SUMMARY) or {}
+    mame_sum = read_json(MAME_SUMMARY) or {}
+    hist_sum = read_json(HISTORY_SUMMARY) or {}
+    ini_sum  = read_json(INI_SUMMARY) or {}
 
     def _get(d, *path, default=None):
         cur = d
@@ -260,13 +278,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     audio_samples_required_count = 0
     parents_with_ports_count = 0
     clones_with_ports_set: set[str] = set()
+    assembled_count = 0
 
     for name in sorted(included_parents):
         minfo = mame.get(name)
         if not minfo:
             continue
         cls = _classify(name, ini_map)                      
-        #raw_desc_original = _machine_title(minfo, name)
         raw_desc_original = _raw_mame_title(minfo, name)
         raw_desc, applied, eligible = apply_title_override_if_eligible(name, raw_desc_original, overrides)
 
@@ -318,20 +336,21 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         if not record:
             continue
 
+        assembled_count += 1
+        maybe_log_progress(
+            log,
+            assembled_count,
+            step=250,
+            prefix="[transform::pipeline]",
+            fmt="{prefix} Assembled {count:,} parent records so far...",
+        )
+
         # Optional: MAME titles display (keep your existing helper)
-        #mt_disp = _render_mame_titles_display(record.get("mame_titles", []))
-        #if mt_disp:
-        #    record["mame_titles_display"] = mt_disp
         mt_disp = _render_mame_titles_display(record["mame_titles"])
         if mt_disp:
             record["mame_titles_display"] = mt_disp
 
-        # Build wiki redirects (use whichever helper name you already import)
-        try:
-            parent_redirects = build_redirect_sources(desc_fields, wiki_page_name)
-        except NameError:
-            # Back-compat if your helper is still named _build_redirect_sources
-            parent_redirects = _build_redirect_sources(desc_fields, wiki_page_name)
+        parent_redirects = _build_redirect_sources(desc_fields, wiki_page_name)
 
         # Also add clone-based primary redirects that point to this parent page
         clone_redirects: list[str] = []
@@ -389,6 +408,13 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
 
         # Keep the record
         out_map[name] = record
+
+    # Final progress summary (assembled vs eligible)
+    log.info(
+        "[transform::pipeline] Assembled %s parent records (out of %s eligible).",
+        f"{assembled_count:,}",
+        f"{len(included_parents):,}",
+    )
 
 
     wiki_header = build_summary_header(
@@ -574,7 +600,6 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
             [{"missing_in_mame": missing_in_mame}] if missing_in_mame else []
         ),
     )
-
 
     orphans = [k for k, v in out_map.items() if "mame_titles" not in v]
     if orphans:
