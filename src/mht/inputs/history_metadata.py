@@ -43,6 +43,14 @@ from mht.utils.paths import (
 )
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json
+from mht.utils.ini import (
+    ini_version_info,
+    parse_ini_file_extended,
+    is_not_available_label,
+    sorted_counts_from_listed,
+    sorted_counts_from_unique_sets,
+)
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -66,95 +74,6 @@ INI_FILES = {
 GAME_STATUS_MAP = {"Game": "game", "No Game": "no_game"}
 UNKNOWN = "unknown"
 
-# --------------------------------------------------------------------------------------
-# Helpers (pure)
-# --------------------------------------------------------------------------------------
-
-def _to_iso_date(s: str) -> str | None:
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.datetime.strptime(s, fmt).date().isoformat()
-        except Exception:
-            pass
-    return None
-
-def _ini_version_info(p: Path, encoding: str) -> dict:
-    """Extract version/build and generated date from the INI header region."""
-    try:
-        with open(p, "r", encoding=encoding, errors="replace") as f:
-            head = f.read(16384)
-    except Exception:
-        return {}
-    head = head.lstrip("\ufeff")
-    head = re.sub(r"\s+", " ", head)
-    info: dict[str, str] = {}
-    mv = re.search(r"(?i)\bMAME\s+([0-9.]+)\b", head)
-    mb = re.search(r"(?i)\((mame[0-9]+)\)", head)
-    if mv:
-        info["mame_version"] = mv.group(1)
-    if mb:
-        info["mame_build"] = mb.group(1).lower()
-    dt = re.search(r"(?i)(?:generated|updated)\s*(?:@|on|:)?\s*([0-9]{2}/[0-9]{2}/[0-9]{4}|[0-9]{4}-[0-9]{2}-[0-9]{2})", head)
-    if dt:
-        raw = dt.group(1)
-        info["generated_date_raw"] = raw
-        iso = _to_iso_date(raw)
-        if iso:
-            info["generated_date"] = iso
-    return info
-
-def _normalise_section_header(label: str) -> str:
-    label = label.strip()
-    label = re.sub(r"\s+", " ", label)
-    return label
-
-def _is_not_available_label(label: str | None) -> bool:
-    if not label:
-        return False
-    return re.fullmatch(r"\s*<\s*not\s+available\s*>\s*", label, flags=re.IGNORECASE) is not None
-
-def _parse_ini_file_extended(path: Path, encoding: str) -> dict:
-    """Return extended structure: machine_sections + per-section counts/uniques & duplicate stats."""
-    current_section = None
-    machine_sections: Dict[str, Set[str]] = defaultdict(set)
-    section_listed_counts: Dict[str, int] = defaultdict(int)
-    section_unique_sets: Dict[str, Set[str]] = defaultdict(set)
-
-    with open(path, encoding=encoding) as f:
-        for raw in f:
-            line = raw.strip()
-            if not line or line.startswith(";;"):
-                continue
-            if line.startswith("[") and line.endswith("]"):
-                sec = _normalise_section_header(line[1:-1])
-                current_section = sec
-                continue
-            if current_section and current_section != "FOLDER_SETTINGS":
-                name = line
-                section_listed_counts[current_section] += 1
-                section_unique_sets[current_section].add(name)
-                machine_sections[name].add(current_section)
-
-    entries_listed = sum(section_listed_counts.values())
-    machines_with_multiple_sections = sum(1 for s in machine_sections.values() if len(s) >= 2)
-    duplicates_across_sections = sum(len(s) - 1 for s in machine_sections.values() if len(s) >= 1)
-    duplicates_within_section = entries_listed - sum(len(s) for s in section_unique_sets.values())
-
-    return {
-        "machine_sections": machine_sections,
-        "section_listed_counts": section_listed_counts,
-        "section_unique_sets": section_unique_sets,
-        "entries_listed": entries_listed,
-        "machines_with_multiple_sections": machines_with_multiple_sections,
-        "duplicates_across_sections": duplicates_across_sections,
-        "duplicates_within_section": duplicates_within_section,
-    }
-
-def _sorted_counts_from_listed(d: Dict[str, int]) -> Dict[str, int]:
-    return {k: d[k] for k in sorted(d.keys())}
-
-def _sorted_counts_from_unique_sets(d: Dict[str, Set[str]]) -> Dict[str, int]:
-    return {k: len(d[k]) for k in sorted(d.keys())}
 
 # --------------------------------------------------------------------------------------
 # Public pure workers
@@ -186,8 +105,10 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
             }
             continue
 
-        ext = _parse_ini_file_extended(path, enc)
-        ext["version"] = _ini_version_info(path, encoding=enc)
+        ext = parse_ini_file_extended(path, enc)
+        ext["version"] = ini_version_info(path, encoding=enc)
+        #ext = _parse_ini_file_extended(path, enc)
+        #ext["version"] = _ini_version_info(path, encoding=enc)
         ext["encoding"] = enc
         parsed[key] = ext
 
@@ -218,8 +139,8 @@ def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
             "entries_listed": info.get("entries_listed", 0),
             "entries_indexed": len(ms),
             "sections_total": len((slc or {}).keys() | (sus or {}).keys()),
-            "section_counts_listed": _sorted_counts_from_listed(slc or {}),
-            "section_counts_unique": _sorted_counts_from_unique_sets(sus or {}),
+            "section_counts_listed": sorted_counts_from_listed(slc or {}),
+            "section_counts_unique": sorted_counts_from_unique_sets(sus or {}),
             "machines_with_multiple_sections": info.get("machines_with_multiple_sections", 0),
             "duplicate_assignments": info.get("duplicates_across_sections", 0),
         }
@@ -284,7 +205,7 @@ def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
 def classify_machine(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, object]:
     """Pure classification lookup using the parsed INI bundle."""
     gs_set = (parsed.get("game_status", {}) or {}).get("machine_sections", {}).get(machine_name, set())
-    if _is_not_available_label(next(iter(gs_set), None)) and len(gs_set) == 1:
+    if is_not_available_label(next(iter(gs_set), None)) and len(gs_set) == 1:
         game_status = UNKNOWN
     elif "Game" in gs_set:
         game_status = "game"
@@ -299,7 +220,7 @@ def classify_machine(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, ob
     cat_set = (parsed.get("category", {}) or {}).get("machine_sections", {}).get(machine_name, set()).copy()
     cat_labels = []
     for c in cat_set:
-        cat_labels.append(UNKNOWN if _is_not_available_label(c) else c)
+        cat_labels.append(UNKNOWN if is_not_available_label(c) else c)
     if not cat_labels:
         cat_labels = [UNKNOWN]
     if len(cat_labels) > 1 and UNKNOWN in cat_labels:
@@ -310,7 +231,7 @@ def classify_machine(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, ob
     type_set = (parsed.get("type", {}) or {}).get("machine_sections", {}).get(machine_name, set())
     if not type_set:
         machine_type = UNKNOWN
-    elif any(_is_not_available_label(t) for t in type_set):
+    elif any(is_not_available_label(t) for t in type_set):
         machine_type = UNKNOWN
     else:
         machine_type = sorted(type_set)[0]
