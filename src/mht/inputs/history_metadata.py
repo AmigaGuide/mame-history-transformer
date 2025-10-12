@@ -50,6 +50,7 @@ from mht.utils.ini import (
     sorted_counts_from_listed,
     sorted_counts_from_unique_sets,
 )
+from mht.inputs.ini_summary import build_ini_summary
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -58,7 +59,6 @@ __all__ = [
     "parse_history_inis",
     "classify_machine",
     "load_ini_classifications",
-    "build_ini_summary",
     "build_machine_classifications",
     "INI_FILES",
 ]
@@ -115,93 +115,6 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
     log.info(f"INI classification data loaded in {time.perf_counter() - t0:.2f} seconds")
     return parsed
 
-
-def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
-    """
-    Build the summary object for data/ini_parsing_summary.json from a parsed bundle.
-    """
-    files_block: Dict[str, dict] = {}
-    errors: List[str] = []
-
-    # Union of machine names across all INIs
-    union_names: Set[str] = set()
-    for key, path in INI_FILES.items():
-        info = parsed.get(key, {}) or {}
-        ms: Dict[str, Set[str]] = info.get("machine_sections", {})
-        slc: Dict[str, int]      = info.get("section_listed_counts", {})
-        sus: Dict[str, Set[str]] = info.get("section_unique_sets", {})
-        union_names |= set(ms.keys())
-
-        files_block[key] = {
-            "filename": path.name,
-            "encoding": info.get("encoding", "utf-8"),
-            "version": info.get("version", {}) or {},
-            "entries_listed": info.get("entries_listed", 0),
-            "entries_indexed": len(ms),
-            "sections_total": len((slc or {}).keys() | (sus or {}).keys()),
-            "section_counts_listed": sorted_counts_from_listed(slc or {}),
-            "section_counts_unique": sorted_counts_from_unique_sets(sus or {}),
-            "machines_with_multiple_sections": info.get("machines_with_multiple_sections", 0),
-            "duplicate_assignments": info.get("duplicates_across_sections", 0),
-        }
-
-        # If the original file was missing when parsed was built
-        try:
-            if not INI_FILES[key].exists():
-                errors.append(f"Missing INI: {path.name}")
-        except Exception:
-            # Very defensive; should not happen
-            errors.append(f"Missing INI: {path.name}")
-
-    coverage = {
-        "unique_machine_names_union": len(union_names),
-        "with_game_status": len((parsed.get("game_status", {}) or {}).get("machine_sections", {})),
-        "missing_in_game_status": len(union_names) - len((parsed.get("game_status", {}) or {}).get("machine_sections", {})),
-        "with_category": len((parsed.get("category", {}) or {}).get("machine_sections", {})),
-        "missing_in_category": len(union_names) - len((parsed.get("category", {}) or {}).get("machine_sections", {})),
-        "with_type": len((parsed.get("type", {}) or {}).get("machine_sections", {})),
-        "missing_in_type": len(union_names) - len((parsed.get("type", {}) or {}).get("machine_sections", {})),
-    }
-
-    # Header versions (consensus if possible)
-    header_versions: Dict[str, str] = {"ini_generated_at": now_iso}
-    mame_versions = {
-        (v or {}).get("mame_version")
-        for v in (files_block[k]["version"] for k in files_block)
-        if v and (v.get("mame_version"))
-    }
-    if len(mame_versions) == 1:
-        header_versions["mame_xml_version"] = next(iter(mame_versions))
-    mame_builds = {
-        (v or {}).get("mame_build")
-        for v in (files_block[k]["version"] for k in files_block)
-        if v and (v.get("mame_build"))
-    }
-    if len(mame_builds) == 1:
-        header_versions["mame_build"] = next(iter(mame_builds))
-
-    header = build_summary_header(
-       schema_id=SCHEMA_IDS["ini"],
-       schema_version=schema_version(SCHEMA_IDS["ini"]),
-       versions={**header_versions, "ini_summary_version": tool_version("ini_summary")},
-       generated_at=now_iso,
-    )
-
-    summary = {
-        "header": header,
-        "ini": {
-            # Historically this field existed; keep it if your schema relies on it.
-            # If not needed, it can be removed without affecting the header contract.
-            # "ini_parser_schema": <optional>,
-            "generated_at": now_iso,
-            "files": files_block,
-        },
-        "totals": coverage,
-        "errors": errors,
-    }
-    return summary
-
-
 def classify_machine(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, object]:
     """Pure classification lookup using the parsed INI bundle."""
     gs_set = (parsed.get("game_status", {}) or {}).get("machine_sections", {}).get(machine_name, set())
@@ -237,7 +150,6 @@ def classify_machine(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, ob
         machine_type = sorted(type_set)[0]
 
     return {"game_status": game_status, "category": category_list, "type": machine_type}
-
 
 def build_machine_classifications(parsed: Dict[str, dict]) -> Dict[str, dict]:
     """
