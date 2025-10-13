@@ -199,7 +199,7 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     class_map = build_ini_class_map(parsed)
 
     # 4) Write outputs (I/O only here)
-    ok_summary = write_json(INI_SUMMARY, summary, sort_keys=True)
+    ok_summary = write_json(INI_SUMMARY, summary, sort_keys=False)
     ok_output  = write_json(INI_CLASS_PATH, class_map, sort_keys=True)
 
     # 5) Only persist the stamp if both writes were successful

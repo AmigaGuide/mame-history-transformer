@@ -264,7 +264,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         total_port_lines_all=total_port_lines_all,
     )
 
-    if not write_json(HISTORY_SUMMARY, summary):  # default sort_keys=True is fine for summaries
+    if not write_json(HISTORY_SUMMARY, summary, sort_keys=False):
         return False
     debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
     

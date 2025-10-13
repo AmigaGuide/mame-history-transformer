@@ -15,9 +15,9 @@ from mht.utils.versions import tool_version
 def _canon(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
-# Human-friendly dump (used for saving to disk)
+# Human-friendly dump (preserve insertion order; do NOT sort)
 def _pretty(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, sort_keys=True, indent=2)
+    return json.dumps(obj, ensure_ascii=False, sort_keys=False, indent=2)
 
 def _atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,7 +103,7 @@ def load_stamp(path: Path) -> Dict[str, Any] | None:
         return None
 
 def save_stamp(path: Path, stamp: Dict[str, Any]) -> None:
-    _atomic_write(path, _pretty(stamp))
+    _atomic_write(path, _pretty(stamp))  # now preserves build structure
 
 def is_fresh(current: Dict[str, Any], previous: Dict[str, Any] | None) -> bool:
     if not previous or not isinstance(previous, dict):

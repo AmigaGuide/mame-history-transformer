@@ -416,7 +416,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         return False
     log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
 
-    if not write_json(MAME_SUMMARY, summary):  # summaries fine with sorted keys (default)
+    if not write_json(MAME_SUMMARY, summary, sort_keys=False):
         return False
     log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
 

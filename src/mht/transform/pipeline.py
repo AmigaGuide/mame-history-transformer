@@ -358,7 +358,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "header": wiki_header,
         "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()},
     }
-    ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc)
+    ok_out_wiki = write_json(EXOTICA_WIKI, wiki_doc, sort_keys=False)
 
     raw_header = build_summary_header(
         schema_id=SCHEMA_ID_RAW,
@@ -369,7 +369,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "header": raw_header,
         "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()},
     }
-    ok_out_raw  = write_json(EXOTICA_RAW,  raw_doc)
+    ok_out_raw  = write_json(EXOTICA_RAW,  raw_doc,  sort_keys=False)
 
     parents_total, clones_total = universe_parent_clone_counts(mame)
 
@@ -510,7 +510,7 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
     if not set(summary_ports["gh_arcade_entries_with_ports_excluded_by_ini"]["list"]).issubset(set(gh_keys_with_ports)):
         log.warning("[ports] Excluded-by-INI list contains entries not in gh_keys_with_ports.")
 
-    ok_sum = write_json(TRANSFORM_SUMMARY, summary)
+    ok_sum = write_json(TRANSFORM_SUMMARY, summary, sort_keys=False)
 
     save_stamp(stamp_path, current_stamp)
     log.info(f"Transformer completed in {duration:.2f}s "

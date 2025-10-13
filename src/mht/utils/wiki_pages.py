@@ -144,5 +144,5 @@ def write_pages_and_redirects(
         "redirects": pages_info["redirects"],
         "conflicts": pages_info["conflicts"],
     }
-    ok = write_json(output_path, doc)
+    ok = write_json(output_path, doc, sort_keys=False)
     return ok, pages_info
