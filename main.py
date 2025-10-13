@@ -1,40 +1,39 @@
 """
 Filename: main.py
-Version: 1.0.3
-Last modified: 2025-10-13
 Author: XtC
 
 Project:
-"Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
+MAME-History-Transformer — “Adapting MAME and Gaming-History XML metadata for ExoticA’s
+Lost in Translation.”
 
 Purpose:
-Entry point for the XML parsing and classification pipeline. Validates the presence
-of required source files, detects encodings, verifies version consistency (tolerant
-to revision suffixes), writes/updates a run manifest, and orchestrates the three
-pipeline phases:
-  1) History INI parse -> machine-centric classifications
-  2) MAME XML parse    -> canonical machine list + parent index
-  3) History XML parse -> structured PORTS data and audits
-  4) Transform         -> wiki/raw/pages
+Top-level orchestrator for the pipeline. Verifies required inputs, detects/updates
+encodings and source versions (cached in data/encodings.json), runs each stage
+with stamp-based skip-unchanged semantics, and writes a per-run manifest.
 
-Outputs (indirect, via called modules):
-- data/encodings.json (written when changes detected)
-- data/history_parsing_summary.json
-- data/ini_parsing_summary.json
-- data/mame_parsing_summary.json
-- data/run_manifest.json (always written for the run)
-- data/transform_summary.json (on successful transform)
-- output/exotica_lit_raw_data.json (on successful transform)
-- output/exotica_lit_wiki.json (on successful transform)
-- output/exotica_wiki_pages_and_redirects.json (on successful transform)
-- output/gh_ini_classifications.json
-- output/gh_system_ports.json
-- output/mame_machines.json
-- output/mame_parent_index.json
+Pipeline stages (in order):
+  1) History INI parse        -> output/gh_ini_classifications.json
+  2) MAME XML parse           -> output/mame_machines.json + output/mame_parent_index.json
+  3) History XML parse        -> output/gh_system_ports.json
+  4) Transform (join/project) -> output/exotica_lit_raw_data.json,
+                                 output/exotica_lit_wiki.json,
+                                 output/exotica_wiki_pages_and_redirects.json
 
-Licence:
-This file forms part of a student project and is not intended for commercial use.
-See repository LICENCE for details.
+Key behaviours:
+- Required files check (under data/): mame.xml, history.xml, and three GH INIs.
+- Encoding/version cache: data/encodings.json (only rewritten on change).
+- Stamp-aware execution: downstream modules decide freshness and may skip work.
+- Run manifest: data/run_manifest.json (inputs, outputs, hashes, timings, stats).
+- Suffix-tolerant version comparison for informational logging.
+
+Inputs & outputs (paths are centralised in mht.utils.paths):
+- Inputs: DATA_DIR / "mame.xml", DATA_DIR / "history.xml", and three GH INIs.
+- Stage summaries: DATA_DIR / "*_parsing_summary.json".
+- Final artefacts: see outputs in the stage list above.
+
+Notes:
+- This module is invoked by the CLI (`python -m mht`), but can also be run directly.
+- Logging is configured via mht.utils.logger and respects mht.utils.config.LOG_LEVEL.
 """
 
 from __future__ import annotations
@@ -56,25 +55,12 @@ from mht.inputs.history_xml_parser import parse_history_entries
 from mht.inputs.history_ini_parser import parse_history_inis
 from mht.transform.pipeline import run_transformer
 from mht.utils.paths import (
-    DATA_DIR,
-    OUTPUT_DIR,
-    ENCODINGS_JSON,
-    MAME_SUMMARY,
-    HISTORY_SUMMARY,
-    INI_SUMMARY,
-    TRANSFORM_SUMMARY,
-    MAME_MACHINES_PATH,
-    PARENT_INDEX_PATH,
-    GH_SYSTEM_PORTS_PATH,
-    INI_CLASS_PATH,
-    EXOTICA_WIKI,
-    EXOTICA_RAW,
-    EXOTICA_PAGES,
-    INI_GAME,
-    INI_CATEGORY,
-    INI_TYPE,
-    TITLE_OVERRIDES,
-    RUN_MANIFEST,
+    DATA_DIR, OUTPUT_DIR,
+    ENCODINGS_JSON, MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY, TRANSFORM_SUMMARY,
+    MAME_MACHINES_PATH, PARENT_INDEX_PATH, GH_SYSTEM_PORTS_PATH, INI_CLASS_PATH,
+    EXOTICA_WIKI, EXOTICA_RAW, EXOTICA_PAGES,
+    INI_GAME, INI_CATEGORY, INI_TYPE,
+    TITLE_OVERRIDES, RUN_MANIFEST,
 )
 from mht.utils.history_xml import capture_history_root_attrs
 
@@ -93,7 +79,6 @@ __all__ = [
 log = setup_logger(log_level=LOG_LEVEL)
 
 # Cache file for per-source encodings + versions
-#ENCODINGS_PATH = Path("data/encodings.json")
 ENCODINGS_PATH = ENCODINGS_JSON
 
 # Note: kept for traceability; not used by other modules.
@@ -322,7 +307,7 @@ def get_ini_version(file_path: Path, encoding: str) -> str:
     try:
         with open(file_path, encoding=encoding, errors="replace") as f:
             for i, line in enumerate(f):
-                if i > 10: # headers live at the top; read a handful of lines only
+                if i > 10:
                     break
                 if "for MAME" in line:
                     m = pat.search(line)
@@ -530,44 +515,38 @@ def main() -> None:
 
     ini_duration = round(time.perf_counter() - ini_t0, 3)
     ini_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
-
+    
     # Manifest inputs/outputs metadata for INI stage (index only, not detailed stats)
-    #ini_summary_path = Path("data/ini_parsing_summary.json")
     ini_summary_path = INI_SUMMARY
-    #ini_output_path  = Path("output/gh_ini_classifications.json")
-    ini_output_path = INI_CLASS_PATH
+    ini_output_path  = INI_CLASS_PATH
+
+    # Use centralised paths
+    ini_input_paths = [INI_GAME, INI_CATEGORY, INI_TYPE]
+    name_to_path = {p.name: p for p in ini_input_paths}
 
     ini_inputs = []
-    for fname in (
-        "[GAMING HISTORY] Game Or No Game.ini",
-        "[GAMING HISTORY] Machine Category.ini",
-        "[GAMING HISTORY] Machine Type.ini",
-    ):
-        p = data_dir / fname
+    for p in ini_input_paths:
         if p.exists():
             ini_inputs.append(_file_meta(p))
         else:
-            log.warning(f"INI missing: {fname}")
-
+            log.warning(f"INI missing: {p.name}")
 
     # Attach INI versions to inputs (from updated_encodings) for manifest readability
     for meta in ini_inputs:
         fname = Path(meta["path"]).name
         vrec = ((updated_encodings.get(fname) or {}).get("version") or {})
         if vrec:
-            meta["version"] = {
-                k: vrec[k] for k in ("raw", "numeric_core", "suffix") if vrec.get(k)
-            }
+            meta["version"] = {k: vrec[k] for k in ("raw", "numeric_core", "suffix") if vrec.get(k)}
         else:
             enc = ((updated_encodings.get(fname) or {}).get("encoding")) or "utf-8"
             try:
-                raw = get_ini_version(data_dir / fname, enc)
+                raw = get_ini_version(name_to_path[fname], enc)
             except Exception:
                 raw = "Unknown"
             core, suf = parse_version_loose(raw or "")
             meta["version"] = {"raw": raw}
             if core: meta["version"]["numeric_core"] = numeric_core_str(core)
-            if suf:  meta["version"]["suffix"] = suf
+            if suf:  meta["version"]["suffix"] = suf   
 
     ini_outputs = []
     ini_stats = {}
@@ -594,7 +573,6 @@ def main() -> None:
         ini_outputs.append(meta)
 
     ini_stage = {
-        #"stage": "history_metadata",
         "stage": "history_ini",
         "ok": bool(ok_ini),
         "started_utc": ini_started_utc,
@@ -615,10 +593,8 @@ def main() -> None:
     mame_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
     mame_xml          = data_dir / "mame.xml"
-    #mame_summary_path = Path("data/mame_parsing_summary.json")
     mame_summary_path = MAME_SUMMARY
-    #mame_out_path     = Path("output/mame_machines.json")
-    mame_out_path = MAME_MACHINES_PATH
+    mame_out_path     = MAME_MACHINES_PATH
 
     mame_stage = {
         "stage": "mame_parse",
@@ -648,7 +624,6 @@ def main() -> None:
         mout["records"] = len(m_machines)
         mame_stage["outputs"].append(mout)
 
-        #mame_parent_idx_path = Path("output/mame_parent_index.json")
         mame_parent_idx_path = PARENT_INDEX_PATH
         if mame_parent_idx_path.exists():
             mp = _file_meta(mame_parent_idx_path)
@@ -679,9 +654,7 @@ def main() -> None:
     hist_t0 = time.perf_counter()
 
     history_xml        = data_dir / "history.xml"
-    #hist_summary_path  = Path("data/history_parsing_summary.json")
     hist_summary_path  = HISTORY_SUMMARY
-    #gh_out_path        = Path("output/gh_system_ports.json")
     gh_out_path        = GH_SYSTEM_PORTS_PATH
 
     if ok_mame:
@@ -696,7 +669,6 @@ def main() -> None:
     history_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
     history_stage = {
-        #"stage": "history_parse",
         "stage": "history_xml",
         "ok": bool(ok_history),
         "started_utc": history_started_utc,
@@ -784,14 +756,11 @@ def main() -> None:
         if p.exists():
             transform_stage["inputs"].append(_file_meta(p))
 
-    #ov_path = Path("data/title_overrides.json")
     ov_path = TITLE_OVERRIDES
     if ov_path.exists():
         transform_stage["inputs"].append(_file_meta(ov_path))
 
-    #wiki_out_path = Path("output/exotica_lit_wiki.json")
-    wiki_out_path = EXOTICA_WIKI
-    #tr_summary_path = Path("data/transform_summary.json")
+    wiki_out_path   = EXOTICA_WIKI
     tr_summary_path = TRANSFORM_SUMMARY
 
     if ok_transform:
@@ -800,7 +769,6 @@ def main() -> None:
             try:
                 with open(wiki_out_path, encoding="utf-8") as f:
                     wiki_map = json.load(f)
-                #w["records"] = len(wiki_map) if isinstance(wiki_map, dict) else None
                 w["records"] = len((wiki_doc or {}).get("games", {}))
             except Exception:
                 w["records"] = None
@@ -821,30 +789,18 @@ def main() -> None:
             except Exception:
                 pass
 
-        #raw_path = Path("output/exotica_lit_raw_data.json")
         raw_path = EXOTICA_RAW
         if raw_path.exists():
             rmeta = _file_meta(raw_path)
             try:
                 with open(raw_path, encoding="utf-8") as f:
                     raw_map = json.load(f)
-                #rmeta["records"] = len(raw_map) if isinstance(raw_map, dict) else None
                 rmeta["records"] = len((raw_doc or {}).get("games", {}))
             except Exception:
                 rmeta["records"] = None
             transform_stage["outputs"].append(rmeta)
 
-        #redirects_path = Path("output/exotica_wiki_pages_and_redirects.json")
         redirects_path = EXOTICA_PAGES
-        #if redirects_path.exists():
-        #    rdmeta = _file_meta(redirects_path)
-        #    try:
-        #        with open(redirects_path, encoding="utf-8") as f:
-        #            redirects = json.load(f)
-        #        rdmeta["records"] = len(redirects) if isinstance(redirects, list) else None
-        #    except Exception:
-        #        rdmeta["records"] = None
-        #    transform_stage["outputs"].append(rdmeta)
         if redirects_path.exists():
             rdmeta = _file_meta(redirects_path)
             transform_stage["outputs"].append(rdmeta)
@@ -885,10 +841,7 @@ def main() -> None:
         "stages": [ini_stage, mame_stage, history_stage, transform_stage],
     }
 
-    #Path("data").mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    #with open("data/run_manifest.json", "w", encoding="utf-8") as f:
-    #with open(DATA_DIR / "run_manifest.json", "w", encoding="utf-8") as f:
     with open(RUN_MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     log.info("Wrote data/run_manifest.json")
