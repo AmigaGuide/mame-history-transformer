@@ -1,8 +1,8 @@
 """
 Filename: main.py
-Version: 1.0.1
-Last modified: 2025-09-20
-Author: Jason (XtC) Skelly (Open University TM470, 2025)
+Version: 1.0.2
+Last modified: 2025-10-13
+Author: XtC
 
 Project:
 "Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation."
@@ -38,11 +38,6 @@ See repository LICENCE for details.
 
 from __future__ import annotations
 
-# --- temporary path shim while we migrate imports ---
-#import sys, pathlib
-#sys.path.insert(0, str(pathlib.Path(__file__).parent / "src"))
-# ----------------------------------------------------
-
 import datetime
 import hashlib
 import json
@@ -52,23 +47,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-#from config import LOG_LEVEL
 from mht.utils.config import LOG_LEVEL
-
-#from logger import setup_logger, debug_log
 from mht.utils.logger import setup_logger, debug_log
-
-#from encoding_utils import detect_encoding
 from mht.utils.encoding_utils import detect_encoding
-
-#from mame_parser import parse_mame_xml
-#from history_parser import parse_history_entries
-#from history_metadata import parse_history_inis
 from mht.inputs.mame_parser import parse_mame_xml
-from mht.inputs.history_parser import parse_history_entries
-from mht.inputs.history_metadata import parse_history_inis
-
-#from transformer import run_transformer
+from mht.inputs.history_xml_parser import parse_history_entries
+from mht.inputs.history_ini_parser import parse_history_inis
 from mht.transform.transformer import run_transformer
 
 
@@ -83,7 +67,6 @@ __all__ = [
     "same_numeric_core",
     "version_record",
 ]
-
 
 log = setup_logger(log_level=LOG_LEVEL)
 

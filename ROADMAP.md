@@ -13,7 +13,7 @@
   * `inputs/history_parser.py` → `data/.stamps/history.json`
   * `inputs/mame_parser.py` → `data/.stamps/mame.json`
   * `transform/pipeline.py` → `data/.stamps/transform.json`
-  * `inputs/history_metadata.py` → `data/.stamps/ini.json`
+  * `inputs/history_ini_parser.py` → `data/.stamps/ini.json`
     Uses `stage_is_fresh / save_stamp` (wraps `make_stamp / load_stamp / is_fresh`).
 
 * ✅ **Parser refactor to orchestrators**

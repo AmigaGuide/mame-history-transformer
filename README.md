@@ -24,7 +24,7 @@ The pipeline produces **ExoticA-ready JSON** for the *Lost in Translation* wiki,
 
 This v2 branch focuses on **schema-first, test-driven** correctness with a clear module boundary refactor:
 
-* `mame_parser.py` and `history_parser.py` are **orchestrators** — they stream XML and delegate all extraction, normalisation, counting and record assembly to focused helpers under `utils/` and `inputs/`.
+* `mame_parser.py` and `history_xml_parser.py` are **orchestrators** — they stream XML and delegate all extraction, normalisation, counting and record assembly to focused helpers under `utils/` and `inputs/`.
 * Small, reusable utilities remove duplication (XML accessors, counters/totals, progress logging, stamps).
 * Pytest is green; the CLI validator reports successful.
 
@@ -37,7 +37,7 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 ### Refactor highlights (v2)
 
 - **Parsers as orchestrators:** MAME and History XML now stream and delegate; heavy lifting lives under `utils/` and `inputs/`.
-- **INI stage split:** `history_metadata.py` orchestrates only; parsing/normalisation moved to `utils/ini.py`, summary to `inputs/ini_summary.py`, classification to `utils/selection.py`, and the output map assembly to `utils/records.py`.
+- **INI stage split:** `history_ini_parser.py` orchestrates only; parsing/normalisation moved to `utils/ini.py`, summary to `inputs/ini_summary.py`, classification to `utils/selection.py`, and the output map assembly to `utils/records.py`.
 - **Stamps wrapper:** all stages use `utils.stamps.stage_is_fresh()` to cut boilerplate and keep behaviour identical.
 - **Progress logging:** unified via `utils.logger.maybe_log_progress`.
 
@@ -50,8 +50,8 @@ Some tests are intentionally strict: they surface real upstream data anomalies (
 | `mht/__main__.py`, `mht/cli.py` | CLI entrypoints and subcommands (`run`, `status`, `clean`, `validate`) |
 | `main.py` | Compatibility entry that calls the pipeline (kept for convenience) |
 | `inputs/mame_parser.py` | Streams MAME XML; orchestrates helpers; writes `mame_machines.json`, `mame_parent_index.json`, `mame_parsing_summary.json` |
-| `inputs/history_parser.py` | Streams Gaming-History XML; orchestrates sectioning + PORTS parsing; writes `gh_system_ports.json`, `history_parsing_summary.json` |
-| `inputs/history_metadata.py` | **Orchestrator** for GH INIs (stamps + I/O only); delegates parsing/classification/summary to helpers |
+| `inputs/history_xml_parser.py` | Streams Gaming-History XML; orchestrates sectioning + PORTS parsing; writes `gh_system_ports.json`, `history_parsing_summary.json` |
+| `inputs/history_ini_parser.py` | **Orchestrator** for GH INIs (stamps + I/O only); delegates parsing/classification/summary to helpers |
 | `inputs/ini_summary.py` | Pure summary builder for INI stage (`data/ini_parsing_summary.json`) |
 | `transform/pipeline.py` | Final stage: selection + joins + title/manufacturer formatting + chips/ROM/media/controls/displays; writes ExoticA JSONs and `transform_summary.json` |
 | `transform/transformer.py` | **Shim** that re-exports/forwards to `transform/pipeline.py` |
@@ -183,8 +183,8 @@ We use semantic versioning independently for **tools** and **schemas**:
 Each stage writes a human-friendly stamp JSON under `data/.stamps/`, then compares it on the next run:
 
 * `data/.stamps/mame.json` — for `inputs/mame_parser.py`
-* `data/.stamps/history.json` — for `inputs/history_parser.py`
-* `data/.stamps/ini.json` — for `inputs/history_metadata.py`
+* `data/.stamps/history.json` — for `inputs/history_xml_parser.py`
+* `data/.stamps/ini.json` — for `inputs/history_ini_parser.py`
 * `data/.stamps/transform.json` — for `transform/pipeline.py`
 
 We use a convenience wrapper:
