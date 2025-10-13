@@ -1,3 +1,18 @@
+"""
+Transform pipeline
+
+Joins MAME, History XML (PORTS), and INI classifications to produce the
+ExoticA LiT outputs:
+
+- `output/exotica_lit_wiki.json`  (condensed, wiki-ready)
+- `output/exotica_lit_raw_data.json`  (verbose for validation/audit)
+- `output/exotica_wiki_pages_and_redirects.json`  (page names + redirects)
+- `data/transform_summary.json`  (telemetry and diagnostics)
+
+The stage is incremental: it writes a stamp in `data/.stamps/transform.json`
+and skips work when inputs and tool version are unchanged.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -82,6 +97,39 @@ SCHEMA_VER_PAGES = output_schema("pages")["version"]
 
 
 def run_transformer(data_dir: Path = DATA_DIR) -> bool:
+    """
+    Execute the transform stage end-to-end.
+
+    Loads all stage inputs, applies selection rules, assembles per-parent
+    records (including clone-sourced ports with provenance), renders wiki
+    display blocks, writes the three final artefacts, and emits a summary.
+
+    Parameters
+    ----------
+    data_dir
+        Root data directory (paths are resolved via `mht.utils.paths`).
+
+    Returns
+    -------
+    bool
+        True when all artefacts and the summary are written and the stamp
+        is saved; False on any write/validation failure.
+
+    Outputs
+    -------
+    - output/exotica_lit_wiki.json
+    - output/exotica_lit_raw_data.json
+    - output/exotica_wiki_pages_and_redirects.json
+    - data/transform_summary.json
+    - data/.stamps/transform.json
+
+    Notes
+    -----
+    - Parent inclusion requires ≥1 valid GH PORTS row on the parent or
+      at least one clone (ports-gate).
+    - Vector/SVG display groups intentionally omit pixel width/height.
+    - Title overrides are applied conditionally and tracked in telemetry.
+    """    
     started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     t0 = time.perf_counter()
 

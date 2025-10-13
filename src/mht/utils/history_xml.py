@@ -20,19 +20,35 @@ from mht.utils.mame_xml import element_text
 
 def iter_history_events(file_path: Path, encoding: str) -> Iterator[Tuple[str, ET.Element]]:
     """
-    Stream (event, elem) pairs from a Gaming-History XML using ElementTree.iterparse.
+    Yield (event, element) pairs from `history.xml` using ET.iterparse.
 
-    - Opens the file with the provided encoding.
-    - Yields both 'start' and 'end' events.
-    - Caller should call elem.clear() after handling large 'end' elements to keep memory usage low.
+    Parameters
+    ----------
+    path : Path
+        Path to the XML file.
+    encoding : str
+        Text encoding for the stream.
+
+    Yields
+    ------
+    tuple[str, xml.etree.ElementTree.Element]
+        Event ('start'|'end') and the current element.
+
+    Notes
+    -----
+    Callers should clear elements (`elem.clear()`) after processing
+    to release memory.
     """
     with open(file_path, encoding=encoding) as f:
         yield from ET.iterparse(f, events=("start", "end"))
 
 def capture_history_root_attrs(event: str, elem) -> Optional[Dict[str, str]]:
     """
-    If this is the start of the <history> root element, return its attributes as a dict.
-    Otherwise return None. Leaves interpretation of fields to the caller.
+    Read `<history>` root `version` and `date` attributes, if present.
+
+    Returns
+    -------
+    (version, date) as (str|None, str|None)
     """
     if event == "start" and getattr(elem, "tag", None) == "history":
         return dict(elem.attrib)
@@ -40,10 +56,12 @@ def capture_history_root_attrs(event: str, elem) -> Optional[Dict[str, str]]:
 
 def get_entry_header(elem: Element, attrs: Iterable[str]) -> Dict[str, Optional[str]]:
     """
-    Extract a small set of attributes from a history <entry>/<game> element.
+    Extract a minimal header tuple from an <entry> element.
 
-    Example: get_entry_header(elem, attrs=("name", "source"))
-    Returns { "name": "...", "source": "..." } with missing ones as None.
+    Returns
+    -------
+    (kind, primary_name, aliases[])
+    where kind ∈ {'systems','software',None}
     """
     out: Dict[str, Optional[str]] = {}
     for a in attrs:
@@ -52,10 +70,17 @@ def get_entry_header(elem: Element, attrs: Iterable[str]) -> Dict[str, Optional[
 
 def get_entry_texts(elem: Element, spec: Dict[str, str]) -> Dict[str, str]:
     """
-    Extract specific child text nodes from a history entry element.
+    Return the raw text payload from the <text> child of an <entry>, or "".
 
-    spec maps tag -> default, e.g. { "description": "", "year": "", "publisher": "" }.
-    Returns a dict with the same keys, using element_text() for normalised reads.
+    Parameters
+    ----------
+    entry_el
+        <entry> element.
+
+    Returns
+    -------
+    str
+        Raw, unescaped text (may be empty).
     """
     out: Dict[str, str] = {}
     for tag, default in spec.items():
