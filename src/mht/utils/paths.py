@@ -13,6 +13,10 @@ INI_GAME     = DATA_DIR / "[GAMING HISTORY] Game Or No Game.ini"
 INI_CATEGORY = DATA_DIR / "[GAMING HISTORY] Machine Category.ini"
 INI_TYPE     = DATA_DIR / "[GAMING HISTORY] Machine Type.ini"
 
+# Data Helpers
+TITLE_OVERRIDES = DATA_DIR / "title_overrides.json"
+RUN_MANIFEST    = DATA_DIR / "run_manifest.json"
+
 # Contracts / schema directory
 CONTRACTS_DIR = Path("src") / "mht" / "contracts"
 

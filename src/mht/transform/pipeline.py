@@ -24,7 +24,7 @@ from mht.utils.config import LOG_LEVEL, _IGNORED_TOP_N
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.versions import SCHEMA_IDS, schema_version, output_schema
 from mht.utils.paths import (
-    DATA_DIR,
+    DATA_DIR, TITLE_OVERRIDES,
     # summaries
     MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY, TRANSFORM_SUMMARY,
     # intermediates / inputs
@@ -161,7 +161,8 @@ def run_transformer(data_dir: Path = DATA_DIR) -> bool:
         "ini_versions": {}
     }
 
-    overrides_path = DATA_DIR / "title_overrides.json"
+    #overrides_path = DATA_DIR / "title_overrides.json"
+    overrides_path = TITLE_OVERRIDES
     overrides = _load_title_overrides(overrides_path)
     have_overrides = isinstance(overrides, dict) and bool(overrides)
     overrides_applied: list[dict[str, str]] = []

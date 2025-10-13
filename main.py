@@ -72,7 +72,9 @@ from mht.utils.paths import (
     EXOTICA_PAGES,
     INI_GAME,
     INI_CATEGORY,
-    INI_TYPE
+    INI_TYPE,
+    TITLE_OVERRIDES,
+    RUN_MANIFEST,
 )
 from mht.utils.history_xml import capture_history_root_attrs
 
@@ -340,7 +342,7 @@ def main() -> None:
     cache persistence, and the invocation of MAME and History parsers. Writes a
     run manifest capturing per-stage inputs/outputs/timings and basic stats.
     """
-    log.info("Starting TM470 XML parsing pipeline...")
+    log.info("Starting MAME-History-Transformer pipeline…")
 
     required_paths = check_required_files()
     if not required_paths:
@@ -782,7 +784,8 @@ def main() -> None:
         if p.exists():
             transform_stage["inputs"].append(_file_meta(p))
 
-    ov_path = Path("data/title_overrides.json")
+    #ov_path = Path("data/title_overrides.json")
+    ov_path = TITLE_OVERRIDES
     if ov_path.exists():
         transform_stage["inputs"].append(_file_meta(ov_path))
 
@@ -885,7 +888,8 @@ def main() -> None:
     #Path("data").mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     #with open("data/run_manifest.json", "w", encoding="utf-8") as f:
-    with open(DATA_DIR / "run_manifest.json", "w", encoding="utf-8") as f:
+    #with open(DATA_DIR / "run_manifest.json", "w", encoding="utf-8") as f:
+    with open(RUN_MANIFEST, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     log.info("Wrote data/run_manifest.json")
 
