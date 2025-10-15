@@ -1,41 +1,84 @@
-# Data Folder
+# Data folder
 
-This folder contains both **required source files** and **generated artefacts** used during the TM470 *Lost in Translation* project.
+This folder holds the versioned datasets and a few shared reference files used by the transformer. Source files are supplied locally; generated artefacts are not committed to Git.
 
-## Source files (required at runtime)
+## Do not commit large data
 
-These are **not committed to Git** (excluded via `.gitignore`) to avoid repository bloat and licensing issues.  
-They must be supplied locally before running the pipeline:
+Keep these out of Git:
 
-- `mame.xml` - full MAME machine database (≈300 MB)  
-- `history.xml` - Gaming-History trivia dataset (arcade systems and ports)  
-- `*.ini` - Gaming-History classification INI files:
-  - `[GAMING HISTORY] Game Or No Game.ini`
-  - `[GAMING HISTORY] Machine Category.ini`
-  - `[GAMING HISTORY] Machine Type.ini`
+* MAME and Gaming-History ZIPs
+* Extracted XML/INI source files
+* Generated summaries, outputs, and stamps
+* Logs and temporary files
 
-## Optional overrides
+Only small reference JSON, schemas, and catalogues live in the repo.
 
-- `title_overrides.json` - local patch file (if present) used to override specific parent titles.  
-  Each entry allows:
-  - `description`: replacement title text to use instead of the raw MAME description  
-  - `apply_if_unbalanced`: whether to apply only if the original title has unbalanced brackets (default `true`)  
-  - `note`: a free-text reason for the override  
+## First-run workflow (drop-zone intake)
 
-This is **not mandatory**, but provides a controlled way to correct problematic titles without altering source XML.
+1. Place the two ZIP archives for a single MAME release in:
 
-## Generated artefacts
+   * `data/incoming/`
+   * Example: `mame0280lx.zip`, `history280.zip`
+2. Run the intake command (see project README). It will:
 
-These JSON files are created by the pipeline and are **excluded from version control** (via `.gitignore`):
+   * Detect the MAME version key (e.g. `0280`)
+   * Create `data/releases/0280/{archives,extracted,summaries,outputs,.stamps}`
+   * Move your ZIPs into `data/releases/0280/archives/`
+3. Until ZIP-streaming is enabled, manually place the extracted source files in:
 
-- `encodings.json` - cached file encodings and version strings  
-- `history_parsing_summary.json` - statistics and QA checks from parsing `history.xml`  
-- `ini_parsing_summary.json` - coverage and diagnostics from INI classification files  
-- `mame_parsing_summary.json` - statistics and QA checks from parsing `mame.xml`  
-- `run_manifest.json` - per-run manifest with input/output paths, hashes, and timings  
-- `transform_summary.json` - transformer audit (counts, anomalies, media stats, port coverage)
+   * `data/releases/0280/extracted/`
+   * Canonical filenames:
 
-## Notes
+     * `mame.xml`
+     * `history.xml`
+     * `[GAMING HISTORY] Game Or No Game.ini`
+     * `[GAMING HISTORY] Machine Category.ini`
+     * `[GAMING HISTORY] Machine Type.ini`
+4. Run the pipeline. It will:
 
-- All **source XML and INI files must be supplied locally**; they are not shipped in this repository.  
-- All **generated JSON artefacts** can be safely deleted; they will be recreated when the pipeline is rerun.  
+   * Record encodings and visible version strings in `data/releases/0280/manifest.json`
+   * Produce summaries and outputs under the release
+   * Write stage stamps in `.stamps/`
+   * Update `data/releases_index.json`
+
+## Per-release layout
+
+```
+data/
+  releases/
+    0280/
+      archives/      # the two ZIPs for this release (if used)
+      extracted/     # mame.xml, history.xml, three GH INIs (flat, unique names)
+      summaries/     # parsing and transform summaries (generated)
+      outputs/       # final JSON outputs (generated)
+      .stamps/       # one JSON stamp per stage (generated)
+      manifest.json  # source encodings, versions, hashes, pipeline pointers
+```
+
+Notes:
+
+* Encodings and version strings are recorded in each release’s `manifest.json`.
+* No top-level `output/`. Outputs always live under `data/releases/<ver>/outputs/`.
+
+## Version catalogue
+
+* `data/releases_index.json` — an array listing all discovered releases with status flags (initialised, inputs ready, parsed, transformed, validated, active).
+
+## Shared reference data
+
+* `data/lookups/` — version-independent reference files (tracked):
+
+  * `title_overrides.json` and other normalisation or alias maps
+* `data/schemas/` — JSON Schemas for manifests, catalogues, outputs, and summaries (tracked)
+
+## Operational folders
+
+* `data/incoming/` — drop-zone for ZIP intake
+* `data/quarantine/` — where invalid or mismatched files are moved (rare)
+* `data/tmp/` — scratch space
+
+## What this replaces
+
+* No global `encodings.json` — encoding and version details are per-release in `manifest.json`.
+* No flat `data/mame.xml`, `data/history.xml`, or INIs — use `data/releases/<ver>/extracted/` instead.
+* No top-level `/output` — use `data/releases/<ver>/outputs/`.
