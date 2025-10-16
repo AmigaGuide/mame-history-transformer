@@ -2,8 +2,8 @@
 History INI → classifications (stage orchestrator)
 
 Parses Gaming-History INI files and emits:
-- data/ini_parsing_summary.json       (diagnostic summary for audit)
-- output/gh_ini_classifications.json  (machine-centric classification map)
+- data/releases/<ver>/summaries/ini_parsing_summary.json     (diagnostic summary)
+- data/releases/<ver>/outputs/gh_ini_classifications.json    (machine-centric map)
 
 Design
 ------
@@ -21,7 +21,6 @@ Inputs
     - [GAMING HISTORY] Game Or No Game.ini
     - [GAMING HISTORY] Machine Category.ini
     - [GAMING HISTORY] Machine Type.ini
-- encodings.json (included in the stamp for reproducibility)
 
 Notes
 -----
@@ -41,9 +40,9 @@ from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    INI_GAME, INI_CATEGORY, INI_TYPE,
-    INI_SUMMARY, INI_CLASS_PATH,
-    ENCODINGS_JSON,
+    ini_game_path, ini_category_path, ini_type_path,   # INI inputs
+    ini_summary_path, ini_classifications_path,        # outputs
+    ENCODINGS_JSON, stamps_dir,                        # stamp input + per-release stamps
 )
 from mht.utils.io import write_json
 from mht.utils.ini import (
@@ -60,15 +59,15 @@ log = setup_logger(log_level=LOG_LEVEL)
 __all__ = [
     "parse_history_inis",
     "load_ini_classifications",
-    "INI_FILES",
 ]
 
-# INI input locations (centralised)
-INI_FILES = {
-    "game_status": INI_GAME,
-    "category":    INI_CATEGORY,
-    "type":        INI_TYPE,
-}
+def _ini_input_paths() -> dict[str, Path]:
+    """Resolve the three INI input paths for the ACTIVE release at call time."""
+    return {
+        "game_status": ini_game_path(),
+        "category":    ini_category_path(),
+        "type":        ini_type_path(),
+    }
 
 # Output normalisation
 GAME_STATUS_MAP = {"Game": "game", "No Game": "no_game"}
@@ -86,7 +85,7 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
     Parameters
     ----------
     encodings : dict
-        Map of filename -> text encoding, typically read from encodings.json.
+        Map of filename -> text encoding, typically read from a per-release manifest.
 
     Returns
     -------
@@ -115,7 +114,7 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
     t0 = time.perf_counter()
     parsed: Dict[str, dict] = {}
 
-    for key, path in INI_FILES.items():
+    for key, path in _ini_input_paths().items():
         enc = encodings.get(path.name, "utf-8")
         debug_log(f"[history_metadata] Parsing {path.name} with encoding {enc}...")
         if not path.exists():
@@ -160,27 +159,33 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     -------
     bool
         True on success (or when the stage is fresh and skipped). False on write failure
-        or XML/IO errors (stamp is not saved in that case).
+        or IO errors (stamp is not saved in that case).
 
     Side effects
     ------------
     - Writes:
-        * data/ini_parsing_summary.json
-        * output/gh_ini_classifications.json
-    - Maintains a stage stamp at data/.stamps/ini.json (created only on success).
-    """    
+        * data/releases/<ver>/summaries/ini_parsing_summary.json
+        * data/releases/<ver>/outputs/gh_ini_classifications.json
+    - Maintains a stage stamp at data/releases/<ver>/.stamps/ini.json (created only on success).
+    """
     t0 = time.perf_counter()
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
 
-    # --- Stage stamp: skip unchanged ---
-    ini_paths = list(INI_FILES.values())
-
+    # --- Stage stamp: skip unchanged (per-release) ---
+    ini_paths = list(_ini_input_paths().values())
+    #fresh, stamp_path, current_stamp = stage_is_fresh(
+    #    "ini.json",
+    #    stamps_dir=stamps_dir(),
+    #    schema_id="mht.stage.ini",
+    #    tool="ini_summary",
+    #    inputs=ini_paths,
+    #)    
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "ini.json",
         schema_id="mht.stage.ini",
         tool="ini_summary",
         inputs=[*ini_paths, ENCODINGS_JSON],
-    )
+    )    
     if fresh:
         log.info("INI stage up-to-date (stamp matched) — skipping rebuild")
         return True
@@ -199,8 +204,8 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     class_map = build_ini_class_map(parsed)
 
     # 4) Write outputs (I/O only here)
-    ok_summary = write_json(INI_SUMMARY, summary, sort_keys=False)
-    ok_output  = write_json(INI_CLASS_PATH, class_map, sort_keys=True)
+    ok_summary = write_json(ini_summary_path(), summary, sort_keys=False)
+    ok_output  = write_json(ini_classifications_path(),   class_map, sort_keys=True)
 
     # 5) Only persist the stamp if both writes were successful
     if ok_summary and ok_output:

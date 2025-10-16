@@ -13,14 +13,14 @@ Inputs
 
 Outputs
 -------
-- output/gh_system_ports.json         (per-system structured PORTS data, sorted)
-- data/history_parsing_summary.json   (totals, distributions, anomalies, audits)
+- data/releases/<ver>/outputs/gh_system_ports.json         (per-system structured PORTS data, sorted)
+- data/releases/<ver>/summaries/history_parsing_summary.json   (totals, distributions, anomalies, audits)
 
 Notes
 -----
 - No selection/filtering beyond excluding non-arcade <software> entries.
 - Progress is logged every 10,000 entries.
-- Stage is stamped for reproducibility; includes encodings.json in the stamp.
+- Stage is stamped for reproducibility in data/releases/<ver>/.stamps/history.json.
 """
 
 from __future__ import annotations
@@ -34,17 +34,14 @@ from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    GH_SYSTEM_PORTS_PATH,
-    HISTORY_SUMMARY,
-    ENCODINGS_JSON,
+    gh_system_ports_path,
+    history_summary_path,
+    ENCODINGS_JSON,   # temp shim (from step 0)
+    stamps_dir,
 )
 from mht.utils.io import write_json
-from mht.inputs.history_constants import (
-    KNOWN_PLATFORMS,
-)
-from mht.inputs.history_ports import (
-    extract_ports_section,
-)
+from mht.inputs.history_constants import KNOWN_PLATFORMS
+from mht.inputs.history_ports import extract_ports_section
 from mht.inputs.history_text import parse_gh_id_from_contribute, extract_text_sections
 from mht.inputs.history_summary import build_history_summary
 from mht.utils.history_xml import (
@@ -57,9 +54,7 @@ from mht.utils.records import build_history_system_record, build_history_systems
 from mht.utils.summaries import apply_ports_results, update_history_totals
 
 
-__all__ = [
-    "parse_history_entries",
-]
+__all__ = ["parse_history_entries"]
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -84,36 +79,26 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     Side effects
     ------------
     - Writes:
-        * output/gh_system_ports.json
-        * data/history_parsing_summary.json
-    - Maintains a stage stamp at data/.stamps/history.json.
+        * data/releases/<ver>/outputs/gh_system_ports.json
+        * data/releases/<ver>/summaries/history_parsing_summary.json
+    - Maintains a stage stamp at data/releases/<ver>/.stamps/history.json.
     - Logs progress every 10,000 entries.
     - Emits warnings-only invariants via utils.validator.
-
-    Implementation notes
-    --------------------
-    This function is an orchestrator; parsing/logic lives in helpers:
-      * utils.history_xml: event iterator, root attr capture, entry classification
-      * inputs.history_text: text sectioning and CONTRIBUTE gh_id extraction
-      * inputs.history_ports: PORTS parsing and banner/inheritance handling
-      * utils.summaries: counters, PORTS result application, summary builder
-      * utils.records: per-system record assembly and sorted map builder
-      * utils.validator: invariants (warnings-only)
     """
-
     start = time.perf_counter()
     log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
     # Read <history> root attributes for the summary header
     history_version, history_date = None, None
 
-    # --- Stage stamp: skip unchanged ---
+    # --- Stage stamp: skip unchanged (per-release) ---    
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "history.json",
         schema_id="mht.stage.history",
         tool="history_parser",
         inputs=[file_path, ENCODINGS_JSON],
-    )
+        stamps_dir=stamps_dir(),
+    )    
     if fresh:
         log.info("History stage up-to-date (stamp matched) — skipping parse")
         return True
@@ -153,7 +138,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     port_overview_count = 0
     total_port_lines_all = 0
 
-    gh_systems = {}
+    gh_systems: dict[str, dict] = {}
 
     # Streaming parse of history.xml
     try:
@@ -162,12 +147,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             # Capture <history> root attributes on the start event (once)
             hdr = capture_history_root_attrs(event, elem)
             if hdr is not None:
-                # Only set if not already captured
                 if history_version is None:
                     history_version = hdr.get("version")
                 if history_date is None:
                     history_date = hdr.get("date")
-                # Continue the loop; entries are handled on 'end'
                 continue
 
             # Process each <entry> at its end tag
@@ -248,10 +231,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     # Write parsed per-system output (sorted)
     systems_sorted = build_history_systems_sorted(gh_systems)
-    
-    if not write_json(GH_SYSTEM_PORTS_PATH, systems_sorted, sort_keys=False):  # preserve your explicit order
+    #if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):  # preserve your explicit order
+    if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):
         return False
-    log.info(f"Wrote {GH_SYSTEM_PORTS_PATH} ({len(systems_sorted)} systems)")        
+    log.info(f"Wrote {gh_system_ports_path()} ({len(systems_sorted)} systems)")
 
     summary = build_history_summary(
         history_version=history_version,
@@ -264,10 +247,11 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         total_port_lines_all=total_port_lines_all,
     )
 
-    if not write_json(HISTORY_SUMMARY, summary, sort_keys=False):
+    #if not write_json(history_summary_path(), summary, sort_keys=False):
+    if not write_json(history_summary_path(), summary, sort_keys=False):
         return False
-    debug_log(f"Wrote parsing summary to {HISTORY_SUMMARY}")
-    
+    debug_log(f"Wrote parsing summary to {history_summary_path()}")
+
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
     # Cache some tallies for the checker (read-only convenience)

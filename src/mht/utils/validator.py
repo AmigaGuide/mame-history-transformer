@@ -2,6 +2,7 @@
 Warning-only invariant checks for parsed outputs.
 
 Includes:
+- validate(): JSON Schema validation for the three deliverables.
 - check_mame_parse_invariants(): cross-checks per-machine records against
   aggregated counters and emits warnings when mismatches are detected.
 """
@@ -14,39 +15,42 @@ from typing import Iterable, Tuple, Dict, Any, Set
 from jsonschema import Draft202012Validator
 from collections import Counter
 
+# Schemas live at fixed paths; deliverables are per-release
 from mht.utils.paths import (
-    # output docs
-    EXOTICA_RAW,
-    EXOTICA_WIKI,
-    EXOTICA_PAGES,
-    # schemas
+    # per-release deliverables
+    exotica_raw_path,
+    exotica_wiki_path,
+    exotica_pages_path,
+    # schema files (fixed)
     EXOTICA_RAW_SCHEMA,
     EXOTICA_WIKI_SCHEMA,
     EXOTICA_PAGES_SCHEMA,
 )
 
-# One source of truth for (schema, document) pairs
-REGISTRY: Dict[str, Tuple[Path, Path]] = {
-    "raw":   (EXOTICA_RAW_SCHEMA,   EXOTICA_RAW),
-    "wiki":  (EXOTICA_WIKI_SCHEMA,  EXOTICA_WIKI),
-    "pages": (EXOTICA_PAGES_SCHEMA, EXOTICA_PAGES),
+# Registry mapping names to (schema_path, document_path_getter)
+# Document paths are resolved at call time to the ACTIVE release.
+REGISTRY: Dict[str, Tuple[Path, callable]] = {
+    "raw":   (EXOTICA_RAW_SCHEMA,   exotica_raw_path),
+    "wiki":  (EXOTICA_WIKI_SCHEMA,  exotica_wiki_path),
+    "pages": (EXOTICA_PAGES_SCHEMA, exotica_pages_path),
 }
 
 def validate(names: Iterable[str] | None = None) -> list[str]:
     """
-    Validate one or more output JSON documents against their JSON Schemas.
+    Validate one or more output JSON documents against their JSON Schemas
+    for the ACTIVE release.
 
     Parameters
     ----------
-    only
-        Optional subset of keys from VALIDATION_REGISTRY to validate.
+    names
+        Optional subset of keys from REGISTRY to validate (e.g., ["raw", "wiki"]).
 
     Returns
     -------
     list[str]
         Human-readable error lines; empty list means 'Validation OK'.
     """
-    targets = (names or REGISTRY.keys())
+    targets = list(names) if names else list(REGISTRY.keys())
     errors_out: list[str] = []
 
     for name in targets:
@@ -54,7 +58,9 @@ def validate(names: Iterable[str] | None = None) -> list[str]:
             errors_out.append(f"[{name}] unknown target")
             continue
 
-        schema_path, doc_path = REGISTRY[name]
+        schema_path, doc_getter = REGISTRY[name]
+        doc_path = doc_getter()
+
         if not schema_path.exists():
             errors_out.append(f"[{name}] missing schema: {schema_path}")
             continue
@@ -77,6 +83,10 @@ def validate(names: Iterable[str] | None = None) -> list[str]:
                 errors_out.append(f"[{name}] /{path_str} -> {e.message}")
 
     return errors_out
+
+# ---------------------------------------------------------------------------
+# MAME parse invariants (warnings-only)
+# ---------------------------------------------------------------------------
 
 def check_mame_parse_invariants(
     *,
@@ -180,6 +190,10 @@ def check_mame_parse_invariants(
             audio_mismatch += 1
     if cpu_mismatch or audio_mismatch:
         log.warning(f"{log_prefix} Chip count mismatches: cpu={cpu_mismatch}, audio={audio_mismatch}")
+
+# ---------------------------------------------------------------------------
+# History parse invariants (warnings-only)
+# ---------------------------------------------------------------------------
 
 def check_history_parse_invariants(
     *,

@@ -6,10 +6,8 @@ from pathlib import Path
 from typing import Iterable, Dict, Any, Tuple
 from datetime import datetime, timezone
 
-
-from mht.utils.paths import STAMPS_DIR
 from mht.utils.versions import tool_version
-
+from mht.utils.paths import stamps_dir as resolve_stamps_dir
 
 # Canonical dump (used for digest)
 def _canon(obj: Any) -> str:
@@ -57,6 +55,7 @@ def file_signatures(paths: Iterable[Path]) -> list[Dict[str, Any]]:
                 "size_h": _size_human(st.st_size),
                 "mtime_ns": st.st_mtime_ns,
                 "mtime_iso": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+                "source": {"kind": "file"},  # reserved for zip-member provenance later
             })
         except FileNotFoundError:
             sigs.append({
@@ -65,10 +64,17 @@ def file_signatures(paths: Iterable[Path]) -> list[Dict[str, Any]]:
                 "size_h": "unknown",
                 "mtime_ns": -1,
                 "mtime_iso": None,
+                "source": {"kind": "file"},
             })
     return sigs
 
-def make_stamp(schema_id: str, tool_version: str, inputs: Iterable[Path], extra: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def make_stamp(
+    schema_id: str,
+    tool_version: str,
+    inputs: Iterable[Path],
+    *,
+    extra: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     inputs_list = file_signatures(inputs)
     payload = {
         "schema_id": "mht.stage.stamp",
@@ -103,7 +109,7 @@ def load_stamp(path: Path) -> Dict[str, Any] | None:
         return None
 
 def save_stamp(path: Path, stamp: Dict[str, Any]) -> None:
-    _atomic_write(path, _pretty(stamp))  # now preserves build structure
+    _atomic_write(path, _pretty(stamp))  # preserves build structure
 
 def is_fresh(current: Dict[str, Any], previous: Dict[str, Any] | None) -> bool:
     if not previous or not isinstance(previous, dict):
@@ -116,19 +122,21 @@ def stage_is_fresh(
     schema_id: str,
     tool: str,
     inputs: Iterable[Path],
+    stamps_dir: Path | None = None,
 ) -> Tuple[bool, Path, dict]:
     """
-    Convenience wrapper for stage stamps:
-    - Ensures STAMPS_DIR exists.
+    Convenience wrapper for stage stamps (per-release):
+    - Ensures stamps_dir exists.
     - Builds the current stamp (including tool version and inputs).
     - Loads the previous stamp and checks freshness.
 
-    Returns
-    -------
-    (is_fresh, stamp_path, current_stamp_dict)
+    Returns (is_fresh, stamp_path, current_stamp_dict).
     """
-    STAMPS_DIR.mkdir(parents=True, exist_ok=True)
-    stamp_path = STAMPS_DIR / stamp_filename
+    #(stamps_dir or STAMPS_DIR).mkdir(parents=True, exist_ok=True)
+    #stamp_path = (stamps_dir or STAMPS_DIR) / stamp_filename
+    base = stamps_dir or resolve_stamps_dir()
+    base.mkdir(parents=True, exist_ok=True)
+    stamp_path = base / stamp_filename
     current = make_stamp(
         schema_id=schema_id,
         tool_version=tool_version(tool),

@@ -20,14 +20,14 @@ from mht.utils.ini import (
     sorted_counts_from_listed,
     sorted_counts_from_unique_sets,
 )
-from mht.utils.paths import INI_GAME, INI_CATEGORY, INI_TYPE
+from mht.utils.paths import ini_game_path, ini_category_path, ini_type_path
 
 
 # Local mapping to avoid importing from history_metadata (prevents circularity)
 _INI_PATHS = {
-    "game_status": INI_GAME,
-    "category": INI_CATEGORY,
-    "type": INI_TYPE,
+    "game_status": ini_game_path(),
+    "category": ini_category_path(),
+    "type": ini_type_path(),
 }
 
 

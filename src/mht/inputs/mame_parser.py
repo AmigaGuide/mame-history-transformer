@@ -3,9 +3,9 @@ MAME XML → canonical JSON orchestrator (stage: mame)
 
 This module streams the full MAME XML and delegates all extraction/normalisation to
 focused utils, then writes:
-  - output/mame_machines.json          (canonical per-machine records; unfiltered)
-  - data/mame_parsing_summary.json     (totals-only summary with distributions)
-  - output/mame_parent_index.json      (parent→clones + reverse map)
+  - data/releases/<ver>/outputs/mame_machines.json            (canonical per-machine records; unfiltered)
+  - data/releases/<ver>/summaries/mame_parsing_summary.json   (totals-only summary with distributions)
+  - data/releases/<ver>/outputs/mame_parent_index.json        (parent→clones + reverse map)
 
 Notes
 -----
@@ -14,8 +14,8 @@ Notes
 - Text-field convention: missing text becomes "", but 'description' currently preserves
   None to match historic outputs (revisit in a later logic pass).
 - Booleans in machine attributes are represented as "yes"/"no" strings.
-- Stamped for reproducibility: stage uses data/.stamps/mame.json and includes
-  both the XML and encodings.json as inputs.
+- Stamped for reproducibility: stage uses data/releases/<ver>/.stamps/mame.json and includes
+  the XML path as an input.
 """
 
 from __future__ import annotations
@@ -30,14 +30,15 @@ from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, maybe_log_progress
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    MAME_MACHINES_PATH,
-    PARENT_INDEX_PATH,
-    MAME_SUMMARY,
-    ENCODINGS_JSON,
+    mame_machines_path,
+    parent_index_path,
+    mame_summary_path,
+    ENCODINGS_JSON,   # temp shim (from step 0)
+    stamps_dir,
 )
 from mht.utils.io import write_json
 from mht.utils.mame_xml import (
-    int_or_none, capture_root_attrs, 
+    int_or_none, capture_root_attrs,
     get_machine_header, get_core_text_fields, iter_mame_events
 )
 # Backwards-compat for older tests that import _int_or_none from this module
@@ -87,23 +88,12 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     Side effects
     ------------
     - Writes:
-        * output/mame_machines.json
-        * data/mame_parsing_summary.json
-        * output/mame_parent_index.json
-    - Maintains a stage stamp at data/.stamps/mame.json and skips work if fresh.
+        * data/releases/<ver>/outputs/mame_machines.json
+        * data/releases/<ver>/summaries/mame_parsing_summary.json
+        * data/releases/<ver>/outputs/mame_parent_index.json
+    - Maintains a stage stamp at data/releases/<ver>/.stamps/mame.json and skips work if fresh.
     - Logs progress every 5,000 machines and emits warnings for invariants via utils.validator.
-
-    Implementation notes
-    --------------------
-    - This function is an orchestrator: XML access, players/controls/chips/displays/media,
-      summary shaping, invariants and record assembly are delegated to utils modules:
-        * utils.mame_xml: root attrs, core text fields, event iteration
-        * utils.controls / utils.chips / utils.displays / utils.media / utils.roms
-        * utils.summaries: bucketing, distributions, per-machine counter updates, totals
-        * utils.validator: warnings-only invariant checks
-        * utils.records: final per-machine record assembly
     """
-    
     start = time.perf_counter()
     log.info(
         f"Starting full MAME XML parsing: {file_path.name}"
@@ -112,13 +102,14 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     # Inputs / encoding
     mame_encoding = encodings["mame.xml"]
-    
-    # Stage stamp (skip-unchanged)
+
+    # Stage stamp (skip-unchanged) — per-release stamps dir    
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "mame.json",
         schema_id="mht.stage.mame",
         tool="mame_parser",
         inputs=[file_path, ENCODINGS_JSON],
+        stamps_dir=stamps_dir(),
     )
     if fresh:
         log.info("MAME stage up-to-date (stamp matched) — skipping parse")
@@ -320,7 +311,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
                     controls=controls_list,
                 )
 
-                # progress log (unchanged cadence/message)
+                # progress log
                 maybe_log_progress(
                     log,
                     total_machines,
@@ -342,8 +333,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         return False
 
     parse_seconds = time.perf_counter() - start
-    #generated_at_utc = datetime.datetime.utcnow().isoformat() + "Z"
-
 
     # ----------------------------
     # Build summary
@@ -381,7 +370,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         mame_mameconfig=mame_mameconfig,
     )
 
-
     # ----------------------------
     # Invariants (warnings only)
     # ----------------------------
@@ -408,27 +396,30 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         control_buttons_overall_ctr=control_buttons_overall_ctr,
         control_reqbuttons_overall_ctr=control_reqbuttons_overall_ctr,
     )
-        
+
     # ----------------------------
     # Write outputs
     # ----------------------------
-    if not write_json(MAME_MACHINES_PATH, {k: machines_out[k] for k in sorted(machines_out)}, sort_keys=False):
+    #if not write_json(mame_machines_path(), {k: machines_out[k] for k in sorted(machines_out)}, sort_keys=False):
+    if not write_json(mame_machines_path(), {k: machines_out[k] for k in sorted(machines_out)}, sort_keys=False):
         return False
-    log.info(f"Wrote canonical machines: {MAME_MACHINES_PATH}")
+    log.info(f"Wrote canonical machines: {mame_machines_path()}")
 
-    if not write_json(MAME_SUMMARY, summary, sort_keys=False):
+    #if not write_json(mame_summary_path(), summary, sort_keys=False):
+    if not write_json(mame_summary_path(), summary, sort_keys=False):
         return False
-    log.info(f"Wrote MAME totals summary: {MAME_SUMMARY}")
+    log.info(f"Wrote MAME totals summary: {mame_summary_path()}")
 
     parent_index = build_parent_index(machines_out)
-    if not write_json(PARENT_INDEX_PATH, parent_index):
+    #if not write_json(parent_index_path(), parent_index):
+    if not write_json(parent_index_path(), parent_index):
         return False
     log.info(
-        f"Wrote {PARENT_INDEX_PATH} "
+        f"Wrote {parent_index_path()} "
         f"({len(parent_index['parents'])} parents-with-clones, "
         f"{len(parent_index['child_to_parent'])} clones)"
     )
-    
+
     # All good → persist the stamp
     save_stamp(stamp_path, current_stamp)
 

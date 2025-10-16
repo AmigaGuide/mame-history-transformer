@@ -55,12 +55,26 @@ from mht.inputs.history_xml_parser import parse_history_entries
 from mht.inputs.history_ini_parser import parse_history_inis
 from mht.transform.pipeline import run_transformer
 from mht.utils.paths import (
-    DATA_DIR, OUTPUT_DIR,
-    ENCODINGS_JSON, MAME_SUMMARY, HISTORY_SUMMARY, INI_SUMMARY, TRANSFORM_SUMMARY,
-    MAME_MACHINES_PATH, PARENT_INDEX_PATH, GH_SYSTEM_PORTS_PATH, INI_CLASS_PATH,
-    EXOTICA_WIKI, EXOTICA_RAW, EXOTICA_PAGES,
-    INI_GAME, INI_CATEGORY, INI_TYPE,
-    TITLE_OVERRIDES, RUN_MANIFEST,
+    # release resolution + dirs
+    active_version, ensure_release_dirs,
+    outputs_dir, summaries_dir, stamps_dir,
+
+    # per-release inputs (extracted)
+    mame_xml_path, history_xml_path,
+    ini_game_path, ini_category_path, ini_type_path,
+
+    # per-release stage summaries
+    mame_summary_path, history_summary_path, ini_summary_path, transform_summary_path,
+
+    # per-release intermediates/outputs
+    mame_machines_path, parent_index_path, gh_system_ports_path, ini_classifications_path,
+    exotica_wiki_path, exotica_raw_path, exotica_pages_path,
+
+    # shared
+    DATA_DIR, TITLE_OVERRIDES, run_manifest_path, title_overrides_path,
+
+    # keep using your existing encodings cache location (back-compat)
+    ENCODINGS_JSON,
 )
 from mht.utils.history_xml import capture_history_root_attrs
 
@@ -238,44 +252,39 @@ def version_record(raw: str) -> Dict[str, Optional[str]]:
 
 def check_required_files() -> Optional[List[Path]]:
     """
-    Ensure all required XML/INI files exist in /data. If any are missing,
-    log actionable instructions and return None; otherwise return a list of Paths.
+    Ensure all required XML/INI files exist under data/releases/<ver>/extracted/.
+    Returns the list of Paths when present; logs guidance and returns None otherwise.
     """
-    #data_dir = Path("data")
-    data_dir = DATA_DIR
-    filenames = [
-        "mame.xml",
-        "history.xml",
-        INI_GAME.name,
-        INI_CATEGORY.name,
-        INI_TYPE.name,
-    ]
-    missing = [f for f in filenames if not (data_dir / f).is_file()]
-
-    for fname in filenames:
-        if fname not in missing:
-            debug_log(f"Verified: data/{fname} exists")
-
-    if missing:
-        log.error("Missing required files in /data:")
-        for fname in missing:
-            log.error(f" - {fname}")
-
-        # Minimal, practical guidance for each case
-        log.info("Instructions:")
-        if "mame.xml" in missing:
-            log.info("• Download MAME XML from https://www.mamedev.org/release.php")
-            log.info("• Extract and rename it to 'mame.xml' in the 'data' folder")
-        if "history.xml" in missing:
-            log.info("• Download Gaming-History XML from arcade-history.com")
-            log.info("• Extract 'history.xml' to the 'data' folder")
-        if any(".ini" in f for f in missing):
-            log.info("• The same ZIP includes .ini files — extract all three to the 'data' folder.")
-
+    # Resolve active release and ensure folders exist
+    try:
+        ensure_release_dirs()
+        ver = active_version()
+    except ValueError as e:
+        log.error(str(e))
+        log.info("Tip: create data/current_version.txt (e.g. '0280') or create data/releases/<ver>/extracted/.")
         return None
 
-    log.info("All required files found.")
-    return [data_dir / f for f in filenames]
+    required = [
+        ("mame.xml",                               mame_xml_path()),
+        ("history.xml",                            history_xml_path()),
+        ("[GAMING HISTORY] Game Or No Game.ini",   ini_game_path()),
+        ("[GAMING HISTORY] Machine Category.ini",  ini_category_path()),
+        ("[GAMING HISTORY] Machine Type.ini",      ini_type_path()),
+    ]
+    missing = [(label, p) for (label, p) in required if not p.exists()]
+    if missing:
+        base = mame_xml_path().parent.as_posix()
+        log.error(f"Missing required files for release {ver} in {base}:")
+        for label, _ in missing:
+            log.error(f" - {label}")
+        log.info("Instructions:")
+        log.info(f"• Put the extracted files into: {base}  (i.e. data/releases/{ver}/extracted/)")
+        log.info("• Or drop ZIPs in data/incoming/ for an import step (when implemented).")
+        return None
+
+    log.info("All required files found for release %s.", ver)
+    # preserve return type: list[Path] matching previous callers’ expectations
+    return [p for _, p in required]
 
 def get_xml_version(file_path: Path, root_tag: str) -> str:
     """
@@ -334,7 +343,8 @@ def main() -> None:
         log.error("Aborting. Required files missing.")
         return
 
-    data_dir = Path("data")
+    # Resolve version once for logs/paths
+    ver = active_version()
 
     # -------------------------------------------------------
     # Load existing encodings.json (cache of {encoding,version})
@@ -511,17 +521,23 @@ def main() -> None:
     ini_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     ini_t0 = time.perf_counter()
 
-    ok_ini = parse_history_inis(data_dir, encodings)
+    #ok_ini = parse_history_inis(data_dir, encodings)
+    ok_ini = parse_history_inis(DATA_DIR, encodings)
 
     ini_duration = round(time.perf_counter() - ini_t0, 3)
     ini_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     
     # Manifest inputs/outputs metadata for INI stage (index only, not detailed stats)
-    ini_summary_path = INI_SUMMARY
-    ini_output_path  = INI_CLASS_PATH
+    #ini_summary_path = INI_SUMMARY
+    #ini_output_path  = INI_CLASS_PATH
+    #ini_summary_path = ini_summary_path()
+    ini_summary_fp = ini_summary_path()
+    #ini_output_path  = ini_classifications_path()
+    ini_output_fp = ini_classifications_path()
 
     # Use centralised paths
-    ini_input_paths = [INI_GAME, INI_CATEGORY, INI_TYPE]
+    #ini_input_paths = [INI_GAME, INI_CATEGORY, INI_TYPE]
+    ini_input_paths  = [ini_game_path(), ini_category_path(), ini_type_path()]
     name_to_path = {p.name: p for p in ini_input_paths}
 
     ini_inputs = []
@@ -550,11 +566,11 @@ def main() -> None:
 
     ini_outputs = []
     ini_stats = {}
-    if ini_summary_path.exists():
-        meta = _file_meta(ini_summary_path)
+    if ini_summary_fp.exists():
+        meta = _file_meta(ini_summary_fp)
         ini_outputs.append(meta)
         try:
-            with open(ini_summary_path, encoding="utf-8") as f:
+            with open(ini_summary_fp, encoding="utf-8") as f:
                 _ini_sum = json.load(f)
             umi = (_ini_sum.get("stats") or {}).get("unique_machine_names_indexed")
             if isinstance(umi, int):
@@ -562,10 +578,10 @@ def main() -> None:
         except Exception as e:
             log.debug(f"Could not read INI summary for stats: {e}")
 
-    if ini_output_path.exists():
-        meta = _file_meta(ini_output_path)
+    if ini_output_fp.exists():
+        meta = _file_meta(ini_output_fp)
         try:
-            with open(ini_output_path, encoding="utf-8") as f:
+            with open(ini_output_fp, encoding="utf-8") as f:
                 _map = json.load(f)
             meta["records"] = len(_map) if isinstance(_map, dict) else None
         except Exception:
@@ -588,13 +604,20 @@ def main() -> None:
     log.info("Beginning MAME XML canonical parse...")
     mame_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     mame_t0 = time.perf_counter()
-    ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
+    #ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
+    ok_mame = parse_mame_xml(mame_xml_path(), encodings=encodings, max_records=0)
+    
     mame_duration = round(time.perf_counter() - mame_t0, 3)
     mame_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
-    mame_xml          = data_dir / "mame.xml"
-    mame_summary_path = MAME_SUMMARY
-    mame_out_path     = MAME_MACHINES_PATH
+    #mame_xml          = data_dir / "mame.xml"
+    #mame_summary_path = MAME_SUMMARY
+    #mame_out_path     = MAME_MACHINES_PATH
+    mame_xml          = mame_xml_path()
+    #mame_summary_path = mame_summary_path()
+    mame_summary_fp = mame_summary_path()
+    #mame_out_path     = mame_machines_path()
+    mame_out_fp = mame_machines_path()
 
     mame_stage = {
         "stage": "mame_parse",
@@ -607,8 +630,10 @@ def main() -> None:
         "stats": {},
     }
 
-    if mame_summary_path.exists() and mame_out_path.exists():
-        with open(mame_summary_path, encoding="utf-8") as f:
+    #if mame_summary_path.exists() and mame_out_path.exists():
+    if mame_summary_fp.exists() and mame_out_fp.exists():
+        #with open(mame_summary_path, encoding="utf-8") as f:
+        with open(mame_summary_fp, encoding="utf-8") as f:
             msum = json.load(f)
         mver = {
             "build":      msum.get("mame", {}).get("build"),
@@ -617,18 +642,19 @@ def main() -> None:
         mame_stage["inputs"][0]["version"] = {k: v for k, v in mver.items() if v}
         mame_stage["inputs"][0].pop("content", None)
 
-        mout = _file_meta(mame_out_path)
-        mout["summary_path"] = mame_summary_path.as_posix()
-        with open(mame_out_path, encoding="utf-8") as f:
+        mout = _file_meta(mame_out_fp)
+        mout["summary_path"] = mame_summary_fp.as_posix()
+        with open(mame_out_fp, encoding="utf-8") as f:
             m_machines = json.load(f)
         mout["records"] = len(m_machines)
         mame_stage["outputs"].append(mout)
 
-        mame_parent_idx_path = PARENT_INDEX_PATH
-        if mame_parent_idx_path.exists():
-            mp = _file_meta(mame_parent_idx_path)
+        #parent_index_fp = PARENT_INDEX_PATH
+        parent_index_fp = parent_index_path()
+        if parent_index_fp.exists():
+            mp = _file_meta(parent_index_fp)
             try:
-                with open(mame_parent_idx_path, encoding="utf-8") as f:
+                with open(parent_index_fp, encoding="utf-8") as f:
                     idx = json.load(f)
                 mp["records"] = len(idx.get("parents", {})) if isinstance(idx, dict) else None
             except Exception:
@@ -653,12 +679,16 @@ def main() -> None:
     history_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     hist_t0 = time.perf_counter()
 
-    history_xml        = data_dir / "history.xml"
-    hist_summary_path  = HISTORY_SUMMARY
-    gh_out_path        = GH_SYSTEM_PORTS_PATH
+    #history_xml        = data_dir / "history.xml"
+    #hist_summary_path  = HISTORY_SUMMARY
+    #gh_out_path        = GH_SYSTEM_PORTS_PATH
+    history_xml        = history_xml_path()
+    hist_summary_fp    = history_summary_path()
+    gh_out_fp          = gh_system_ports_path()
 
     if ok_mame:
-        ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
+        #ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
+        ok_history = parse_history_entries(history_xml_path(), encodings.get("history.xml", "utf-8"))
         hist_errs = []
     else:
         ok_history = False
@@ -681,8 +711,8 @@ def main() -> None:
     if hist_errs:
         history_stage["errors"] = hist_errs
 
-    if hist_summary_path.exists() and gh_out_path.exists():
-        with open(hist_summary_path, encoding="utf-8") as f:
+    if hist_summary_fp.exists() and gh_out_fp.exists():
+        with open(hist_summary_fp, encoding="utf-8") as f:
             hsum = json.load(f)
         totals = hsum.get("totals", {})
         systems_total  = totals.get("systems_total")
@@ -692,10 +722,10 @@ def main() -> None:
         hx = _history_root_attrs(history_xml, encoding=encodings.get("history.xml", "utf-8"))
         history_stage["inputs"][0]["version"] = {k: v for k, v in hx.items() if v}
 
-        hout = _file_meta(gh_out_path)
-        hout["summary_path"] = hist_summary_path.as_posix()
+        hout = _file_meta(gh_out_fp)
+        hout["summary_path"] = hist_summary_fp.as_posix()
         try:
-            with open(gh_out_path, encoding="utf-8") as f:
+            with open(gh_out_fp, encoding="utf-8") as f:
                 gh_data = json.load(f)
             hout["records"] = len(gh_data)
         except Exception:
@@ -719,12 +749,15 @@ def main() -> None:
     transform_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     tr_t0 = time.perf_counter()
     
-    need_files = [MAME_MACHINES_PATH, INI_CLASS_PATH, PARENT_INDEX_PATH]
+    #need_files = [MAME_MACHINES_PATH, INI_CLASS_PATH, PARENT_INDEX_PATH]
+    need_files = [mame_machines_path(), ini_classifications_path(), parent_index_path()]
     
     missing_files = [p.as_posix() for p in need_files if not p.exists()]
 
     if ok_mame and ok_ini and not missing_files:
-        ok_transform = run_transformer(Path("data"))
+        #ok_transform = run_transformer(Path("data"))
+        #ok_transform = run_transformer(DATA_DIR)  # run_transformer ignores the arg for paths, fine to keep
+        ok_transform = run_transformer()
         transform_errs = []
     else:
         ok_transform = False
@@ -756,29 +789,33 @@ def main() -> None:
         if p.exists():
             transform_stage["inputs"].append(_file_meta(p))
 
-    ov_path = TITLE_OVERRIDES
-    if ov_path.exists():
-        transform_stage["inputs"].append(_file_meta(ov_path))
+    #ov_fp = TITLE_OVERRIDES
+    ov_fp = title_overrides_path()
+    if ov_fp.exists():
+        transform_stage["inputs"].append(_file_meta(ov_fp))
 
-    wiki_out_path   = EXOTICA_WIKI
-    tr_summary_path = TRANSFORM_SUMMARY
+    #wiki_out_fp   = EXOTICA_WIKI
+    #tr_summary_fp = TRANSFORM_SUMMARY
+    wiki_out_fp   = exotica_wiki_path()
+    tr_summary_fp = transform_summary_path()
 
     if ok_transform:
-        if wiki_out_path.exists():
-            w = _file_meta(wiki_out_path)
+        if wiki_out_fp.exists():
+            w = _file_meta(wiki_out_fp)
             try:
-                with open(wiki_out_path, encoding="utf-8") as f:
-                    wiki_map = json.load(f)
+                with open(wiki_out_fp, encoding="utf-8") as f:
+                    #wiki_map = json.load(f)
+                    wiki_doc = json.load(f)
                 w["records"] = len((wiki_doc or {}).get("games", {}))
             except Exception:
                 w["records"] = None
             transform_stage["outputs"].append(w)
 
-        if tr_summary_path.exists():
-            s = _file_meta(tr_summary_path)
+        if tr_summary_fp.exists():
+            s = _file_meta(tr_summary_fp)
             transform_stage["outputs"].append(s)
             try:
-                with open(tr_summary_path, encoding="utf-8") as f:
+                with open(tr_summary_fp, encoding="utf-8") as f:
                     ts = json.load(f)
                 c = ts.get("counts", {})
                 transform_stage["stats"].update({
@@ -789,23 +826,26 @@ def main() -> None:
             except Exception:
                 pass
 
-        raw_path = EXOTICA_RAW
-        if raw_path.exists():
-            rmeta = _file_meta(raw_path)
+        #raw_fp = EXOTICA_RAW
+        raw_fp = exotica_raw_path()
+        if raw_fp.exists():
+            rmeta = _file_meta(raw_fp)
             try:
-                with open(raw_path, encoding="utf-8") as f:
-                    raw_map = json.load(f)
+                with open(raw_fp, encoding="utf-8") as f:
+                    #raw_map = json.load(f)
+                    raw_doc = json.load(f)
                 rmeta["records"] = len((raw_doc or {}).get("games", {}))
             except Exception:
                 rmeta["records"] = None
             transform_stage["outputs"].append(rmeta)
 
-        redirects_path = EXOTICA_PAGES
-        if redirects_path.exists():
-            rdmeta = _file_meta(redirects_path)
+        #redirects_fp = EXOTICA_PAGES
+        redirects_fp = exotica_pages_path()
+        if redirects_fp.exists():
+            rdmeta = _file_meta(redirects_fp)
             transform_stage["outputs"].append(rdmeta)
             try:
-                with open(redirects_path, encoding="utf-8") as f:
+                with open(redirects_fp, encoding="utf-8") as f:
                     pages_doc = json.load(f)
                 # Add useful per-file stats
                 transform_stage["stats"].update({
@@ -842,9 +882,14 @@ def main() -> None:
     }
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with open(RUN_MANIFEST, "w", encoding="utf-8") as f:
+    rm_path = run_manifest_path()
+    rm_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(rm_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
-    log.info("Wrote data/run_manifest.json")
+    log.info(f"Wrote {rm_path.as_posix()}")
+    #with open(RUN_MANIFEST, "w", encoding="utf-8") as f:
+    #    json.dump(manifest, f, indent=2, ensure_ascii=False)
+    #log.info("Wrote data/run_manifest.json")
 
 
 if __name__ == "__main__":
