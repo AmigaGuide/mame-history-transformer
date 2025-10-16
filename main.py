@@ -68,7 +68,7 @@ from mht.utils.paths import (
 
     # per-release intermediates/outputs
     mame_machines_path, parent_index_path, gh_system_ports_path, ini_classifications_path,
-    exotica_wiki_path, exotica_raw_path, exotica_pages_path,
+    exotica_wiki_path, exotica_raw_path, exotica_pages_path, manifest_path,
 
     # shared
     DATA_DIR, TITLE_OVERRIDES, run_manifest_path, title_overrides_path,
@@ -521,22 +521,16 @@ def main() -> None:
     ini_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     ini_t0 = time.perf_counter()
 
-    #ok_ini = parse_history_inis(data_dir, encodings)
     ok_ini = parse_history_inis(DATA_DIR, encodings)
 
     ini_duration = round(time.perf_counter() - ini_t0, 3)
     ini_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
     
     # Manifest inputs/outputs metadata for INI stage (index only, not detailed stats)
-    #ini_summary_path = INI_SUMMARY
-    #ini_output_path  = INI_CLASS_PATH
-    #ini_summary_path = ini_summary_path()
     ini_summary_fp = ini_summary_path()
-    #ini_output_path  = ini_classifications_path()
     ini_output_fp = ini_classifications_path()
 
     # Use centralised paths
-    #ini_input_paths = [INI_GAME, INI_CATEGORY, INI_TYPE]
     ini_input_paths  = [ini_game_path(), ini_category_path(), ini_type_path()]
     name_to_path = {p.name: p for p in ini_input_paths}
 
@@ -604,19 +598,13 @@ def main() -> None:
     log.info("Beginning MAME XML canonical parse...")
     mame_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     mame_t0 = time.perf_counter()
-    #ok_mame = parse_mame_xml(data_dir / "mame.xml", encodings=encodings, max_records=0)
     ok_mame = parse_mame_xml(mame_xml_path(), encodings=encodings, max_records=0)
     
     mame_duration = round(time.perf_counter() - mame_t0, 3)
     mame_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
-    #mame_xml          = data_dir / "mame.xml"
-    #mame_summary_path = MAME_SUMMARY
-    #mame_out_path     = MAME_MACHINES_PATH
     mame_xml          = mame_xml_path()
-    #mame_summary_path = mame_summary_path()
     mame_summary_fp = mame_summary_path()
-    #mame_out_path     = mame_machines_path()
     mame_out_fp = mame_machines_path()
 
     mame_stage = {
@@ -630,9 +618,7 @@ def main() -> None:
         "stats": {},
     }
 
-    #if mame_summary_path.exists() and mame_out_path.exists():
     if mame_summary_fp.exists() and mame_out_fp.exists():
-        #with open(mame_summary_path, encoding="utf-8") as f:
         with open(mame_summary_fp, encoding="utf-8") as f:
             msum = json.load(f)
         mver = {
@@ -649,7 +635,6 @@ def main() -> None:
         mout["records"] = len(m_machines)
         mame_stage["outputs"].append(mout)
 
-        #parent_index_fp = PARENT_INDEX_PATH
         parent_index_fp = parent_index_path()
         if parent_index_fp.exists():
             mp = _file_meta(parent_index_fp)
@@ -679,15 +664,11 @@ def main() -> None:
     history_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     hist_t0 = time.perf_counter()
 
-    #history_xml        = data_dir / "history.xml"
-    #hist_summary_path  = HISTORY_SUMMARY
-    #gh_out_path        = GH_SYSTEM_PORTS_PATH
     history_xml        = history_xml_path()
     hist_summary_fp    = history_summary_path()
     gh_out_fp          = gh_system_ports_path()
 
     if ok_mame:
-        #ok_history = parse_history_entries(data_dir / "history.xml", encodings.get("history.xml", "utf-8"))
         ok_history = parse_history_entries(history_xml_path(), encodings.get("history.xml", "utf-8"))
         hist_errs = []
     else:
@@ -749,14 +730,11 @@ def main() -> None:
     transform_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     tr_t0 = time.perf_counter()
     
-    #need_files = [MAME_MACHINES_PATH, INI_CLASS_PATH, PARENT_INDEX_PATH]
     need_files = [mame_machines_path(), ini_classifications_path(), parent_index_path()]
     
     missing_files = [p.as_posix() for p in need_files if not p.exists()]
 
-    if ok_mame and ok_ini and not missing_files:
-        #ok_transform = run_transformer(Path("data"))
-        #ok_transform = run_transformer(DATA_DIR)  # run_transformer ignores the arg for paths, fine to keep
+    if ok_mame and ok_ini and not missing_files:   
         ok_transform = run_transformer()
         transform_errs = []
     else:
@@ -789,13 +767,10 @@ def main() -> None:
         if p.exists():
             transform_stage["inputs"].append(_file_meta(p))
 
-    #ov_fp = TITLE_OVERRIDES
     ov_fp = title_overrides_path()
     if ov_fp.exists():
         transform_stage["inputs"].append(_file_meta(ov_fp))
 
-    #wiki_out_fp   = EXOTICA_WIKI
-    #tr_summary_fp = TRANSFORM_SUMMARY
     wiki_out_fp   = exotica_wiki_path()
     tr_summary_fp = transform_summary_path()
 
@@ -804,7 +779,6 @@ def main() -> None:
             w = _file_meta(wiki_out_fp)
             try:
                 with open(wiki_out_fp, encoding="utf-8") as f:
-                    #wiki_map = json.load(f)
                     wiki_doc = json.load(f)
                 w["records"] = len((wiki_doc or {}).get("games", {}))
             except Exception:
@@ -826,20 +800,17 @@ def main() -> None:
             except Exception:
                 pass
 
-        #raw_fp = EXOTICA_RAW
         raw_fp = exotica_raw_path()
         if raw_fp.exists():
             rmeta = _file_meta(raw_fp)
             try:
                 with open(raw_fp, encoding="utf-8") as f:
-                    #raw_map = json.load(f)
                     raw_doc = json.load(f)
                 rmeta["records"] = len((raw_doc or {}).get("games", {}))
             except Exception:
                 rmeta["records"] = None
             transform_stage["outputs"].append(rmeta)
 
-        #redirects_fp = EXOTICA_PAGES
         redirects_fp = exotica_pages_path()
         if redirects_fp.exists():
             rdmeta = _file_meta(redirects_fp)
@@ -881,16 +852,11 @@ def main() -> None:
         "stages": [ini_stage, mame_stage, history_stage, transform_stage],
     }
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    rm_path = run_manifest_path()
-    rm_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(rm_path, "w", encoding="utf-8") as f:
+    mp = manifest_path()  # data/releases/<ver>/manifest.json
+    mp.parent.mkdir(parents=True, exist_ok=True)
+    with open(mp, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
-    log.info(f"Wrote {rm_path.as_posix()}")
-    #with open(RUN_MANIFEST, "w", encoding="utf-8") as f:
-    #    json.dump(manifest, f, indent=2, ensure_ascii=False)
-    #log.info("Wrote data/run_manifest.json")
-
+    log.info(f"Wrote {mp.as_posix()}")
 
 if __name__ == "__main__":
     main()
