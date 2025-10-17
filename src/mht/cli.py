@@ -4,12 +4,13 @@ import argparse
 import json
 from pathlib import Path
 from typing import Iterable, Optional
+import datetime
 
 from mht.utils.versions import tool_version
 from mht.utils.stamps import make_stamp, load_stamp, is_fresh
 from mht.utils.paths import (
     # repo/data roots
-    DATA_DIR,
+    DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
     # active version & dirs
     active_version,
     ensure_release_dirs,
@@ -40,20 +41,126 @@ from mht.utils.paths import (
     title_overrides_path,
     # shims (legacy)
     RUN_MANIFEST,  # still points to summaries/run_manifest.json via shim
+    # add new helpers:
+    incoming_dir, quarantine_dir, set_active_version, active_version, list_release_versions,
 )
 from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
+from mht.provenance.peek import sniff_history_xml, sniff_mame_xml, sniff_ini_file
+from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
+from mht.provenance.releases_index import rebuild_releases_index
 
-# Optional imports for new commands (guarded so CLI still works if files aren’t present yet)
-try:
-    from mht.provenance.archives import import_incoming_archives
-except Exception:  # pragma: no cover
-    import_incoming_archives = None  # type: ignore
+# --------------------------------------------------------------------------------------
+# Incoming handlers
+# --------------------------------------------------------------------------------------
 
-try:
-    from mht.provenance.releases_index import refresh_releases_index
-except Exception:  # pragma: no cover
-    refresh_releases_index = None  # type: ignore
+def cmd_incoming_verify(args: argparse.Namespace) -> int:
+    inc = incoming_dir()
+    zips = list_incoming_archives(inc)
+    if not zips:
+        print(f"(no zip files in {inc})")
+        return 0
 
+    print(f"Verifying archives in {inc}...")
+    any_fail = False
+    for zp in zips:
+        # verify_and_stage_zip returns Path | None
+        dest = verify_and_stage_zip(zp, args.version)
+        name = zp.name
+        if dest is not None:
+            # dest is release_root(<ver>), file was copied to archives/<name>
+            print(f"  OK:   {name}  → {dest / 'archives' / name}")
+        else:
+            any_fail = True
+            print(f"  FAIL: {name} (moved to quarantine)")
+
+    return 1 if any_fail else 0
+
+
+def cmd_incoming_import(args: argparse.Namespace) -> int:
+    # Moves/copies into data/releases/<ver>/archives, extracts, and updates index
+    ok, results = import_incoming_archives(
+        target_version=args.version,
+        mode=("move" if args.move else "copy"),
+        quarantine_on_fail=True,
+        dry_run=args.dry_run,
+    )
+
+    action = "DRY-RUN import" if args.dry_run else "Import"
+    print(f"{action} results for version {args.version or '(auto)'}:")
+    if not results:
+        print("  (nothing to do)")
+        return 0 if ok else 1
+
+    failures = 0
+    for r in results:
+        name = r.get("name") or "(unknown.zip)"
+        status = r.get("status") or "unknown"
+        msg = r.get("message") or ""
+        if status == "ok":
+            where = r.get("release_root")
+            print(f"  ✔ {name}  →  {where}  {f'({msg})' if msg else ''}")
+        else:
+            failures += 1
+            print(f"  ✖ {name}  —  {msg}")
+
+    return 1 if failures else (0 if ok else 1)
+
+def cmd_incoming_scan(args: argparse.Namespace) -> int:
+    inc = incoming_dir()
+    items = list_incoming_archives(inc)
+    print(f"Incoming archives in {inc}:")
+    if not items:
+        print("  (none)")
+        return 0
+
+    for p in items:
+        try:
+            st = p.stat()
+            mtime_utc = datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z"
+            print(f"  {p.name:30}  {st.st_size:>10} bytes  mtime={mtime_utc}")
+        except FileNotFoundError:
+            print(f"  {p.name:30}  (missing)")
+    return 0
+
+def cmd_incoming_adopt(args: argparse.Namespace) -> int:
+    dest = verify_and_stage_zip(args.zip, args.version)
+    if dest is not None:
+        print(f"Adopted: {dest / 'archives' / args.zip.name}")
+        return 0
+    print("Adoption failed (file moved to quarantine).")
+    return 2
+
+# --------------------------------------------------------------------------------------
+# Incoming handlers
+# --------------------------------------------------------------------------------------
+
+def cmd_releases_index(args: argparse.Namespace) -> int:
+    entries = rebuild_releases_index()
+    print(f"Indexed {len(entries)} release(s). See data/releases_index.json")
+    return 0
+
+def cmd_releases_list(args: argparse.Namespace) -> int:
+    current = None
+    try:
+        current = active_version()
+    except Exception:
+        pass
+    versions = list_release_versions()
+    if not versions:
+        print("(no releases found)")
+        return 0
+    print("Releases:")
+    for v in versions:
+        mark = " *" if v == current else ""
+        print(f"  {v}{mark}")
+    if current:
+        print(f"\nActive: {current}")
+    return 0
+
+def cmd_releases_set(args: argparse.Namespace) -> int:
+    set_active_version(args.version)
+    print(f"Active version set to {args.version}")
+    return 0
 
 # --------------------------------------------------------------------------------------
 # Helpers
@@ -267,7 +374,7 @@ def cmd_run(_: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------------------
-# New: ingest archives from data/incoming/
+# ingest archives from data/incoming/
 # --------------------------------------------------------------------------------------
 
 def cmd_ingest(args: argparse.Namespace) -> int:
@@ -285,7 +392,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------------------
-# New: rebuild releases_index.json
+# rebuild releases_index.json
 # --------------------------------------------------------------------------------------
 
 def cmd_releases_index(_: argparse.Namespace) -> int:
@@ -337,14 +444,53 @@ def main() -> None:
     )
     s_validate.set_defaults(func=cmd_validate)
 
-    # NEW: ingest
+    # incoming
+    s_incoming = sub.add_parser("incoming", help="Manage incoming ZIP archives")
+    s_incoming_sub = s_incoming.add_subparsers(dest="subcmd", required=True)
+
+    s_inc_scan = s_incoming_sub.add_parser("scan", help="List ZIPs in data/incoming")
+    s_inc_scan.set_defaults(func=cmd_incoming_scan)
+
+    s_inc_adopt = s_incoming_sub.add_parser("adopt", help="Verify + move/copy a ZIP into a release")
+    s_inc_adopt.add_argument("zip", type=Path, help="Path to the ZIP in data/incoming")
+    s_inc_adopt.add_argument("--version", required=True, help="Target release version, e.g. 0280")
+    s_inc_adopt.add_argument("--copy", action="store_true", help="Copy instead of move")
+    s_inc_adopt.set_defaults(func=cmd_incoming_adopt)
+
+    # incoming verify (check all ZIPs without modifying anything)
+    s_inc_verify = s_incoming_sub.add_parser("verify", help="Verify ZIPs are valid before import")
+    s_inc_verify.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
+    s_inc_verify.set_defaults(func=cmd_incoming_verify)
+
+    # incoming import (ingest all valid ZIPs; copy by default)
+    s_inc_import = s_incoming_sub.add_parser("import", help="Ingest valid ZIPs into releases/<ver>/archives and extract")
+    s_inc_import.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
+    s_inc_import.add_argument("--move", action="store_true", help="Move files instead of copying")
+    s_inc_import.add_argument("--dry-run", action="store_true", help="Show what would happen without writing")
+    s_inc_import.set_defaults(func=cmd_incoming_import)
+
+    # releases
+    s_rel = sub.add_parser("releases", help="Inspect and manage releases")
+    s_rel_sub = s_rel.add_subparsers(dest="subcmd", required=True)
+
+    s_rel_idx = s_rel_sub.add_parser("index", help="Rebuild data/releases_index.json")
+    s_rel_idx.set_defaults(func=cmd_releases_index)
+
+    s_rel_list = s_rel_sub.add_parser("list", help="List discovered releases; marks active one")
+    s_rel_list.set_defaults(func=cmd_releases_list)
+
+    s_rel_set = s_rel_sub.add_parser("set", help="Set active version (writes data/current_version.txt)")
+    s_rel_set.add_argument("version", help="Release version, e.g. 0280")
+    s_rel_set.set_defaults(func=cmd_releases_set)
+
+    # ingest
     s_ingest = sub.add_parser("ingest", help="Import archives from data/incoming/ into releases/<ver>/archives and (optionally) extract")
     s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
     s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
     s_ingest.add_argument("--no-extract", action="store_true", help="Do not extract after moving")
     s_ingest.set_defaults(func=cmd_ingest)
 
-    # NEW: releases-index
+    # releases-index
     s_idx = sub.add_parser("releases-index", help="Rebuild data/releases_index.json")
     s_idx.set_defaults(func=cmd_releases_index)
 

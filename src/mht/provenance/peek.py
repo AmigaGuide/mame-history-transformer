@@ -414,3 +414,70 @@ def _rewindable(file_like) -> io.BytesIO:
     # Read a small chunk — XML root and prolog are at the start. 64 KiB is generous.
     head = file_like.read(65536)
     return io.BytesIO(head)
+
+# ---------------------------------------------------------------------
+# Adapters expected by cli.py (back-compat shims)
+# ---------------------------------------------------------------------
+from pathlib import Path as _Path
+
+# If your internal function names differ, just swap the right targets below.
+# For example, if you use class-based sniffers, instantiate and call them here.
+
+def sniff_mame_xml(path: _Path, **kwargs) -> dict:
+    """
+    Back-compat wrapper expected by mht.cli.
+    Delegates to your existing MAME XML peek function.
+    """
+    # CHANGE the target below to match your actual function/class:
+    return peek_mame_xml(_Path(path), **kwargs)  # noqa: F821
+
+def sniff_history_xml(path: _Path, **kwargs) -> dict:
+    """
+    Back-compat wrapper expected by mht.cli.
+    Delegates to your existing History XML peek function.
+    """
+    # CHANGE the target below to match your actual function/class:
+    return peek_history_xml(_Path(path), **kwargs)  # noqa: F821
+
+def sniff_ini_file(path: _Path, *, encoding: str | None = None, header_lines: int = 16, **kwargs) -> dict:
+    """
+    Back-compat wrapper expected by mht.cli.
+    Delegates to your existing INI header peek function.
+    """
+    # CHANGE the target below to match your actual function/class:
+    return peek_ini_header(_Path(path), encoding=encoding, header_lines=header_lines, **kwargs)  # noqa: F821
+
+def derive_mame_version_hint_from_filename(name: str | Path) -> str | None:
+    """
+    Best-effort MAME version hint from a filename like:
+      - mame0280lx.zip / mame0280.xml     -> '0280'
+      - mame0263.zip                       -> '0263'
+      - mame-0.279-win.zip                 -> '0279'
+      - mame281.zip                        -> '0281' (leading 0 added)
+    Returns None if no obvious hint is found.
+    """
+    s = Path(name).name.lower()
+
+    # Forms like mame0280*, mame263, mame-0281, mame_0280, etc.
+    m = re.search(r"mame[-_]?0?(\d{3,4})(?!\d)", s)
+    if m:
+        g = m.group(1)
+        return g.zfill(4) if g else None
+
+    # Decimal forms like 0.280 / 0.263 (ensure not part of a larger number)
+    m2 = re.search(r"(?<!\d)0\.(\d{3})(?!\d)", s)
+    if m2:
+        return f"0{m2.group(1)}"
+
+    # Fallback: 1.234 -> 1234 (rare, but keep just in case)
+    m3 = re.search(r"(?<!\d)(\d)\.(\d{3})(?!\d)", s)
+    if m3:
+        return f"{m3.group(1)}{m3.group(2)}".zfill(4)
+
+    return None
+
+# (Optional) make sure these names are exported if you maintain __all__
+try:
+    __all__  # type: ignore[name-defined]
+except NameError:
+    __all__ = []

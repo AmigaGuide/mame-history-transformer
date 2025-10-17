@@ -1,302 +1,174 @@
 from __future__ import annotations
 
-import json
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional
+import datetime
 
-from mht.utils.io import write_json
+from mht.utils.io import write_json, read_json
 from mht.utils.paths import (
     DATA_DIR,
+    releases_root,
     release_root,
     archives_dir,
     extracted_dir,
     outputs_dir,
     summaries_dir,
-    stamps_dir,
-    mame_xml_path,
-    history_xml_path,
-    ini_game_path,
-    ini_category_path,
-    ini_type_path,
-    mame_machines_path,
-    parent_index_path,
-    gh_system_ports_path,
-    ini_classifications_path,
-    exotica_raw_path,
-    exotica_wiki_path,
-    exotica_pages_path,
-    mame_summary_path,
-    history_summary_path,
-    ini_summary_path,
 )
+# Optional: we only read summaries if present
+# mame:     summaries/mame_parsing_summary.json
+# history:  summaries/history_parsing_summary.json
+# ini:      summaries/ini_parsing_summary.json
 
-# ---------- small helpers ----------
-
-def _utc_now_iso() -> str:
-    return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-
-def _safe_load_json(p: Path) -> Any | None:
+def _size(p: Path) -> Optional[int]:
     try:
-        if p.exists() and p.is_file():
-            with p.open("r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        return None
-    return None
-
-def _file_meta(p: Path) -> Dict[str, Any] | None:
-    try:
-        st = p.stat()
-        return {
-            "path": p.as_posix(),
-            "size_bytes": st.st_size,
-            "modified_utc": datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
-        }
+        return p.stat().st_size
     except FileNotFoundError:
         return None
 
-def _numcore_and_suffix(raw: str | None) -> Tuple[Tuple[int, ...], Optional[str]]:
-    """
-    Extract dotted numeric core as a tuple plus optional suffix.
-    Accepts values like '0.280', '0.280-rc1', '2.79a', etc.
-    """
-    if not raw:
-        return ((), None)
-    s = raw.strip()
-    # split into alnum runs separated by punctuation; first run of numbers with dots is the core
-    # pragmatic approach:
-    core = []
-    token = ""
-    for ch in s:
-        if ch.isdigit() or ch == ".":
-            token += ch
-        else:
-            if token:
-                core = token.split(".")
-                break
-    if not core and token:
-        core = token.split(".")
+def _mtime_iso(p: Path) -> Optional[str]:
     try:
-        core_tuple = tuple(int(x) for x in core if x != "")
-    except ValueError:
-        core_tuple = ()
-    # suffix = raw with leading core removed (best-effort)
-    suffix = None
-    if core_tuple:
-        core_str = ".".join(str(n) for n in core_tuple)
-        idx = s.find(core_str)
-        if idx >= 0:
-            rest = s[idx + len(core_str):].lstrip(" -_.")
-            suffix = rest or None
-    return (core_tuple, suffix)
+        ts = p.stat().st_mtime
+        return datetime.datetime.utcfromtimestamp(ts).isoformat() + "Z"
+    except FileNotFoundError:
+        return None
 
-def _same_numeric_core(*raws: Optional[str]) -> bool:
-    cores = []
-    for r in raws:
-        core, _ = _numcore_and_suffix(r)
-        if not core:
-            return False
-        cores.append(core)
-    return len(set(cores)) == 1
+def _first_file_with_ext(d: Path, ext: str) -> Optional[Path]:
+    if not d.exists():
+        return None
+    for p in sorted(d.iterdir()):
+        if p.is_file() and p.suffix.lower() == ext.lower():
+            return p
+    return None
+
+def _scan_archives(ver: str) -> Dict[str, Any]:
+    a = archives_dir(ver)
+    out: Dict[str, Any] = {"dir": a.as_posix(), "files": []}
+    if not a.exists():
+        return out
+    for p in sorted(a.iterdir()):
+        if p.is_file():
+            out["files"].append({
+                "name": p.name,
+                "size": _size(p),
+                "modified_utc": _mtime_iso(p),
+            })
+    return out
+
+def _scan_extracted(ver: str) -> Dict[str, Any]:
+    e = extracted_dir(ver)
+    res = {
+        "dir": e.as_posix(),
+        "present": e.exists(),
+        "mame_xml": None,
+        "history_xml": None,
+        "ini_files": [],
+    }
+    if not e.exists():
+        return res
+    mame = e / "mame.xml"
+    hist = e / "history.xml"
+    res["mame_xml"] = {"present": mame.exists(), "size": _size(mame), "modified_utc": _mtime_iso(mame)}
+    res["history_xml"] = {"present": hist.exists(), "size": _size(hist), "modified_utc": _mtime_iso(hist)}
+    for name in (
+        "[GAMING HISTORY] Game Or No Game.ini",
+        "[GAMING HISTORY] Machine Category.ini",
+        "[GAMING HISTORY] Machine Type.ini",
+    ):
+        p = e / name
+        res["ini_files"].append({"name": name, "present": p.exists(), "size": _size(p), "modified_utc": _mtime_iso(p)})
+    return res
+
+def _scan_outputs(ver: str) -> Dict[str, Any]:
+    o = outputs_dir(ver)
+    fields = [
+        "mame_machines.json",
+        "mame_parent_index.json",
+        "gh_system_ports.json",
+        "gh_ini_classifications.json",
+        "exotica_lit_wiki.json",
+        "exotica_lit_raw_data.json",
+        "exotica_wiki_pages_and_redirects.json",
+    ]
+    out = {"dir": o.as_posix(), "files": []}
+    if not o.exists():
+        return out
+    for f in fields:
+        p = o / f
+        out["files"].append({"name": f, "present": p.exists(), "size": _size(p), "modified_utc": _mtime_iso(p)})
+    return out
 
 def _read_versions_from_summaries(ver: str) -> Dict[str, Any]:
-    """
-    Pull concise version info from the small summary JSONs only.
-    """
-    ms = _safe_load_json(mame_summary_path(ver)) or {}
-    hs = _safe_load_json(history_summary_path(ver)) or {}
-    ins = _safe_load_json(ini_summary_path(ver)) or {}
-
-    # canonical header-first paths, with fallbacks for older shapes
-    def _get(d, *path, default=None):
-        cur = d
-        for k in path:
-            if not isinstance(cur, dict) or k not in cur:
-                return default
-            cur = cur[k]
-        return cur
-
-    mame_build   = _get(ms, "header", "versions", "mame_build") or _get(ms, "mame", "build")
-    mame_xml_ver = _get(ms, "header", "versions", "mame_xml_version")
-
-    hist_ver  = _get(hs, "header", "versions", "gh_version") or _get(hs, "history", "version")
-    hist_date = _get(hs, "header", "versions", "gh_date")    or _get(hs, "history", "date")
-
-    # INI versions as a mapping (filename -> version string)
-    ini_versions: Dict[str, str] = {}
-    # new shape
-    files_node = _get(ins, "ini", "files")
+    sdir = summaries_dir(ver)
+    data: Dict[str, Any] = {
+        "mame_xml_version": None,
+        "history_version": None,
+        "history_date": None,
+        "ini_versions": {},
+    }
+    # mame
+    mp = sdir / "mame_parsing_summary.json"
+    m = read_json(mp) or {}
+    mv = (m.get("header", {}).get("versions") or {})
+    data["mame_xml_version"] = mv.get("mame_xml_version") or mv.get("mame_build")
+    # history
+    hp = sdir / "history_parsing_summary.json"
+    h = read_json(hp) or {}
+    hv = (h.get("header", {}).get("versions") or {})
+    data["history_version"] = hv.get("gh_version")
+    data["history_date"]    = hv.get("gh_date")
+    # ini
+    ip = sdir / "ini_parsing_summary.json"
+    i = read_json(ip) or {}
+    ini_files = []
+    # try a couple shapes the code already supports
+    ini_root = (i.get("ini") or {}) if isinstance(i, dict) else {}
+    files_node = ini_root.get("files")
     if isinstance(files_node, dict):
         for item in files_node.values():
             fn = (item.get("filename") or item.get("path") or "").strip()
             v  = item.get("version") or {}
             ver = v.get("mame_version") or v.get("raw") or "Unknown"
             if fn:
-                ini_versions[fn] = ver
-    # legacy shapes
-    if not ini_versions:
-        files_list = ins.get("files")
-        if isinstance(files_list, list):
-            for item in files_list:
-                fn = (item.get("filename") or item.get("path") or "").strip()
-                v  = item.get("version") or {}
-                ver = v.get("mame_version") or v.get("raw") or "Unknown"
-                if fn:
-                    ini_versions[fn] = ver
-    if not ini_versions:
-        for item in (ins.get("inputs") or ins.get("ini", {}).get("inputs") or []):
+                data["ini_versions"][fn] = ver
+    elif isinstance(i.get("files"), list):
+        for item in i["files"]:
             fn = (item.get("filename") or item.get("path") or "").strip()
             v  = item.get("version") or {}
             ver = v.get("mame_version") or v.get("raw") or "Unknown"
             if fn:
-                ini_versions[fn] = ver
+                data["ini_versions"][fn] = ver
+    return data
 
+def build_release_record(ver: str) -> Dict[str, Any]:
+    root = release_root(ver)
     return {
-        "mame_build": mame_build,
-        "mame_xml_version": mame_xml_ver,
-        "history_version": hist_ver,
-        "history_date": hist_date,
-        "ini_versions": ini_versions,
-    }
-
-# ---------- main builder ----------
-
-def _summaries_meta(ver: str) -> Dict[str, Any]:
-    return {
-        "mame_parsing_summary": _file_meta(mame_summary_path(ver)),
-        "history_parsing_summary": _file_meta(history_summary_path(ver)),
-        "ini_parsing_summary": _file_meta(ini_summary_path(ver)),
-        "transform_summary": _file_meta(summaries_dir(ver) / "transform_summary.json"),
-        "run_manifest": _file_meta(summaries_dir(ver) / "run_manifest.json"),
-    }
-
-def _stamps_meta(ver: str) -> Dict[str, Any]:
-    sd = stamps_dir(ver)
-    return {
-        "mame": _file_meta(sd / "mame.json"),
-        "history": _file_meta(sd / "history.json"),
-        "ini": _file_meta(sd / "ini.json"),
-        "transform": _file_meta(sd / "transform.json"),
-    }
-
-def _inputs_meta(ver: str) -> Dict[str, Any]:
-    return {
-        "mame_xml": _file_meta(mame_xml_path(ver)),
-        "history_xml": _file_meta(history_xml_path(ver)),
-        "ini": {
-            "game_status": _file_meta(ini_game_path(ver)),
-            "category":    _file_meta(ini_category_path(ver)),
-            "type":        _file_meta(ini_type_path(ver)),
-        }
-    }
-
-def _outputs_meta(ver: str) -> Dict[str, Any]:
-    return {
-        "intermediate": {
-            "mame_machines":       _file_meta(mame_machines_path(ver)),
-            "mame_parent_index":   _file_meta(parent_index_path(ver)),
-            "gh_system_ports":     _file_meta(gh_system_ports_path(ver)),
-            "gh_ini_classifications": _file_meta(ini_classifications_path(ver)),
-        },
-        "final": {
-            "exotica_lit_raw_data":     _file_meta(exotica_raw_path(ver)),
-            "exotica_lit_wiki":         _file_meta(exotica_wiki_path(ver)),
-            "wiki_pages_and_redirects": _file_meta(exotica_pages_path(ver)),
-        }
-    }
-
-def _archives_listing(ver: str) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    ad = archives_dir(ver)
-    if not ad.exists():
-        return out
-    for p in sorted(ad.iterdir()):
-        if p.is_file():
-            m = _file_meta(p)
-            if m:
-                out.append(m)
-    return out
-
-def _extracted_listing(ver: str) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    ed = extracted_dir(ver)
-    if not ed.exists():
-        return out
-    for p in sorted(ed.iterdir()):
-        if p.is_file():
-            m = _file_meta(p)
-            if m:
-                out.append(m)
-    return out
-
-def _version_mismatch_note(vinfo: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Compare numeric cores between MAME and GH/INI versions; return a small note block.
-    """
-    mame = vinfo.get("mame_xml_version") or vinfo.get("mame_build")
-    hist = vinfo.get("history_version")
-    ini_map = vinfo.get("ini_versions") or {}
-    ini_versions = list(ini_map.values()) if isinstance(ini_map, dict) else []
-
-    mismatch = False
-    detail: List[str] = []
-
-    # compare against all *provided* versions
-    compare_set = [x for x in [hist, *ini_versions] if x]
-    if mame and compare_set:
-        for other in compare_set:
-            if not _same_numeric_core(mame, other):
-                mismatch = True
-                detail.append(f"core(mame) != core({other})")
-
-    return {"version_mismatch": mismatch, "details": detail} if mismatch else {"version_mismatch": False}
-
-def _one_release(ver: str) -> Dict[str, Any]:
-    paths = {
-        "root": release_root(ver).as_posix(),
-        "archives": archives_dir(ver).as_posix(),
-        "extracted": extracted_dir(ver).as_posix(),
-        "outputs": outputs_dir(ver).as_posix(),
-        "summaries": summaries_dir(ver).as_posix(),
-        "stamps": stamps_dir(ver).as_posix(),
-    }
-    vinfo = _read_versions_from_summaries(ver)
-    entry = {
         "version": ver,
-        "paths": paths,
-        "archives": _archives_listing(ver),
-        "extracted": _extracted_listing(ver),
-        "inputs": _inputs_meta(ver),
-        "outputs": _outputs_meta(ver),
-        "summaries": _summaries_meta(ver),
-        "stamps": _stamps_meta(ver),
-        "versions": vinfo,
-        "notes": _version_mismatch_note(vinfo),
-    }
-    return entry
-
-# ---------- public API ----------
-
-def refresh_releases_index() -> Dict[str, Any]:
-    """
-    Build and persist data/releases_index.json by scanning data/releases/*.
-    Returns the JSON document as a dict.
-    """
-    root = DATA_DIR / "releases"
-    versions = []
-    if root.exists():
-        for p in sorted(root.iterdir()):
-            if p.is_dir():
-                versions.append(p.name)
-
-    doc = {
-        "generated_at": _utc_now_iso(),
-        "releases_root": root.as_posix(),
-        "count": len(versions),
-        "releases": [_one_release(v) for v in versions],
+        "root": root.as_posix(),
+        "exists": root.exists(),
+        "archives": _scan_archives(ver),
+        "extracted": _scan_extracted(ver),
+        "outputs": _scan_outputs(ver),
+        "versions": _read_versions_from_summaries(ver),
+        "summaries": {
+            "dir": summaries_dir(ver).as_posix(),
+            "files": [
+                {"name": "mame_parsing_summary.json", "present": (summaries_dir(ver) / "mame_parsing_summary.json").exists()},
+                {"name": "history_parsing_summary.json", "present": (summaries_dir(ver) / "history_parsing_summary.json").exists()},
+                {"name": "ini_parsing_summary.json", "present": (summaries_dir(ver) / "ini_parsing_summary.json").exists()},
+                {"name": "transform_summary.json", "present": (summaries_dir(ver) / "transform_summary.json").exists()},
+                {"name": "run_manifest.json", "present": (summaries_dir(ver) / "run_manifest.json").exists()},
+            ],
+        },
+        "indexed_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
 
-    out_path = DATA_DIR / "releases_index.json"
-    write_json(out_path, doc, sort_keys=False)
-    return doc
+def rebuild_releases_index() -> List[Dict[str, Any]]:
+    rr = releases_root()
+    entries: List[Dict[str, Any]] = []
+    if rr.exists():
+        for child in sorted(rr.iterdir()):
+            if child.is_dir():
+                entries.append(build_release_record(child.name))
+    write_json(DATA_DIR / "releases_index.json", entries, sort_keys=False)
+    return entries

@@ -7,13 +7,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from mht.utils.logger import setup_logger
+
 from mht.utils.paths import (
     DATA_DIR,
     ensure_release_dirs,
+    release_root,
     archives_dir,
-    extracted_dir,
+    active_version,
+    incoming_dir as incoming_dir_path,
 )
-from mht.provenance.peek import peek_path
+from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
+
 
 log = setup_logger()
 
@@ -265,3 +269,60 @@ def _safe_move(src: Path, dst: Path) -> None:
         final = dst.with_name(f"{dst.stem}__dup{n}{dst.suffix}")
         n += 1
     shutil.move(str(src), str(final))
+
+# --- Incoming helpers ---------------------------------------------------------
+def list_incoming_archives(incoming_dir: Path | None = None) -> list[Path]:
+    """
+    Return a list of *.zip files in the incoming drop-zone.
+    If incoming_dir is None, use the standard data/incoming path.
+    """
+    base = incoming_dir if incoming_dir is not None else incoming_dir_path()
+    if not base.exists():
+        return []
+    return sorted([p for p in base.iterdir() if p.is_file() and p.suffix.lower() == ".zip"])
+
+
+def verify_and_stage_zip(zip_path: Path, version: str | None = None, quarantine_dir: Path | None = None) -> Path | None:
+    """
+    Very light "verify" + stage:
+      - ensure it's a .zip and exists
+      - choose a target version (explicit -> hint from filename -> active_version())
+      - ensure release dirs exist
+      - copy the zip into data/releases/<ver>/archives/
+
+    Returns the release_root(<ver>) on success; moves to quarantine and returns None on failure.
+    """
+    try:
+        if not isinstance(zip_path, Path):
+            zip_path = Path(zip_path)
+        if not zip_path.exists() or zip_path.suffix.lower() != ".zip":
+            raise ValueError(f"Not a .zip or missing: {zip_path}")
+
+        v = (version or derive_mame_version_hint_from_filename(zip_path.name) or active_version()).strip()
+        ensure_release_dirs(v)
+
+        dest = archives_dir(v) / zip_path.name
+        # copy (not move) so user retains their drop; adjust if you prefer move
+        shutil.copy2(zip_path, dest)
+
+        return release_root(v)
+
+    except Exception:
+        # quarantine on any failure
+        try:
+            qdir = quarantine_dir or (DATA_DIR / "quarantine")
+            qdir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(zip_path), str(qdir / zip_path.name))
+        except Exception:
+            pass
+        return None
+
+
+
+# Export the names the CLI imports
+__all__ = list(set([
+    *globals().get("__all__", []),
+    "list_incoming_archives",
+    "verify_and_stage_zip",
+    "import_incoming_archives",
+]))

@@ -176,6 +176,32 @@ def ensure_release_dirs(version: Optional[str] = None) -> None:
               summaries_dir(version), outputs_dir(version), stamps_dir(version)):
         d.mkdir(parents=True, exist_ok=True)
 
+# --- Convenience for incoming/quarantine and release management ---------
+
+def incoming_dir() -> Path:
+    return DATA_DIR / "incoming"
+
+def quarantine_dir() -> Path:
+    return DATA_DIR / "quarantine"
+
+def releases_root() -> Path:
+    return DATA_DIR / "releases"
+
+def set_active_version(ver: str) -> None:
+    """
+    Persist the active version to data/current_version.txt (e.g., '0280').
+    """
+    v = (ver or "").strip()
+    if not v:
+        raise ValueError("Empty version")
+    _CURRENT_VERSION_TXT.parent.mkdir(parents=True, exist_ok=True)
+    _CURRENT_VERSION_TXT.write_text(v + "\n", encoding="utf-8")
+
+def list_release_versions() -> list[str]:
+    rr = releases_root()
+    if not rr.exists():
+        return []
+    return sorted([p.name for p in rr.iterdir() if p.is_dir()])
 
 
 # ---------------------------------------------------------------------
