@@ -37,6 +37,7 @@ import time
 import datetime
 import zipfile, tempfile, os
 import shutil
+import io
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
@@ -56,6 +57,7 @@ from mht.inputs.ini_summary import build_ini_summary
 from mht.utils.records import build_ini_class_map
 from mht.utils.validator import validate_ini_parsed_bundle
 from mht.provenance.peek import find_gh_ini_members
+from mht.utils.encoding_utils import detect_encoding
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -65,7 +67,7 @@ GAME_STATUS_MAP = {"Game": "game", "No Game": "no_game"}
 UNKNOWN = "unknown"
 
 # Module-level (will be set per run inside parse_history_inis)
-INI_FILES: dict[str, Path] = {}
+#INI_FILES: dict[str, Path] = {}
 
 
 __all__ = [
@@ -85,44 +87,31 @@ def _ini_input_paths() -> dict[str, Path]:
 # Public pure workers
 # --------------------------------------------------------------------------------------
 
-def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
+def load_ini_classifications(encodings: Dict[str, str],
+                             ini_paths: dict[str, Path] | None = None) -> Dict[str, dict]:
     """
     Parse the three GH INIs into an extended, analysis-friendly bundle (pure).
-
-    Parameters
-    ----------
-    encodings : dict
-        Map of filename -> text encoding, typically read from a per-release manifest.
-
-    Returns
-    -------
-    dict
-        {
-          "game_status": {
-            "machine_sections": {name -> set(section)},
-            "section_listed_counts": {section -> listed_count},
-            "section_unique_sets": {section -> set(unique_names)},
-            "entries_listed": int,
-            "machines_with_multiple_sections": int,
-            "duplicates_across_sections": int,
-            "duplicates_within_section": int,
-            "version": {mame_version?, mame_build?, generated_date?},
-            "encoding": "<encoding>"
-          },
-          "category": { ... },
-          "type":     { ... }
-        }
-
-    Notes
-    -----
-    - Missing INIs yield empty structures with an informative warning.
-    - Version metadata is scraped from the INI header region (first ~16 KiB).
+    If ini_paths is provided, use those paths; otherwise use the default release paths.
     """
     t0 = time.perf_counter()
     parsed: Dict[str, dict] = {}
 
-    for key, path in _ini_input_paths().items():
+    # Use caller-provided paths or the default per-release ones
+    paths = ini_paths or {
+        "game_status": ini_game_path(),
+        "category":    ini_category_path(),
+        "type":        ini_type_path(),
+    }
+
+    for key, path in paths.items():
         enc = encodings.get(path.name, "utf-8")
+        debug_log(f"[history_metadata] Parsing {path.name} with encoding {enc}...")
+        if not enc:
+            try:
+                enc = detect_encoding(path)
+            except Exception:
+                enc = "utf-8"
+        
         debug_log(f"[history_metadata] Parsing {path.name} with encoding {enc}...")
         
         if not path.exists():
@@ -165,8 +154,14 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
                     if not member:
                         raise FileNotFoundError(f"{key} ini not found in {gh_zip.name}")
 
-                    # Write to a temp file for the existing parser
-                    enc = encodings.get(path.name, "utf-8")
+                    # Write to a temp file for the existing parser                    
+                    enc = encodings.get(path.name)
+                    if not enc:
+                        try:
+                            enc = detect_encoding(path)
+                        except Exception:
+                            enc = "utf-8"
+                                                            
                     with zf.open(member) as src, tempfile.NamedTemporaryFile("wb", delete=False) as tmp:
                         tmp.write(src.read())
                         tmp_path = Path(tmp.name)
@@ -175,6 +170,11 @@ def load_ini_classifications(encodings: Dict[str, str]) -> Dict[str, dict]:
                     ext["version"] = ini_version_info(tmp_path, encoding=enc)
                     ext["encoding"] = enc
                     parsed[key] = ext
+
+                    debug_log(
+                        f"[ini] {path.name}: entries_listed={ext.get('entries_listed')}, "
+                        f"unique_names_total={sum(len(s) for s in ext.get('section_unique_sets', {}).values())}"
+                    )
 
                     # Clean up the temp file
                     try:
@@ -293,56 +293,130 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     """
     t0 = time.perf_counter()
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
+    # track whether we sourced INIs from a ZIP (for nicer manifest inputs later)
+    streaming_from_zip = False
+    zip_input = None  # optional: path to the ZIP we used (if you capture it)
 
-    # --- Stage stamp: skip unchanged (per-release) ---
-    ini_paths = list(_ini_input_paths().values())
-    
-    # If any INIs are missing on disk, try to source them from the History ZIP (temp only)
-    missing = [p for p in ini_paths if not p.exists()]
+    # --- Stage stamp: skip unchanged (per-release) ---      
+    # Start with the default (per-release) paths
+    active_paths = {
+        "game_status": ini_game_path(),
+        "category":    ini_category_path(),
+        "type":        ini_type_path(),
+    }
+
+    for k, p in active_paths.items():
+        debug_log(f"[ini] using {k}: {p} (exists={p.exists()})")
+
+    # If any are missing, try to pull them from the History ZIP (temp only)
+    missing = [p for p in active_paths.values() if not p.exists()]
     tmp_ctx = None
     if missing:
-        # try to infer version from active_version()
-        from mht.utils.paths import active_version  # local import to avoid cycles at module import time
-        try:
-            ver = active_version()           
-            global INI_FILES
-            INI_FILES = {
-                "game_status": ini_game_path(ver),
-                "category":    ini_category_path(ver),
-                "type":        ini_type_path(ver),
-            }            
-        except Exception:
-            ver = None
-        pulled = _temp_extract_inis_from_history_zip(ver)
-        if pulled:                                    
-            # Use the canonical per-release basenames as the keys to 'pulled'
-            k_game = ini_game_path(ver).name
-            k_cat  = ini_category_path(ver).name
-            k_type = ini_type_path(ver).name
-
-            INI_FILES.update({
-                "game_status": pulled[k_game],
-                "category":    pulled[k_cat],
-                "type":        pulled[k_type],
-            })
-            ini_paths = list(INI_FILES.values())
-            tmp_ctx = pulled.get("_tmpctx")  # keep the context alive until function end
+        pulled = _temp_extract_inis_from_history_zip(active_version())
+        if pulled:
+            active_paths = {
+                "game_status": pulled[ini_game_path().name],
+                "category":    pulled[ini_category_path().name],
+                "type":        pulled[ini_type_path().name],
+            }
+            tmp_ctx = pulled.get("_tmpctx")  # keep tempdir alive for the duration
             log.info("Using INIs from history ZIP (temporary extraction).")
+            
+            streaming_from_zip = True
+            # If your _temp_extract_inis_from_history_zip() returns a zip path in pulled["_zip"],
+            # you can capture it here. If not, leaving zip_input as None is fine.
+            zip_input = pulled.get("_zip") if isinstance(pulled, dict) else None                                  
         else:
             log.warning("INIs missing on disk and not located in history ZIP; proceeding with empty bundle.")
-        
+
+    # Choose stamp inputs: physical INIs if present; else the ZIP + encodings
+    #stamp_inputs = [*ini_paths, ENCODINGS_JSON]
+    stamp_inputs = [*active_paths.values(), ENCODINGS_JSON]
+    if streaming_from_zip and zip_input:
+        stamp_inputs = [zip_input, ENCODINGS_JSON]
+
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "ini.json",
         schema_id="mht.stage.ini",
         tool="ini_summary",
-        inputs=[*ini_paths, ENCODINGS_JSON],
-    )    
+        inputs=[*active_paths.values(), ENCODINGS_JSON],
+    )
+        
     if fresh:
         log.info("INI stage up-to-date (stamp matched) — skipping rebuild")
         return True
 
+    if streaming_from_zip and zip_input:
+        # Build the same 'parsed' bundle shape that load_ini_classifications() returns,
+        # but using zip streams and the relaxed utils.ini helpers.
+        parsed: Dict[str, dict] = {}
+        with zipfile.ZipFile(zip_input) as zf:
+            # Map canonical names -> keys we use
+            members = {n.lower(): n for n in zf.namelist()}
+            want_map = {
+                ini_game_path().name.lower():      "game_status",
+                ini_category_path().name.lower():  "category",
+                ini_type_path().name.lower():      "type",
+            }
+
+            for low_name, key in want_map.items():
+                name_in_zip = members.get(low_name)
+                if not name_in_zip:
+                    log.warning(f"History ZIP missing {low_name}; key '{key}' will be empty.")
+                    parsed[key] = {
+                        "machine_sections": defaultdict(set),
+                        "section_listed_counts": defaultdict(int),
+                        "section_unique_sets": defaultdict(set),
+                        "entries_listed": 0,
+                        "machines_with_multiple_sections": 0,
+                        "duplicates_across_sections": 0,
+                        "duplicates_within_section": 0,
+                        "version": {},
+                        "encoding": encodings.get(low_name, "utf-8"),
+                    }
+                    continue
+
+                enc = encodings.get(low_name, "utf-8")
+                with zf.open(name_in_zip, "r") as bf:
+                    text = io.TextIOWrapper(bf, encoding=enc, errors="replace")
+                    # NOTE: thanks to step (1) we can pass a text stream here:
+                    ext = parse_ini_file_extended(text)        # encoding ignored for streams
+                    # rewind a fresh stream for version sniff
+                with zf.open(name_in_zip, "r") as bf2:
+                    text2 = io.TextIOWrapper(bf2, encoding=enc, errors="replace")
+                    ext["version"] = ini_version_info(text2)   # encoding ignored for streams
+                    ext["encoding"] = enc
+                parsed[key] = ext
+
+        # Warnings-only invariants
+        ini_issues = validate_ini_parsed_bundle(parsed, log)
+        if ini_issues == 0:
+            debug_log("[history_metadata] INI invariants passed (streamed from ZIP)")
+
+        # Summary + class map + writes
+        summary   = build_ini_summary(parsed, now_iso)
+        class_map = build_ini_class_map(parsed)
+
+        ok_summary = write_json(ini_summary_path(), summary, sort_keys=False)
+        ok_output  = write_json(ini_classifications_path(), class_map, sort_keys=True)
+
+        if ok_summary and ok_output:
+            save_stamp(stamp_path, current_stamp)
+            duration = time.perf_counter() - t0
+            log.info(f"INI parsing completed in {duration:.2f}s (streamed from {zip_input.name}); "
+                     f"ok_summary={ok_summary}, ok_output={ok_output}")
+            return True
+
+        log.error("Failed to write one or more INI outputs; not saving stamp.")
+        return False
+
+
     # 1) Parse INIs (pure)
-    parsed = load_ini_classifications(encodings)
+    #parsed = load_ini_classifications(encodings)
+    parsed = load_ini_classifications(encodings, ini_paths=active_paths)
+    for name, bundle in parsed.items():
+        debug_log(f"[ini] parsed[{name}]: entries_listed={bundle.get('entries_listed')}")
+
     # Warnings-only invariants over the parsed bundle
     ini_issues = validate_ini_parsed_bundle(parsed, log)
     if ini_issues == 0:

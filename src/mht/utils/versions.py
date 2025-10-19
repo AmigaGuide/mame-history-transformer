@@ -18,7 +18,7 @@ SCHEMA_INFO = {
 TOOL_VERSIONS = {
     "mame_parser":    "1.0.36",
     "history_parser": "1.0.23",
-    "ini_summary":    "1.0.16",
+    "ini_summary":    "1.0.18",
     "transformer":    "1.0.42",
 }
 

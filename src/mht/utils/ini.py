@@ -14,9 +14,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from collections import defaultdict
-from typing import Dict, Set
+from typing import Dict, Set, Union, IO
 import datetime
 import re
+
 
 def to_iso_date(s: str) -> str | None:
     """Return YYYY-MM-DD if s matches DD/MM/YYYY or YYYY-MM-DD; else None."""
@@ -27,16 +28,40 @@ def to_iso_date(s: str) -> str | None:
             pass
     return None
 
-def ini_version_info(p: Path, encoding: str) -> dict:
+def ini_version_info(src: Union[Path, IO[str]], encoding: str = "utf-8") -> dict:
     """
     Extract version/build and generated date from the INI header region.
     Reads only the first ~16 KiB for speed.
+
+    Supports either:
+      - Path to a file (opened here), or
+      - An already-open text stream (e.g., TextIOWrapper from a zip member).
     """
+    head = ""
+    close_after = False
     try:
-        with open(p, "r", encoding=encoding, errors="replace") as f:
-            head = f.read(16384)
+        if isinstance(src, Path):
+            f = open(src, "r", encoding=encoding, errors="replace")
+            close_after = True
+        else:
+            # Assume it's a text IO stream positioned at the start
+            f = src
+
+        head = f.read(16384)  # read only the first ~16 KiB
     except Exception:
+        if close_after:
+            try:
+                f.close()
+            except Exception:
+                pass
         return {}
+    finally:
+        if close_after:
+            try:
+                f.close()
+            except Exception:
+                pass
+
     head = head.lstrip("\ufeff")
     head = re.sub(r"\s+", " ", head)
 
@@ -65,6 +90,7 @@ def ini_version_info(p: Path, encoding: str) -> dict:
 
     return info
 
+
 def normalise_section_header(label: str) -> str:
     """Trim + collapse internal whitespace for a section label."""
     label = label.strip()
@@ -77,7 +103,7 @@ def is_not_available_label(label: str | None) -> bool:
         return False
     return re.fullmatch(r"\s*<\s*not\s+available\s*>\s*", label, flags=re.IGNORECASE) is not None
 
-def parse_ini_file_extended(path: Path, encoding: str) -> dict:
+def parse_ini_file_extended(src: Union[Path, IO[str]], encoding: str = "utf-8") -> dict:
     """
     Parse an INI file into an extended structure:
       - machine_sections: {machine -> set(sections)}
@@ -91,7 +117,15 @@ def parse_ini_file_extended(path: Path, encoding: str) -> dict:
     section_listed_counts: Dict[str, int] = defaultdict(int)
     section_unique_sets: Dict[str, Set[str]] = defaultdict(set)
 
-    with open(path, encoding=encoding) as f:
+    close_after = False
+    if isinstance(src, Path):
+        f = open(src, "r", encoding=encoding, errors="replace")
+        close_after = True
+    else:
+        # assume already-open text stream (e.g. TextIOWrapper around a zip member)
+        f = src
+
+    try:
         for raw in f:
             line = raw.strip()
             if not line or line.startswith(";;"):
@@ -105,6 +139,9 @@ def parse_ini_file_extended(path: Path, encoding: str) -> dict:
                 section_listed_counts[current_section] += 1
                 section_unique_sets[current_section].add(name)
                 machine_sections[name].add(current_section)
+    finally:
+        if close_after:
+            f.close()
 
     entries_listed = sum(section_listed_counts.values())
     machines_with_multiple_sections = sum(1 for s in machine_sections.values() if len(s) >= 2)
