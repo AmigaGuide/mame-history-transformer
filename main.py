@@ -56,7 +56,7 @@ from mht.inputs.history_ini_parser import parse_history_inis
 from mht.transform.pipeline import run_transformer
 from mht.utils.paths import (
     # release resolution + dirs
-    active_version, ensure_release_dirs,
+    active_version, ensure_release_dirs, archives_dir,
     outputs_dir, summaries_dir, stamps_dir,
 
     # per-release inputs (extracted)
@@ -194,6 +194,52 @@ def _file_meta(p: Path) -> dict:
         "sha256": _sha256_file(p),
     }
 
+def _find_history_archive_for_manifest(version: Optional[str]) -> Optional[Path]:
+    """Return a representative history ZIP in releases/<ver>/archives to show in the manifest."""
+    if not version:
+        try:
+            version = active_version()
+        except Exception:
+            return None
+    adir = archives_dir(version)
+    if not adir.exists():
+        return None
+    # Prefer obvious history zips, else any zip
+    for pat in ("history*.zip", "*.zip"):
+        for zp in adir.glob(pat):
+            return zp
+    return None
+
+def _find_mame_archive_for_manifest(version: Optional[str]) -> Optional[Path]:
+    """Return a representative MAME ZIP in releases/<ver>/archives to show in the manifest."""
+    if not version:
+        try:
+            version = active_version()
+        except Exception:
+            return None
+    adir = archives_dir(version)
+    if not adir.exists():
+        return None
+    # Prefer obvious MAME zips, else any zip
+    for pat in ("mame*.zip", "*.zip"):
+        for zp in adir.glob(pat):
+            return zp
+    return None
+    
+def _find_history_archive_for_manifest(ver: str) -> Path | None:
+    """Pick a representative History archive to show in the manifest."""
+    arc = archives_dir(ver)
+    if not arc.exists():
+        return None
+    for pat in ("history*.zip", "History*.zip"):
+        for p in arc.glob(pat):
+            if p.is_file():
+                return p
+    for p in arc.glob("*.zip"):
+        if p.is_file():
+            return p
+    return None
+
 def parse_version_loose(s: str) -> Tuple[Tuple[int, ...], Optional[str]]:
     """
     Parse a version string into a numeric core tuple and optional suffix.
@@ -252,39 +298,65 @@ def version_record(raw: str) -> Dict[str, Optional[str]]:
 
 def check_required_files() -> Optional[List[Path]]:
     """
-    Ensure all required XML/INI files exist under data/releases/<ver>/extracted/.
-    Returns the list of Paths when present; logs guidance and returns None otherwise.
+    Ensure we have usable inputs. We now accept either:
+      - Extracted files in releases/<active>/extracted (classic),
+      - OR the two ZIP archives staged in releases/<active>/archives.
+
+    Returns a list of *things found* (Paths) primarily for logging/manifest,
+    or None if nothing usable is present.
     """
-    # Resolve active release and ensure folders exist
+    from mht.utils.paths import active_version, archives_dir, extracted_dir
     try:
-        ensure_release_dirs()
         ver = active_version()
-    except ValueError as e:
-        log.error(str(e))
-        log.info("Tip: create data/current_version.txt (e.g. '0280') or create data/releases/<ver>/extracted/.")
-        return None
+    except Exception:
+        ver = None
 
-    required = [
-        ("mame.xml",                               mame_xml_path()),
-        ("history.xml",                            history_xml_path()),
-        ("[GAMING HISTORY] Game Or No Game.ini",   ini_game_path()),
-        ("[GAMING HISTORY] Machine Category.ini",  ini_category_path()),
-        ("[GAMING HISTORY] Machine Type.ini",      ini_type_path()),
-    ]
-    missing = [(label, p) for (label, p) in required if not p.exists()]
-    if missing:
-        base = mame_xml_path().parent.as_posix()
-        log.error(f"Missing required files for release {ver} in {base}:")
-        for label, _ in missing:
-            log.error(f" - {label}")
-        log.info("Instructions:")
-        log.info(f"• Put the extracted files into: {base}  (i.e. data/releases/{ver}/extracted/)")
-        log.info("• Or drop ZIPs in data/incoming/ for an import step (when implemented).")
-        return None
+    # Preferred: staged archives
+    arc = archives_dir(ver)
+    mame_zip = None
+    hist_zip = None
+    if arc.exists():
+        for p in arc.iterdir():
+            if p.suffix.lower() == ".zip":
+                low = p.name.lower()
+                if ("mame" in low) and (mame_zip is None):
+                    mame_zip = p
+                if ("history" in low) and (hist_zip is None):
+                    hist_zip = p
 
-    log.info("All required files found for release %s.", ver)
-    # preserve return type: list[Path] matching previous callers’ expectations
-    return [p for _, p in required]
+    # Fallback: extracted files
+    ext = extracted_dir(ver)
+    mame_xml = ext / "mame.xml"
+    history_xml = ext / "history.xml"
+    ini_game = ext / "[GAMING HISTORY] Game Or No Game.ini"
+    ini_cat  = ext / "[GAMING HISTORY] Machine Category.ini"
+    ini_type = ext / "[GAMING HISTORY] Machine Type.ini"
+
+    found: list[Path] = []
+    notes: list[str] = []
+
+    if mame_zip and hist_zip:
+        notes.append("found staged archives (ZIPs)")
+        found += [mame_zip, hist_zip]
+    else:
+        # accept classic extracted layout if present
+        missing = []
+        for f in (mame_xml, history_xml, ini_game, ini_cat, ini_type):
+            if f.exists():
+                found.append(f)
+            else:
+                missing.append(f.name)
+        if missing and not (mame_zip and hist_zip):
+            log.error("Missing required files (ZIPs or extracted).")
+            if not (mame_zip and hist_zip):
+                log.error("  - Expect two ZIPs in releases/<ver>/archives: one 'mame*.zip' and one 'history*.zip'")
+            log.error("  - Or provide extracted: mame.xml, history.xml and three GH INIs in releases/<ver>/extracted/")
+            return None
+        else:
+            notes.append("using extracted files")
+
+    log.info("All required inputs present (%s).", ", ".join(notes))
+    return found
 
 def get_xml_version(file_path: Path, root_tag: str) -> str:
     """
@@ -598,14 +670,21 @@ def main() -> None:
     log.info("Beginning MAME XML canonical parse...")
     mame_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     mame_t0 = time.perf_counter()
+
     ok_mame = parse_mame_xml(mame_xml_path(), encodings=encodings, max_records=0)
-    
+
     mame_duration = round(time.perf_counter() - mame_t0, 3)
     mame_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
 
-    mame_xml          = mame_xml_path()
+    ver = active_version()
+
+    # Prefer extracted XML if present; otherwise point the manifest at the archive
+    mame_input_path = mame_xml_path()
+    if not mame_input_path.exists():
+        mame_input_path = _find_mame_archive_for_manifest(ver)
+
     mame_summary_fp = mame_summary_path()
-    mame_out_fp = mame_machines_path()
+    mame_out_fp     = mame_machines_path()
 
     mame_stage = {
         "stage": "mame_parse",
@@ -613,10 +692,23 @@ def main() -> None:
         "started_utc": mame_started_utc,
         "finished_utc": mame_finished_utc,
         "duration_seconds": mame_duration,
-        "inputs": [_file_meta(mame_xml)],
+        "inputs": [],
         "outputs": [],
         "stats": {},
     }
+
+    # Include an input meta if we actually found something (XML or ZIP)
+    if mame_input_path and mame_input_path.exists():
+        mmeta = _file_meta(mame_input_path)
+        # If it's a real XML, add a tiny version hint (optional)
+        if mame_input_path.suffix.lower() == ".xml":
+            try:
+                mbuild = get_xml_version(mame_input_path, "mame")
+                if mbuild and mbuild != "Unknown":
+                    mmeta["version"] = {"build": mbuild}
+            except Exception:
+                pass
+        mame_stage["inputs"].append(mmeta)
 
     if mame_summary_fp.exists() and mame_out_fp.exists():
         with open(mame_summary_fp, encoding="utf-8") as f:
@@ -625,8 +717,9 @@ def main() -> None:
             "build":      msum.get("mame", {}).get("build"),
             "mameconfig": msum.get("mame", {}).get("mameconfig"),
         }
-        mame_stage["inputs"][0]["version"] = {k: v for k, v in mver.items() if v}
-        mame_stage["inputs"][0].pop("content", None)
+        if mame_stage["inputs"]:
+            mame_stage["inputs"][0]["version"] = {k: v for k, v in mver.items() if v}
+            mame_stage["inputs"][0].pop("content", None)
 
         mout = _file_meta(mame_out_fp)
         mout["summary_path"] = mame_summary_fp.as_posix()
@@ -648,28 +741,54 @@ def main() -> None:
 
         t = msum.get("totals", {})
         mame_stage["stats"] = {
-            "total_machines":        t.get("total_machines"),
-            "total_parents":         t.get("total_parents"),
-            "total_clones":          t.get("total_clones"),
-            "total_isbios":          t.get("total_isbios"),
-            "total_isdevice":        t.get("total_isdevice"),
-            "total_ismechanical":    t.get("total_ismechanical"),
+            "total_machines":         t.get("total_machines"),
+            "total_parents":          t.get("total_parents"),
+            "total_clones":           t.get("total_clones"),
+            "total_isbios":           t.get("total_isbios"),
+            "total_isdevice":         t.get("total_isdevice"),
+            "total_ismechanical":     t.get("total_ismechanical"),
             "total_requires_samples": t.get("total_requires_samples"),
         }
 
     stage_fragments.append(mame_stage)
 
+    
     # ---------------- HISTORY parse ----------------
     log.info("Beginning History XML parse...")
     history_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     hist_t0 = time.perf_counter()
 
-    history_xml        = history_xml_path()
-    hist_summary_fp    = history_summary_path()
-    gh_out_fp          = gh_system_ports_path()
+    history_xml     = history_xml_path()
+    hist_summary_fp = history_summary_path()
+    gh_out_fp       = gh_system_ports_path()
+
+    # Build a stable "input" meta for the history stage
+    try:
+        if history_xml.exists():
+            history_input_meta = _file_meta(history_xml)
+        else:
+            try:
+                ver = active_version()
+            except Exception:
+                ver = None
+            zp = None
+            if ver:
+                adir = archives_dir(ver)
+                if adir.exists():
+                    for cand in sorted(adir.glob("history*.zip")):
+                        if cand.exists():
+                            zp = cand
+                            break
+            if zp:
+                history_input_meta = _file_meta(zp)
+                history_input_meta["note"] = "streamed XML from ZIP (no extracted history.xml)"
+            else:
+                history_input_meta = {"path": str(history_xml), "missing": True}
+    except Exception:
+        history_input_meta = {"path": str(history_xml), "missing": True}
 
     if ok_mame:
-        ok_history = parse_history_entries(history_xml_path(), encodings.get("history.xml", "utf-8"))
+        ok_history = parse_history_entries(history_xml, encodings.get("history.xml", "utf-8"))
         hist_errs = []
     else:
         ok_history = False
@@ -685,7 +804,7 @@ def main() -> None:
         "started_utc": history_started_utc,
         "finished_utc": history_finished_utc,
         "duration_seconds": history_duration,
-        "inputs": [_file_meta(history_xml)],
+        "inputs": [history_input_meta],
         "outputs": [],
         "stats": {},
     }
@@ -700,8 +819,16 @@ def main() -> None:
         software_total = totals.get("software_total") or 0
         entries_total  = (systems_total or 0) + (software_total or 0)
 
-        hx = _history_root_attrs(history_xml, encoding=encodings.get("history.xml", "utf-8"))
-        history_stage["inputs"][0]["version"] = {k: v for k, v in hx.items() if v}
+        # Attach version only if we have a physical XML file path
+        try:
+            if (not history_input_meta.get("missing")
+                and str(history_input_meta.get("path", "")).lower().endswith(".xml")):
+                hx = _history_root_attrs(Path(history_input_meta["path"]),
+                                         encoding=encodings.get("history.xml", "utf-8"))
+                if hx:
+                    history_stage["inputs"][0]["version"] = {k: v for k, v in hx.items() if v}
+        except Exception:
+            pass
 
         hout = _file_meta(gh_out_fp)
         hout["summary_path"] = hist_summary_fp.as_posix()
@@ -714,9 +841,9 @@ def main() -> None:
         history_stage["outputs"].append(hout)
 
         history_stage["stats"].update({
-            "systems_total":  systems_total,
-            "software_total": software_total,
-            "entries_total":  entries_total,
+            "systems_total":        systems_total,
+            "software_total":       software_total,
+            "entries_total":        entries_total,
             "systems_with_ports":   totals.get("systems_with_ports"),
             "systems_with_aliases": totals.get("systems_with_aliases"),
             "port_lines_parsed":    totals.get("port_lines_parsed"),
@@ -725,30 +852,86 @@ def main() -> None:
 
     stage_fragments.append(history_stage)
 
+
     # ---------------- TRANSFORM ----------------
     log.info("Beginning transform...")
     transform_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     tr_t0 = time.perf_counter()
-    
-    need_files = [mame_machines_path(), ini_classifications_path(), parent_index_path()]
-    
-    missing_files = [p.as_posix() for p in need_files if not p.exists()]
 
-    if ok_mame and ok_ini and not missing_files:   
-        ok_transform = run_transformer()
-        transform_errs = []
-    else:
-        ok_transform = False
-        transform_errs = []
-        if not ok_ini:
-            transform_errs.append("skipped: INI parsing failed")
-        if not ok_mame:
-            transform_errs.append("skipped: MAME parsing failed")
-        for mf in missing_files:
-            transform_errs.append(f"skipped: missing prerequisite file {mf}")
+    # Run the transformer (it will do its own stamp check and save transform.json on success)
+    ok_transform = run_transformer()
 
     transform_duration = round(time.perf_counter() - tr_t0, 3)
     transform_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
+
+    # Collect inputs for the manifest (what transform *read*)
+    tr_inputs = []
+    for inp in (
+        mame_machines_path(),
+        ini_classifications_path(),
+        parent_index_path(),
+        gh_system_ports_path(),
+        title_overrides_path(),     # may not exist; that’s fine
+    ):
+        if inp.exists():
+            tr_inputs.append(_file_meta(inp))
+
+    # Collect outputs for the manifest (what transform *wrote*)
+    tr_outputs = []
+    tr_stats = {}
+
+    wiki_fp = exotica_wiki_path()
+    if wiki_fp.exists():
+        wmeta = _file_meta(wiki_fp)
+        try:
+            with open(wiki_fp, encoding="utf-8") as f:
+                wiki_doc = json.load(f)
+            wmeta["records"] = len((wiki_doc or {}).get("games", {}))
+        except Exception:
+            wmeta["records"] = None
+        tr_outputs.append(wmeta)
+
+    tr_summary_fp = transform_summary_path()
+    if tr_summary_fp.exists():
+        smeta = _file_meta(tr_summary_fp)
+        tr_outputs.append(smeta)
+        try:
+            with open(tr_summary_fp, encoding="utf-8") as f:
+                ts = json.load(f)
+            c = (ts or {}).get("counts", {})
+            tr_stats.update({
+                "eligible_parents": c.get("eligible_parents"),
+                "final_included": c.get("final_included"),
+                "clones_included_unknown_classification": c.get("clones_included_unknown_classification"),
+            })
+        except Exception:
+            pass
+
+    raw_fp = exotica_raw_path()
+    if raw_fp.exists():
+        rmeta = _file_meta(raw_fp)
+        try:
+            with open(raw_fp, encoding="utf-8") as f:
+                raw_doc = json.load(f)
+            rmeta["records"] = len((raw_doc or {}).get("games", {}))
+        except Exception:
+            rmeta["records"] = None
+        tr_outputs.append(rmeta)
+
+    pages_fp = exotica_pages_path()
+    if pages_fp.exists():
+        pmeta = _file_meta(pages_fp)
+        tr_outputs.append(pmeta)
+        try:
+            with open(pages_fp, encoding="utf-8") as f:
+                pages_doc = json.load(f)
+            tr_stats.update({
+                "wiki_pages_count":     len((pages_doc or {}).get("pages", [])),
+                "wiki_redirects_count": len((pages_doc or {}).get("redirects", [])),
+                "wiki_conflicts_count": len((pages_doc or {}).get("conflicts", [])),
+            })
+        except Exception:
+            pass
 
     transform_stage = {
         "stage": "transform",
@@ -756,90 +939,17 @@ def main() -> None:
         "started_utc": transform_started_utc,
         "finished_utc": transform_finished_utc,
         "duration_seconds": transform_duration,
-        "inputs": [],
-        "outputs": [],
-        "stats": {},
+        "inputs": tr_inputs,
+        "outputs": tr_outputs,
+        "stats": tr_stats,
     }
-    if transform_errs:
-        transform_stage["errors"] = transform_errs
-
-    for p in need_files:
-        if p.exists():
-            transform_stage["inputs"].append(_file_meta(p))
-
-    ov_fp = title_overrides_path()
-    if ov_fp.exists():
-        transform_stage["inputs"].append(_file_meta(ov_fp))
-
-    wiki_out_fp   = exotica_wiki_path()
-    tr_summary_fp = transform_summary_path()
-
-    if ok_transform:
-        if wiki_out_fp.exists():
-            w = _file_meta(wiki_out_fp)
-            try:
-                with open(wiki_out_fp, encoding="utf-8") as f:
-                    wiki_doc = json.load(f)
-                w["records"] = len((wiki_doc or {}).get("games", {}))
-            except Exception:
-                w["records"] = None
-            transform_stage["outputs"].append(w)
-
-        if tr_summary_fp.exists():
-            s = _file_meta(tr_summary_fp)
-            transform_stage["outputs"].append(s)
-            try:
-                with open(tr_summary_fp, encoding="utf-8") as f:
-                    ts = json.load(f)
-                c = ts.get("counts", {})
-                transform_stage["stats"].update({
-                    "eligible_parents": c.get("eligible_parents"),
-                    "final_included": c.get("final_included"),
-                    "clones_included_unknown_classification": c.get("clones_included_unknown_classification"),
-                })
-            except Exception:
-                pass
-
-        raw_fp = exotica_raw_path()
-        if raw_fp.exists():
-            rmeta = _file_meta(raw_fp)
-            try:
-                with open(raw_fp, encoding="utf-8") as f:
-                    raw_doc = json.load(f)
-                rmeta["records"] = len((raw_doc or {}).get("games", {}))
-            except Exception:
-                rmeta["records"] = None
-            transform_stage["outputs"].append(rmeta)
-
-        redirects_fp = exotica_pages_path()
-        if redirects_fp.exists():
-            rdmeta = _file_meta(redirects_fp)
-            transform_stage["outputs"].append(rdmeta)
-            try:
-                with open(redirects_fp, encoding="utf-8") as f:
-                    pages_doc = json.load(f)
-                # Add useful per-file stats
-                transform_stage["stats"].update({
-                    "wiki_pages_count":    len((pages_doc or {}).get("pages", [])),
-                    "wiki_redirects_count": len((pages_doc or {}).get("redirects", [])),
-                    "wiki_conflicts_count": len((pages_doc or {}).get("conflicts", [])),
-                })
-            except Exception:
-                pass
 
     stage_fragments.append(transform_stage)
 
+
     # ---------------- Manifest ----------------
-    started_candidates = [ini_stage.get("started_utc"),
-                          mame_stage.get("started_utc"),
-                          history_stage.get("started_utc"),
-                          transform_stage.get("started_utc")]
-    finished_candidates = [ini_stage.get("finished_utc"),
-                           mame_stage.get("finished_utc"),
-                           history_stage.get("finished_utc"),
-                           transform_stage.get("finished_utc")]
-    started_candidates  = [t for t in started_candidates  if t]
-    finished_candidates = [t for t in finished_candidates if t]
+    started_candidates  = [s.get("started_utc")  for s in stage_fragments if s.get("started_utc")]
+    finished_candidates = [s.get("finished_utc") for s in stage_fragments if s.get("finished_utc")]
 
     run_started  = min(started_candidates)  if started_candidates  else datetime.datetime.utcnow().isoformat() + "Z"
     run_finished = max(finished_candidates) if finished_candidates else datetime.datetime.utcnow().isoformat() + "Z"
@@ -849,7 +959,7 @@ def main() -> None:
         "run_id": datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
         "started_utc": run_started,
         "finished_utc": run_finished,
-        "stages": [ini_stage, mame_stage, history_stage, transform_stage],
+        "stages": stage_fragments,   # ← use the list you've been building
     }
 
     mp = manifest_path()  # data/releases/<ver>/manifest.json
@@ -857,6 +967,7 @@ def main() -> None:
     with open(mp, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     log.info(f"Wrote {mp.as_posix()}")
+
 
 if __name__ == "__main__":
     main()

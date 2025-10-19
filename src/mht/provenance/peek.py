@@ -476,6 +476,60 @@ def derive_mame_version_hint_from_filename(name: str | Path) -> str | None:
 
     return None
 
+
+def find_mame_xml_member(zf: ZipFile) -> str | None:
+    """
+    Try to locate the MAME XML inside a MAME zip.
+    Typical names: 'mame0280.xml', 'mame0280lx.xml', etc.
+    Fallback: the largest *.xml in the zip.
+    """
+    names = zf.namelist()
+    candidates = [n for n in names if n.lower().endswith(".xml") and "mame" in n.lower()]
+    if not candidates:
+        candidates = [n for n in names if n.lower().endswith(".xml")]
+    if not candidates:
+        return None
+    # Prefer the largest candidate
+    sizes = {n: zf.getinfo(n).file_size for n in candidates}
+    return max(candidates, key=lambda n: sizes.get(n, 0))
+
+def find_history_xml_member(zf: ZipFile) -> str | None:
+    """
+    Try to locate the Gaming-History 'history.xml' inside a GH zip.
+    Typical names include 'history.xml'.
+    Fallback: the largest *.xml in the zip.
+    """
+    names = zf.namelist()
+    candidates = [n for n in names if n.lower().endswith("history.xml")]
+    if not candidates:
+        candidates = [n for n in names if n.lower().endswith(".xml")]
+    if not candidates:
+        return None
+    sizes = {n: zf.getinfo(n).file_size for n in candidates}
+    return max(candidates, key=lambda n: sizes.get(n, 0))
+
+def find_gh_ini_members(zf: ZipFile) -> dict[str, str]:
+    """
+    Locate the three GH INI members by loose matching.
+    Returns a dict with keys: 'game', 'category', 'type' mapping to member names.
+    """
+    names = zf.namelist()
+    def pick(substrs: tuple[str, ...]) -> str | None:
+        # prefer exact '[GAMING HISTORY] X.ini' names if present
+        exact = [n for n in names if n.lower().endswith(".ini") and all(s in n.lower() for s in substrs)]
+        if exact:
+            return exact[0]
+        # fallback: any .ini containing the substrings
+        loose = [n for n in names if n.lower().endswith(".ini") and all(s in n.lower() for s in substrs)]
+        return loose[0] if loose else None
+
+    out: dict[str, str] = {}
+    out["game"]     = pick(("game", "no", "game")) or pick(("game",))      # 'Game Or No Game'
+    out["category"] = pick(("category",))                                  # 'Machine Category'
+    out["type"]     = pick(("type",))                                      # 'Machine Type'
+    return {k: v for k, v in out.items() if v}
+
+
 # (Optional) make sure these names are exported if you maintain __all__
 try:
     __all__  # type: ignore[name-defined]

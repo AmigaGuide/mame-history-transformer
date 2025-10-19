@@ -25,6 +25,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict
+import zipfile
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, maybe_log_progress
@@ -60,6 +61,7 @@ from mht.utils.booleans import yesno_str
 _yesno_str = yesno_str
 from mht.utils.records import build_mame_machine_record
 from mht.utils.strings import year_bucket_key, manufacturer_bucket_key
+from mht.provenance.peek import find_mame_xml_member
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -155,9 +157,67 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     machines_out: Dict[str, Dict[str, Any]] = {}
 
+
     # Parse
     try:
-        for event, elem in iter_mame_events(file_path, mame_encoding):
+        # --- choose event source: extracted XML if present, else XML inside a ZIP ---
+        def _event_source():
+            # 1) Use extracted file if it exists
+            if Path(file_path).is_file():
+                # existing fast-path: yields (event, elem) from the plain XML file
+                for e in iter_mame_events(file_path, mame_encoding):
+                    yield e
+                return
+
+            # 2) Otherwise, look for a MAME ZIP in the release archives
+            import zipfile
+            from mht.utils.paths import archives_dir, active_version
+
+            ver = active_version()
+            arch_dir = archives_dir(ver)
+
+            # Prefer “mame*.zip”, then fall back to any zip
+            candidates = sorted(arch_dir.glob("mame*.zip")) + sorted(arch_dir.glob("*.zip"))
+            if not candidates:
+                raise FileNotFoundError(
+                    f"No extracted {file_path.name} and no ZIP archives found in {arch_dir}"
+                )
+
+            # Try candidates until we find an XML inside that looks like MAME’s
+            for zp in candidates:
+                try:
+                    with zipfile.ZipFile(zp) as zf:
+                        # Heuristic: pick the first *.xml containing “mame” in the name; else first *.xml
+                        members = zf.namelist()
+                        pick = None
+                        for name in members:
+                            nl = name.lower()
+                            if nl.endswith(".xml") and "mame" in nl:
+                                pick = name
+                                break
+                        if not pick:
+                            pick = next((n for n in members if n.lower().endswith(".xml")), None)
+                        if not pick:
+                            # Not a relevant archive; try next one
+                            continue
+
+                        # Stream-parse directly from the zip member (binary file-like)
+                        with zf.open(pick, "r") as fh:
+                            # ET.iterparse accepts a file-like; encoding is read from XML prolog
+                            for event, elem in ET.iterparse(fh, events=("start", "end")):
+                                yield (event, elem)
+                        return  # done after yielding all events
+                except zipfile.BadZipFile:
+                    # Try next candidate
+                    continue
+
+            # If we drop through, nothing usable was found
+            raise FileNotFoundError(
+                f"Could not locate a MAME XML: neither {file_path} nor a usable *.zip in {arch_dir}"
+            )
+
+        for event, elem in _event_source():
+        #for event, elem in iter_mame_events(file_path, mame_encoding):
             # Root attributes (build/mameconfig)
             b, mc = capture_root_attrs(event, elem)
             if b is not None or mc is not None:

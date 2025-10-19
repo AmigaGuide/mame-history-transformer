@@ -29,6 +29,8 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 import time
 from collections import Counter, defaultdict
+import zipfile
+import io
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
@@ -38,6 +40,7 @@ from mht.utils.paths import (
     history_summary_path,
     ENCODINGS_JSON,   # temp shim (from step 0)
     stamps_dir,
+    archives_dir, active_version,
 )
 from mht.utils.io import write_json
 from mht.inputs.history_constants import KNOWN_PLATFORMS
@@ -52,6 +55,7 @@ from mht.utils.history_xml import (
 from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
+from mht.provenance.peek import find_history_xml_member
 
 
 __all__ = ["parse_history_entries"]
@@ -139,11 +143,53 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     total_port_lines_all = 0
 
     gh_systems: dict[str, dict] = {}
+    
+    # --- Event source that supports ZIP-only setups ---------------------------
+    def _event_source():
+        # 1) If the extracted XML exists, use the standard iterator.
+        if file_path.exists():
+            for ev in iter_history_events(file_path, encoding):
+                yield ev
+            return
 
-    # Streaming parse of history.xml
+        # 2) Fallback: look for history*.zip in releases/<ver>/archives and stream its XML.
+        try:
+            ver = active_version()
+        except Exception:
+            ver = None
+
+        if ver:
+            adir = archives_dir(ver)
+            if adir.exists():
+                for zp in sorted(adir.glob("history*.zip")):
+                    try:
+                        with zipfile.ZipFile(zp) as zf:
+                            # Prefer entry literally named 'history.xml'; else first *.xml
+                            members = zf.namelist()
+                            choice = None
+                            for name in members:
+                                if name.lower().endswith(".xml"):
+                                    choice = name
+                                    if Path(name).name.lower() == "history.xml":
+                                        break
+                            if not choice:
+                                continue
+                            with zf.open(choice, "r") as zfh:
+                                wrapper = io.TextIOWrapper(zfh, encoding=encoding, errors="replace")
+                                for ev in ET.iterparse(wrapper, events=("start", "end")):
+                                    yield ev
+                            return  # streamed one archive; stop
+                    except zipfile.BadZipFile:
+                        continue
+
+        # 3) Nothing worked: surface a clear error
+        raise FileNotFoundError(
+            f"history.xml not found: {file_path} (and no usable history*.zip in archives)"
+        )
+
+    # --- Streaming parse ------------------------------------------------------
     try:
-        for event, elem in iter_history_events(file_path, encoding):
-
+        for event, elem in _event_source():
             # Capture <history> root attributes on the start event (once)
             hdr = capture_history_root_attrs(event, elem)
             if hdr is not None:
@@ -222,6 +268,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     except ET.ParseError as e:
         log.error(f"XML parse error in {file_path.name}: {e}")
+        return False
+    except FileNotFoundError as e:
+        log.error(str(e))
         return False
 
     log.info(f"Parsed {total_entries} <entry> elements from history.xml")
