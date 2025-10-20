@@ -46,6 +46,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import zipfile
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
@@ -419,7 +420,7 @@ def main() -> None:
     ver = active_version()
 
     # -------------------------------------------------------
-    # Load existing encodings.json (cache of {encoding,version})
+    # ZIP-only: Load prior encodings.json and (re)detect from archives
     # -------------------------------------------------------
     encoding_cache: Dict[str, Dict[str, Any]] = {}
     if ENCODINGS_PATH.exists():
@@ -428,142 +429,77 @@ def main() -> None:
                 encoding_cache = json.load(f)
             log.info("Loaded encoding cache from encodings.json")
         except (json.JSONDecodeError, IOError):
-            log.warning("Could not read encodings.json. Will re-parse all files.")
+            log.warning("Could not read encodings.json. Will re-detect all files.")
             encoding_cache = {}
 
-    def _versions_differ(prev_raw: str | None, curr_raw: str | None) -> bool:
-        """
-        True if the two raw version strings differ after normalising None to "".
+    # Identify the two archives from the 'required_paths' list that check_required_files() returned
+    mame_zip = None
+    hist_zip = None
+    for p in required_paths:
+        if p.suffix.lower() == ".zip":
+            if "mame" in p.name.lower() and mame_zip is None:
+                mame_zip = p
+            if "history" in p.name.lower() and hist_zip is None:
+                hist_zip = p
+    if not (mame_zip and hist_zip):
+        log.error("Expected staged MAME and History archives in releases/<ver>/archives/")
+        return
 
-        Purpose:
-            Cheap change detector for cache invalidation. This does not interpret
-            numeric cores or suffixes—see same_numeric_core/parse_version_loose for that.
+    # Canonical leaf names your pipeline uses everywhere
+    canonical_leaves = {
+        "mame_xml":    "mame.xml",
+        "history_xml": "history.xml",
+        "ini_game":     "[GAMING HISTORY] Game Or No Game.ini",
+        "ini_category": "[GAMING HISTORY] Machine Category.ini",
+        "ini_type":     "[GAMING HISTORY] Machine Type.ini",
+    }
 
-        Returns:
-            bool: Whether the strings differ.
-        """
-        return (prev_raw or "") != (curr_raw or "")
+    # Run full-file detection from ZIPs
+    from mht.utils.encoding_utils import detect_encodings_from_archives
+    encodings_dict, cache_changed = detect_encodings_from_archives(
+        mame_archive=mame_zip,
+        history_archive=hist_zip,
+        canonical_leaves=canonical_leaves,
+        prior=encoding_cache,
+    )
+    updated_encodings = encodings_dict # ← alias so existing code paths keep working
 
-    updated_encodings: Dict[str, Dict[str, Any]] = dict(encoding_cache)
-    cache_changed = False
+    # Normalise the subset downstream modules expect: {leaf -> encoding}
+    encodings = {}
+    for leaf, rec in encodings_dict.items():
+        if isinstance(rec, dict):
+            enc = rec.get("encoding") or "utf-8"
+            encodings[leaf] = enc
 
-    # -------------------------------------------------------
-    # Read CURRENT header versions (using cached encodings when possible)
-    # Decide per-file whether to re-detect encoding.
-    # -------------------------------------------------------
-    current_versions: Dict[str, str] = {}
-    for file_path in required_paths:
-        fname = file_path.name
-        prev_entry = encoding_cache.get(fname) or {}
-        prev_raw = _cached_raw_version(prev_entry)
-
-        if fname.endswith(".xml"):
-            # XML: versions live on the root element; no encoding needed to read attributes.
-            root_tag = "mame" if "mame" in fname.lower() else "history"
-            curr_raw = get_xml_version(file_path, root_tag)
-            debug_log(f"[versions] XML {fname}: current_raw={curr_raw!r}")
-            current_versions[fname] = curr_raw
-
-        elif fname.endswith(".ini"):
-            # INI: to read the header line, use cached encoding if available, else detect once.
-            cached_enc = prev_entry.get("encoding")
-            enc_used = cached_enc or detect_encoding(file_path)
-            debug_log(f"[versions] INI {fname}: reading header with encoding {enc_used!r}")
-            curr_raw = get_ini_version(file_path, enc_used)
-            debug_log(f"[versions] INI {fname}: prev_raw={prev_raw!r}, curr_raw={curr_raw!r}")
-            current_versions[fname] = curr_raw
-
-        else:
-            curr_raw = "Unknown"
-            current_versions[fname] = curr_raw
-            debug_log(f"[versions] {fname}: unsupported extension, curr_raw='Unknown'")
-
-        debug_log(f"[versions] Compare {fname}: prev_raw={prev_raw!r} vs curr_raw={curr_raw!r} "
-                  f"-> changed={_versions_differ(prev_raw, curr_raw)}")
-
-    # -------------------------------------------------------
-    # Re-detect encodings ONLY where version changed or cache is missing.
-    # -------------------------------------------------------
-    for file_path in required_paths:
-        fname = file_path.name
-        prev_entry = encoding_cache.get(fname) or {}
-        prev_raw = _cached_raw_version(prev_entry)
-        curr_raw = current_versions.get(fname)
-
-        needs_redetect = (prev_entry == {}) or _versions_differ(prev_raw, curr_raw)
-
-        if fname.endswith(".xml"):
-            if needs_redetect:
-                enc = detect_encoding(file_path)
-                vrec = version_record(curr_raw or "Unknown")
-                updated_encodings[fname] = {"encoding": enc, "version": vrec}
-                cache_changed = True
-                debug_log(f"[encodings] XML {fname}: version changed or new. "
-                          f"detected_encoding={enc!r}, version={vrec}")
-            else:
-                if prev_entry:
-                    updated_encodings[fname] = prev_entry
-                else:
-                    enc = detect_encoding(file_path)
-                    vrec = version_record(curr_raw or "Unknown")
-                    updated_encodings[fname] = {"encoding": enc, "version": vrec}
-                    cache_changed = True
-                    debug_log(f"[encodings] XML {fname}: no prior cache; detected "
-                              f"encoding={enc!r}, version={vrec}")
-
-        elif fname.endswith(".ini"):
-            if needs_redetect:
-                enc = detect_encoding(file_path)
-                curr_raw = get_ini_version(file_path, enc)
-                vrec = version_record(curr_raw or "Unknown")
-                updated_encodings[fname] = {"encoding": enc, "version": vrec}
-                cache_changed = True
-                debug_log(f"[encodings] INI {fname}: version changed or new. "
-                          f"detected_encoding={enc!r}, version={vrec}")
-            else:
-                if prev_entry:
-                    updated_encodings[fname] = prev_entry
-                else:
-                    enc = detect_encoding(file_path)
-                    curr_raw = get_ini_version(file_path, enc)
-                    vrec = version_record(curr_raw or "Unknown")
-                    updated_encodings[fname] = {"encoding": enc, "version": vrec}
-                    cache_changed = True
-                    debug_log(f"[encodings] INI {fname}: seeded cache with "
-                              f"encoding={enc!r}, version={vrec}")
-
-        else:
-            # Unknown extension: carry forward prior or seed minimally
-            if prev_entry:
-                updated_encodings[fname] = prev_entry
-            else:
-                updated_encodings[fname] = {"encoding": "utf-8", "version": version_record("Unknown")}
-                cache_changed = True
-
-    # -------------------------------------------------------
-    # Persist encodings.json ONLY if changes were made
-    # -------------------------------------------------------
+    # Persist encodings.json (only when stable fields changed)
     if cache_changed:
         with open(ENCODINGS_PATH, "w", encoding="utf-8") as f:
-            json.dump(updated_encodings, f, indent=4)
-        log.info("Saved updated encodings.json (changes detected).")
+            json.dump(encodings_dict, f, indent=4, ensure_ascii=False)
+        log.info("Saved updated encodings.json (ZIP-only detection).")
     else:
-        log.info("Encodings unchanged; skipped writing encodings.json.")
+        log.info("Encodings unchanged; skipped writing encodings.json (using cached results).")
 
-    # ------------------------------
-    # Version consistency reporting
-    # ------------------------------
-    mame_ver_raw = (updated_encodings.get("mame.xml", {})        .get("version", {}) or {}).get("raw", "Unknown")
-    hist_ver_raw = (updated_encodings.get("history.xml", {})     .get("version", {}) or {}).get("raw", "Unknown")
-    ini_game_raw = (updated_encodings.get("[GAMING HISTORY] Game Or No Game.ini", {}) .get("version", {}) or {}).get("raw", "Unknown")
-    ini_cat_raw  = (updated_encodings.get("[GAMING HISTORY] Machine Category.ini", {}) .get("version", {}) or {}).get("raw", "Unknown")
-    ini_type_raw = (updated_encodings.get("[GAMING HISTORY] Machine Type.ini", {})     .get("version", {}) or {}).get("raw", "Unknown")
+    # Version consistency report (use the raw hints we recorded under xml_root_attrs/ini_header)
+    def _raw_version_from_record(leaf: str) -> str:
+        rec = encodings_dict.get(leaf) or {}
+        # XML: prefer build (MAME) then version (History)
+        if leaf in ("mame.xml", "history.xml"):
+            xr = (rec.get("xml_root_attrs") or {})
+            return xr.get("build") or xr.get("version") or "Unknown"
+        # INI: prefer mame_version from header sniff
+        ih = (rec.get("ini_header") or {})
+        return ih.get("mame_version") or "Unknown"
+
+    mame_ver_raw = _raw_version_from_record("mame.xml")
+    hist_ver_raw = _raw_version_from_record("history.xml")
+    ini_game_raw = _raw_version_from_record("[GAMING HISTORY] Game Or No Game.ini")
+    ini_cat_raw  = _raw_version_from_record("[GAMING HISTORY] Machine Category.ini")
+    ini_type_raw = _raw_version_from_record("[GAMING HISTORY] Machine Type.ini")
 
     all_versions = [mame_ver_raw, hist_ver_raw, ini_game_raw, ini_cat_raw, ini_type_raw]
     if not same_numeric_core(*all_versions):
         log.warning("Version mismatch (numeric core differs): %s", ", ".join(v for v in all_versions if v))
     else:
-        # Report any revision suffixes found (informational)
         suffix_notes = []
         labelled = [
             ("MAME", mame_ver_raw),
@@ -581,6 +517,13 @@ def main() -> None:
         else:
             debug_log("All sources share the same numeric core and no suffixes were detected.")
 
+    # Surface noteworthy provider changes
+    for leaf in ("mame.xml", "history.xml"):
+        rec = encodings_dict.get(leaf) or {}
+        decl = rec.get("xml_decl_encoding")
+        if decl:
+            log.warning(f"{leaf} declares encoding='{decl}' — provider may have changed other things; cache updated.")
+
     log.info("Proceeding to source file parsing...")
 
     # Pass encodings to downstream modules (filename -> encoding)
@@ -597,41 +540,60 @@ def main() -> None:
 
     ini_duration = round(time.perf_counter() - ini_t0, 3)
     ini_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
-    
-    # Manifest inputs/outputs metadata for INI stage (index only, not detailed stats)
-    ini_summary_fp = ini_summary_path()
-    ini_output_fp = ini_classifications_path()
 
-    # Use centralised paths
-    ini_input_paths  = [ini_game_path(), ini_category_path(), ini_type_path()]
-    name_to_path = {p.name: p for p in ini_input_paths}
+    # Manifest inputs/outputs metadata for INI stage (ZIP-only)
+    ini_summary_fp = ini_summary_path()
+    ini_output_fp  = ini_classifications_path()
+
+    # Determine the History ZIP used for INIs
+    try:
+        ver = active_version()
+    except Exception:
+        ver = None
+    zp = _find_history_archive_for_manifest(ver) if ver else None
 
     ini_inputs = []
-    for p in ini_input_paths:
-        if p.exists():
-            ini_inputs.append(_file_meta(p))
-        else:
-            log.warning(f"INI missing: {p.name}")
+    if zp and zp.exists():
+        meta = _file_meta(zp)
+        meta["note"] = "streamed INIs from ZIP (no extracted INIs)"
 
-    # Attach INI versions to inputs (from updated_encodings) for manifest readability
-    for meta in ini_inputs:
-        fname = Path(meta["path"]).name
-        vrec = ((updated_encodings.get(fname) or {}).get("version") or {})
-        if vrec:
-            meta["version"] = {k: vrec[k] for k in ("raw", "numeric_core", "suffix") if vrec.get(k)}
-        else:
-            enc = ((updated_encodings.get(fname) or {}).get("encoding")) or "utf-8"
-            try:
-                raw = get_ini_version(name_to_path[fname], enc)
-            except Exception:
-                raw = "Unknown"
-            core, suf = parse_version_loose(raw or "")
-            meta["version"] = {"raw": raw}
-            if core: meta["version"]["numeric_core"] = numeric_core_str(core)
-            if suf:  meta["version"]["suffix"] = suf   
+        # Attempt to resolve which members we actually read (by canonical basenames)
+        want = {
+            ini_game_path().name.lower(),
+            ini_category_path().name.lower(),
+            ini_type_path().name.lower(),
+        }
+        try:
+            with zipfile.ZipFile(zp) as zf:
+                by_leaf = {}
+                for zinfo in zf.infolist():
+                    leaf = Path(zinfo.filename).name
+                    if leaf.lower() in want and leaf.lower() not in by_leaf:
+                        by_leaf[leaf.lower()] = zinfo.filename
+                if by_leaf:
+                    meta["zip_members"] = [by_leaf[k] for k in sorted(by_leaf.keys())]
+        except Exception:
+            pass
 
+        # Attach visible versions from encodings cache where available (by leaf name)
+        meta["sources"] = []
+        for leaf in (ini_game_path().name, ini_category_path().name, ini_type_path().name):
+            vrec = ((updated_encodings.get(leaf) or {}).get("version") or {})
+            src = {"leaf": leaf}
+            if vrec:
+                src["version"] = {k: vrec[k] for k in ("raw", "numeric_core", "suffix") if vrec.get(k)}
+            enc = ((updated_encodings.get(leaf) or {}).get("encoding")) or "utf-8"
+            src["encoding"] = enc
+            meta["sources"].append(src)
+
+        ini_inputs.append(meta)
+    else:
+        ini_inputs.append({"path": str(archives_dir(active_version())), "missing": True})
+
+    # Outputs + quick stats (unchanged behaviour)
     ini_outputs = []
     ini_stats = {}
+
     if ini_summary_fp.exists():
         meta = _file_meta(ini_summary_fp)
         ini_outputs.append(meta)

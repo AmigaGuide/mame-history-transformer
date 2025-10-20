@@ -83,50 +83,70 @@ def _ini_input_paths() -> dict[str, Path]:
         "type":        ini_type_path(),
     }
 
+# --- ZIP-only helpers ---------------------------------------------------------
+
+def _pick_history_zip(version: str) -> Path:
+    """Return the preferred History ZIP for this release, or raise FileNotFoundError."""
+    arc_dir = archives_dir(version)
+    if not arc_dir.exists():
+        raise FileNotFoundError(f"Archives folder missing: {arc_dir.as_posix()}")
+    # Prefer files with 'history' in the name; else any .zip
+    zips = sorted([p for p in arc_dir.iterdir() if p.suffix.lower() == ".zip"], key=lambda p: p.name.lower())
+    hist = [p for p in zips if "history" in p.name.lower()] or zips
+    if not hist:
+        raise FileNotFoundError(f"No .zip files found under {arc_dir.as_posix()}")
+    return hist[0]
+
+
+def _enc_for_ini_basename(encodings: Dict[str, str], basename: str) -> str:
+    """
+    Our encoding cache is keyed by filename (leaf). Look up by the canonical
+    basename the project uses (e.g. '[GAMING HISTORY] Machine Type.ini').
+    """
+    return encodings.get(basename, "utf-8")
+
+
+def _want_ini_basenames(version: str) -> dict[str, tuple[str, str]]:
+    """
+    Map logical keys -> (canonical basename, manifest_label).
+    Keys used downstream: 'game_status', 'category', 'type'
+    """
+    return {
+        "game_status": (ini_game_path(version).name,     "Game Or No Game.ini"),
+        "category":    (ini_category_path(version).name, "Machine Category.ini"),
+        "type":        (ini_type_path(version).name,     "Machine Type.ini"),
+    }
+
 # --------------------------------------------------------------------------------------
-# Public pure workers
+# Public pure workers (ZIP-only)
 # --------------------------------------------------------------------------------------
 
 def load_ini_classifications(encodings: Dict[str, str],
                              ini_paths: dict[str, Path] | None = None) -> Dict[str, dict]:
     """
-    Parse the three GH INIs into an extended, analysis-friendly bundle (pure).
-    If ini_paths is provided, use those paths; otherwise use the default release paths.
+    ZIP-only variant: ignore ini_paths; always stream the three INIs from the
+    History ZIP in the active release.
+
+    Returns the same 'parsed bundle' shape as before.
     """
     t0 = time.perf_counter()
     parsed: Dict[str, dict] = {}
 
-    # Use caller-provided paths or the default per-release ones
-    paths = ini_paths or {
-        "game_status": ini_game_path(),
-        "category":    ini_category_path(),
-        "type":        ini_type_path(),
-    }
+    ver = active_version()
+    zip_path = _pick_history_zip(ver)
 
-    for key, path in paths.items():
-        enc = encodings.get(path.name, "utf-8")
-        debug_log(f"[history_metadata] Parsing {path.name} with encoding {enc}...")
-        if not enc:
-            try:
-                enc = detect_encoding(path)
-            except Exception:
-                enc = "utf-8"
-        
-        debug_log(f"[history_metadata] Parsing {path.name} with encoding {enc}...")
-        
-        if not path.exists():
-            # Try to source from a GH zip in the current release's archives
-            ver = active_version()
-            gh_zip = None
-            arc_dir = archives_dir(ver)
-            if arc_dir.exists():
-                # heuristic: prefer zips with 'history' in the name
-                zips = sorted([p for p in arc_dir.iterdir() if p.suffix.lower() == ".zip"], key=lambda p: p.name.lower())
-                gh_cands = [p for p in zips if "history" in p.name.lower()] or zips
-                gh_zip = gh_cands[0] if gh_cands else None
+    want = _want_ini_basenames(ver)  # {key -> (basename, label)}
+    with zipfile.ZipFile(zip_path) as zf:
+        # Build a case-insensitive lookup of members by leafname
+        by_leaf = {}
+        for zinfo in zf.infolist():
+            leaf = Path(zinfo.filename).name
+            by_leaf.setdefault(leaf.lower(), zinfo.filename)
 
-            if not gh_zip:
-                log.warning(f"Missing INI: {path.name} (no GH zip found in {arc_dir})")
+        for key, (basename, _label) in want.items():
+            member = by_leaf.get(basename.lower())
+            if not member:
+                log.warning(f"Missing INI in ZIP {zip_path.name}: {basename}")
                 parsed[key] = {
                     "machine_sections": defaultdict(set),
                     "section_listed_counts": defaultdict(int),
@@ -136,313 +156,87 @@ def load_ini_classifications(encodings: Dict[str, str],
                     "duplicates_across_sections": 0,
                     "duplicates_within_section": 0,
                     "version": {},
-                    "encoding": encodings.get(path.name, "utf-8"),
+                    "encoding": _enc_for_ini_basename(encodings, basename),
                 }
                 continue
 
-            try:
-                with zipfile.ZipFile(gh_zip) as zf:
-                    members = find_gh_ini_members(zf)
-                    member = None
-                    if key == "game":
-                        member = members.get("game")
-                    elif key == "category":
-                        member = members.get("category")
-                    elif key == "type":
-                        member = members.get("type")
+            enc = _enc_for_ini_basename(encodings, basename)
 
-                    if not member:
-                        raise FileNotFoundError(f"{key} ini not found in {gh_zip.name}")
+            # Parse body
+            with zf.open(member, "r") as bf:
+                text = io.TextIOWrapper(bf, encoding=enc, errors="replace")
+                ext = parse_ini_file_extended(text)   # stream path; encoding handled by wrapper
 
-                    # Write to a temp file for the existing parser                    
-                    enc = encodings.get(path.name)
-                    if not enc:
-                        try:
-                            enc = detect_encoding(path)
-                        except Exception:
-                            enc = "utf-8"
-                                                            
-                    with zf.open(member) as src, tempfile.NamedTemporaryFile("wb", delete=False) as tmp:
-                        tmp.write(src.read())
-                        tmp_path = Path(tmp.name)
+            # Parse header/version (fresh stream)
+            with zf.open(member, "r") as bf2:
+                text2 = io.TextIOWrapper(bf2, encoding=enc, errors="replace")
+                ext["version"] = ini_version_info(text2)  # stream again for header sniff
 
-                    ext = parse_ini_file_extended(tmp_path, enc)
-                    ext["version"] = ini_version_info(tmp_path, encoding=enc)
-                    ext["encoding"] = enc
-                    parsed[key] = ext
+            ext["encoding"] = enc
+            parsed[key] = ext
 
-                    debug_log(
-                        f"[ini] {path.name}: entries_listed={ext.get('entries_listed')}, "
-                        f"unique_names_total={sum(len(s) for s in ext.get('section_unique_sets', {}).values())}"
-                    )
+            debug_log(
+                f"[ini] {basename}: entries_listed={ext.get('entries_listed')}, "
+                f"unique_names_total={sum(len(s) for s in ext.get('section_unique_sets', {}).values())}"
+            )
 
-                    # Clean up the temp file
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
-
-            except Exception as e:
-                log.warning(f"Failed to read {key} INI from zip {gh_zip.name}: {e}")
-                parsed[key] = {
-                    "machine_sections": defaultdict(set),
-                    "section_listed_counts": defaultdict(int),
-                    "section_unique_sets": defaultdict(set),
-                    "entries_listed": 0,
-                    "machines_with_multiple_sections": 0,
-                    "duplicates_across_sections": 0,
-                    "duplicates_within_section": 0,
-                    "version": {},
-                    "encoding": encodings.get(path.name, "utf-8"),
-                }
-            continue
-
-        ext = parse_ini_file_extended(path, enc)
-        ext["version"] = ini_version_info(path, encoding=enc)
-        ext["encoding"] = enc
-        parsed[key] = ext
-
-    log.info(f"INI classification data loaded in {time.perf_counter() - t0:.2f} seconds")
+    log.info(f"INI classification data loaded from ZIP in {time.perf_counter() - t0:.2f} seconds")
     return parsed
 
+
 # --------------------------------------------------------------------------------------
-# Orchestrator (I/O + stamps)
+# Orchestrator (I/O + stamps) — ZIP-only
 # --------------------------------------------------------------------------------------
-
-def _temp_extract_inis_from_history_zip(version: str | None) -> dict[str, Path] | None:
-    """
-    Best-effort: if the three INIs are not present on disk, try to pull them
-    from the History ZIP in releases/<ver>/archives and return temp Paths.
-    Caller must clean the temp dir (we do it via TemporaryDirectory context).
-    """   
-    ver = active_version(version)
-
-    # Pick a history zip (simple heuristic: filename contains 'history')
-    arcdir = archives_dir(version)
-    if not arcdir.exists():
-        return None
-    candidates = [p for p in arcdir.iterdir()
-                  if p.is_file() and p.suffix.lower() == ".zip" and "history" in p.name.lower()]
-    if not candidates:
-        return None
-
-    # Use the newest history zip
-    zip_path = max(candidates, key=lambda p: p.stat().st_mtime)
-
-    # Extract the three INIs into a temp dir
-    tmpdir = tempfile.TemporaryDirectory(prefix="mht_inis_")
-    td = Path(tmpdir.name)
-
-    extracted = {}
-    with zipfile.ZipFile(zip_path) as zf:
-        # Use the active/given release version to derive the canonical basenames
-        want = {
-            ini_game_path(ver).name.lower():      ini_game_path(ver).name,
-            ini_category_path(ver).name.lower():  ini_category_path(ver).name,
-            ini_type_path(ver).name.lower():      ini_type_path(ver).name,
-        }
-        # Try to find and extract by leafname match (case-insensitive)
-        for zinfo in zf.infolist():
-            leaf = Path(zinfo.filename).name.lower()
-            if leaf in want:
-                outp = td / want[leaf]
-                outp.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(zinfo) as src, open(outp, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-                extracted[want[leaf]] = outp
-
-    # Only succeed if we got all three (use version-aware names)
-    required = {
-        ini_game_path(ver).name,
-        ini_category_path(ver).name,
-        ini_type_path(ver).name,
-    }
-    if required.issubset(set(extracted.keys())):
-        # Return mapping plus a handle to keep the tempdir alive on caller side
-        extracted["_tmpdir"] = td  # marker so caller can keep context alive
-        extracted["_tmpctx"] = tmpdir
-        return extracted
-
-    # Cleanup on failure
-    tmpdir.cleanup()
-    return None
 
 def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     """
-    Orchestrate the History INI stage: stamp check → parse → summarise → write.
-
-    Parameters
-    ----------
-    data_dir : Path
-        Base directory for data files (unused directly here; paths come from utils.paths).
-    encodings : dict
-        Map of filename -> encoding for the three INIs.
-
-    Returns
-    -------
-    bool
-        True on success (or when the stage is fresh and skipped). False on write failure
-        or IO errors (stamp is not saved in that case).
-
-    Side effects
-    ------------
-    - Writes:
-        * data/releases/<ver>/summaries/ini_parsing_summary.json
-        * data/releases/<ver>/outputs/gh_ini_classifications.json
-    - Maintains a stage stamp at data/releases/<ver>/.stamps/ini.json (created only on success).
+    ZIP-only orchestrator for the History INI stage:
+      - Resolves the History ZIP for the active release.
+      - Streams all three INIs directly from the archive (no temp extraction).
+      - Writes summary and classifications outputs.
+      - Stamps using the ZIP file and encodings.json as inputs.
     """
     t0 = time.perf_counter()
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
-    # track whether we sourced INIs from a ZIP (for nicer manifest inputs later)
-    streaming_from_zip = False
-    zip_input = None  # optional: path to the ZIP we used (if you capture it)
 
-    # --- Stage stamp: skip unchanged (per-release) ---      
-    # Start with the default (per-release) paths
-    active_paths = {
-        "game_status": ini_game_path(),
-        "category":    ini_category_path(),
-        "type":        ini_type_path(),
-    }
+    ver = active_version()
+    zip_path = _pick_history_zip(ver)
+    log.info(f"Reading GH INIs directly from archive: {zip_path.name}")
 
-    for k, p in active_paths.items():
-        debug_log(f"[ini] using {k}: {p} (exists={p.exists()})")
-
-    # If any are missing, try to pull them from the History ZIP (temp only)
-    missing = [p for p in active_paths.values() if not p.exists()]
-    tmp_ctx = None
-    if missing:
-        pulled = _temp_extract_inis_from_history_zip(active_version())
-        if pulled:
-            active_paths = {
-                "game_status": pulled[ini_game_path().name],
-                "category":    pulled[ini_category_path().name],
-                "type":        pulled[ini_type_path().name],
-            }
-            tmp_ctx = pulled.get("_tmpctx")  # keep tempdir alive for the duration
-            log.info("Using INIs from history ZIP (temporary extraction).")
-            
-            streaming_from_zip = True
-            # If your _temp_extract_inis_from_history_zip() returns a zip path in pulled["_zip"],
-            # you can capture it here. If not, leaving zip_input as None is fine.
-            zip_input = pulled.get("_zip") if isinstance(pulled, dict) else None                                  
-        else:
-            log.warning("INIs missing on disk and not located in history ZIP; proceeding with empty bundle.")
-
-    # Choose stamp inputs: physical INIs if present; else the ZIP + encodings
-    #stamp_inputs = [*ini_paths, ENCODINGS_JSON]
-    stamp_inputs = [*active_paths.values(), ENCODINGS_JSON]
-    if streaming_from_zip and zip_input:
-        stamp_inputs = [zip_input, ENCODINGS_JSON]
-
+    # Stage freshness: depend on the ZIP and the global encodings cache
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "ini.json",
         schema_id="mht.stage.ini",
         tool="ini_summary",
-        inputs=[*active_paths.values(), ENCODINGS_JSON],
+        inputs=[zip_path, ENCODINGS_JSON],
     )
-        
     if fresh:
         log.info("INI stage up-to-date (stamp matched) — skipping rebuild")
         return True
 
-    if streaming_from_zip and zip_input:
-        # Build the same 'parsed' bundle shape that load_ini_classifications() returns,
-        # but using zip streams and the relaxed utils.ini helpers.
-        parsed: Dict[str, dict] = {}
-        with zipfile.ZipFile(zip_input) as zf:
-            # Map canonical names -> keys we use
-            members = {n.lower(): n for n in zf.namelist()}
-            want_map = {
-                ini_game_path().name.lower():      "game_status",
-                ini_category_path().name.lower():  "category",
-                ini_type_path().name.lower():      "type",
-            }
+    # Parse bundle (pure)
+    parsed = load_ini_classifications(encodings)
 
-            for low_name, key in want_map.items():
-                name_in_zip = members.get(low_name)
-                if not name_in_zip:
-                    log.warning(f"History ZIP missing {low_name}; key '{key}' will be empty.")
-                    parsed[key] = {
-                        "machine_sections": defaultdict(set),
-                        "section_listed_counts": defaultdict(int),
-                        "section_unique_sets": defaultdict(set),
-                        "entries_listed": 0,
-                        "machines_with_multiple_sections": 0,
-                        "duplicates_across_sections": 0,
-                        "duplicates_within_section": 0,
-                        "version": {},
-                        "encoding": encodings.get(low_name, "utf-8"),
-                    }
-                    continue
-
-                enc = encodings.get(low_name, "utf-8")
-                with zf.open(name_in_zip, "r") as bf:
-                    text = io.TextIOWrapper(bf, encoding=enc, errors="replace")
-                    # NOTE: thanks to step (1) we can pass a text stream here:
-                    ext = parse_ini_file_extended(text)        # encoding ignored for streams
-                    # rewind a fresh stream for version sniff
-                with zf.open(name_in_zip, "r") as bf2:
-                    text2 = io.TextIOWrapper(bf2, encoding=enc, errors="replace")
-                    ext["version"] = ini_version_info(text2)   # encoding ignored for streams
-                    ext["encoding"] = enc
-                parsed[key] = ext
-
-        # Warnings-only invariants
-        ini_issues = validate_ini_parsed_bundle(parsed, log)
-        if ini_issues == 0:
-            debug_log("[history_metadata] INI invariants passed (streamed from ZIP)")
-
-        # Summary + class map + writes
-        summary   = build_ini_summary(parsed, now_iso)
-        class_map = build_ini_class_map(parsed)
-
-        ok_summary = write_json(ini_summary_path(), summary, sort_keys=False)
-        ok_output  = write_json(ini_classifications_path(), class_map, sort_keys=True)
-
-        if ok_summary and ok_output:
-            save_stamp(stamp_path, current_stamp)
-            duration = time.perf_counter() - t0
-            log.info(f"INI parsing completed in {duration:.2f}s (streamed from {zip_input.name}); "
-                     f"ok_summary={ok_summary}, ok_output={ok_output}")
-            return True
-
-        log.error("Failed to write one or more INI outputs; not saving stamp.")
-        return False
-
-
-    # 1) Parse INIs (pure)
-    #parsed = load_ini_classifications(encodings)
-    parsed = load_ini_classifications(encodings, ini_paths=active_paths)
-    for name, bundle in parsed.items():
-        debug_log(f"[ini] parsed[{name}]: entries_listed={bundle.get('entries_listed')}")
-
-    # Warnings-only invariants over the parsed bundle
+    # Warnings-only invariants
     ini_issues = validate_ini_parsed_bundle(parsed, log)
     if ini_issues == 0:
-        debug_log("[history_metadata] INI invariants passed")
+        debug_log("[history_metadata] INI invariants passed (ZIP-only)")
 
-    # 2) Build summary (pure)
-    summary = build_ini_summary(parsed, now_iso)
-
-    # 3) Build machine-centric map (pure)
+    # Build docs
+    summary   = build_ini_summary(parsed, now_iso)
     class_map = build_ini_class_map(parsed)
 
-    # 4) Write outputs (I/O only here)
+    # Write
     ok_summary = write_json(ini_summary_path(), summary, sort_keys=False)
-    ok_output  = write_json(ini_classifications_path(),   class_map, sort_keys=True)
+    ok_output  = write_json(ini_classifications_path(), class_map, sort_keys=True)
 
-    # 5) Only persist the stamp if both writes were successful
     if ok_summary and ok_output:
         save_stamp(stamp_path, current_stamp)
         duration = time.perf_counter() - t0
-        log.info(f"INI parsing completed in {duration:.2f}s; ok_summary={ok_summary}, ok_output={ok_output}")
-        # cleanup temp extract (if any)
-        if tmp_ctx:
-            tmp_ctx.cleanup()
+        log.info(f"INI parsing completed in {duration:.2f}s (streamed from {zip_path.name}); "
+                 f"ok_summary={ok_summary}, ok_output={ok_output}")
         return True
 
     log.error("Failed to write one or more INI outputs; not saving stamp.")
-    if tmp_ctx:
-        tmp_ctx.cleanup()
     return False
+    
