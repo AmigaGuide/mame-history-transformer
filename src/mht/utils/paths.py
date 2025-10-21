@@ -31,6 +31,17 @@ EXOTICA_PAGES_SCHEMA = CONTRACTS_DIR / "exotica_wiki_pages_and_redirects.schema.
 
 _CURRENT_VERSION_TXT = DATA_DIR / "current_version.txt"
 
+def encodings_cache_path(version: str | None = None) -> Path:
+    """
+    Return the per-release encodings cache path:
+        data/releases/<ver>/encodings.json
+
+    We derive the release root by taking the parent of archives_dir(<ver>)
+    so we don't duplicate any version-normalisation logic here.
+    """
+    ver = version or active_version()
+    return archives_dir(ver).parent / "encodings.json"
+
 def _read_current_version_file() -> Optional[str]:
     try:
         s = _CURRENT_VERSION_TXT.read_text(encoding="utf-8").strip()

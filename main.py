@@ -73,9 +73,12 @@ from mht.utils.paths import (
 
     # shared
     DATA_DIR, TITLE_OVERRIDES, run_manifest_path, title_overrides_path,
-
-    # keep using your existing encodings cache location (back-compat)
+    
+    # legacy global cache path (read-only for migration)
     ENCODINGS_JSON,
+
+    # NEW: per-release cache path
+    encodings_cache_path,
 )
 from mht.utils.history_xml import capture_history_root_attrs
 
@@ -94,7 +97,7 @@ __all__ = [
 log = setup_logger(log_level=LOG_LEVEL)
 
 # Cache file for per-source encodings + versions
-ENCODINGS_PATH = ENCODINGS_JSON
+#ENCODINGS_PATH = ENCODINGS_JSON
 
 # Note: kept for traceability; not used by other modules.
 ok_mame = False
@@ -420,19 +423,38 @@ def main() -> None:
     ver = active_version()
 
     # -------------------------------------------------------
-    # ZIP-only: Load prior encodings.json and (re)detect from archives
+    # ZIP-only: Load per-release encodings cache and (re)detect from archives
     # -------------------------------------------------------
+    # Resolve the active release and its per-release cache path
+    enc_cache_path = encodings_cache_path(ver)
+
+    # Load prior cache (prefer per-release; fall back to legacy global once)
     encoding_cache: Dict[str, Dict[str, Any]] = {}
-    if ENCODINGS_PATH.exists():
+    migrated_from_legacy = False
+
+    if enc_cache_path.exists():
         try:
-            with open(ENCODINGS_PATH, "r", encoding="utf-8") as f:
+            with open(enc_cache_path, "r", encoding="utf-8") as f:
                 encoding_cache = json.load(f)
-            log.info("Loaded encoding cache from encodings.json")
+            log.info("Loaded per-release encodings cache: %s", enc_cache_path.as_posix())
         except (json.JSONDecodeError, IOError):
-            log.warning("Could not read encodings.json. Will re-detect all files.")
+            log.warning("Could not read per-release encodings.json. Will re-detect all files.")
+            encoding_cache = {}
+    else:
+        # One-time legacy migration if a global cache exists
+        if ENCODINGS_JSON.exists():
+            try:
+                with open(ENCODINGS_JSON, "r", encoding="utf-8") as f:
+                    encoding_cache = json.load(f)
+                migrated_from_legacy = True
+                log.info("Migrating legacy global encodings.json to per-release cache.")
+            except (json.JSONDecodeError, IOError):
+                log.warning("Legacy global encodings.json unreadable; starting with empty cache.")
+                encoding_cache = {}
+        else:
             encoding_cache = {}
 
-    # Identify the two archives from the 'required_paths' list that check_required_files() returned
+    # Identify the two staged archives selected earlier by check_required_files()
     mame_zip = None
     hist_zip = None
     for p in required_paths:
@@ -445,7 +467,6 @@ def main() -> None:
         log.error("Expected staged MAME and History archives in releases/<ver>/archives/")
         return
 
-    # Canonical leaf names your pipeline uses everywhere
     canonical_leaves = {
         "mame_xml":    "mame.xml",
         "history_xml": "history.xml",
@@ -454,7 +475,6 @@ def main() -> None:
         "ini_type":     "[GAMING HISTORY] Machine Type.ini",
     }
 
-    # Run full-file detection from ZIPs
     from mht.utils.encoding_utils import detect_encodings_from_archives
     encodings_dict, cache_changed = detect_encodings_from_archives(
         mame_archive=mame_zip,
@@ -462,22 +482,32 @@ def main() -> None:
         canonical_leaves=canonical_leaves,
         prior=encoding_cache,
     )
-    updated_encodings = encodings_dict # ← alias so existing code paths keep working
 
-    # Normalise the subset downstream modules expect: {leaf -> encoding}
+    # Normalise encodings for downstream modules: {leaf -> "utf-8"/...}
     encodings = {}
     for leaf, rec in encodings_dict.items():
         if isinstance(rec, dict):
-            enc = rec.get("encoding") or "utf-8"
-            encodings[leaf] = enc
+            encodings[leaf] = rec.get("encoding") or "utf-8"
 
-    # Persist encodings.json (only when stable fields changed)
-    if cache_changed:
-        with open(ENCODINGS_PATH, "w", encoding="utf-8") as f:
+    # Persist per-release cache
+    # Always write when:
+    #  - the detector says fields changed, or
+    #  - we migrated from legacy, or
+    #  - the per-release file does not yet exist.
+    should_write_cache = cache_changed or migrated_from_legacy or (not enc_cache_path.exists())
+
+    if should_write_cache:
+        enc_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(enc_cache_path, "w", encoding="utf-8") as f:
             json.dump(encodings_dict, f, indent=4, ensure_ascii=False)
-        log.info("Saved updated encodings.json (ZIP-only detection).")
+        if migrated_from_legacy:
+            log.info("Saved per-release encodings.json (initial migration): %s", enc_cache_path.as_posix())
+        else:
+            log.info("Saved per-release encodings.json (ZIP-only detection): %s", enc_cache_path.as_posix())
     else:
-        log.info("Encodings unchanged; skipped writing encodings.json (using cached results).")
+        log.info("Encodings unchanged; reusing per-release cache: %s", enc_cache_path.as_posix())
+
+    updated_encodings = encodings_dict  # keep your alias for downstream usage
 
     # Version consistency report (use the raw hints we recorded under xml_root_attrs/ini_header)
     def _raw_version_from_record(leaf: str) -> str:
@@ -916,12 +946,22 @@ def main() -> None:
     run_started  = min(started_candidates)  if started_candidates  else datetime.datetime.utcnow().isoformat() + "Z"
     run_finished = max(finished_candidates) if finished_candidates else datetime.datetime.utcnow().isoformat() + "Z"
 
+    # Encoding cache meta for the manifest
+    enc_cache_meta = {"path": enc_cache_path.as_posix()}
+    try:
+        if enc_cache_path.exists():
+            enc_cache_meta["sha256"] = _sha256_file(enc_cache_path)
+            enc_cache_meta["size_bytes"] = enc_cache_path.stat().st_size
+    except Exception:
+        pass
+
     manifest = {
         "schema_version": 1,
         "run_id": datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"),
         "started_utc": run_started,
         "finished_utc": run_finished,
-        "stages": stage_fragments,   # ← use the list you've been building
+        "encoding_cache": enc_cache_meta,
+        "stages": stage_fragments,
     }
 
     mp = manifest_path()  # data/releases/<ver>/manifest.json

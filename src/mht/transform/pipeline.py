@@ -19,6 +19,8 @@ from __future__ import annotations
 import datetime
 import time
 from typing import Dict, Any, List
+import hashlib, json
+from pathlib import Path
 
 from mht.utils.config import LOG_LEVEL, _IGNORED_TOP_N
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
@@ -91,6 +93,39 @@ SCHEMA_ID_RAW   = output_schema("raw")["id"]
 SCHEMA_VER_RAW  = output_schema("raw")["version"]
 SCHEMA_ID_PAGES  = output_schema("pages")["id"]
 SCHEMA_VER_PAGES = output_schema("pages")["version"]
+
+# --- stamp + file meta helpers (add near imports) ---
+import hashlib, json
+from pathlib import Path
+from typing import Any
+
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _file_meta(p: Path) -> dict[str, Any]:
+    st = p.stat()
+    return {
+        "path": p.as_posix(),
+        "size_bytes": int(st.st_size),
+        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
+        "sha256": _sha256_file(p),
+    }
+
+def _records_in_wiki_or_raw_json(p: Path) -> int | None:
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            doc = json.load(f) or {}
+        games = doc.get("games")
+        if isinstance(games, dict):
+            return len(games)
+    except Exception:
+        pass
+    return None
+
 
 def run_transformer() -> bool:
     """
@@ -432,8 +467,76 @@ def run_transformer() -> bool:
     #ok_sum = write_json(transform_summary_path(), summary, sort_keys=False)
     ok_sum = write_json(transform_summary_path(), summary, sort_keys=False)
 
-    # Save stamp last
-    save_stamp(stamp_path, current_stamp)
-    log.info(f"Transformer completed in {duration:.2f}s "
-             f"(eligible_parents={len(eligible_parents)}, included={len(out_map)})")
+    # --- Build a rich stamp mirroring other stages ---
+    stamp_doc = dict(current_stamp)  # keep the freshness core intact
+
+    # Inputs detail: include meta (size/sha256/mtime) for every input you keyed freshness on
+    inputs_detail = []
+    for p in stamp_inputs:
+        try:
+            if p and p.exists():
+                inputs_detail.append(_file_meta(p))
+            else:
+                inputs_detail.append({"path": p.as_posix() if isinstance(p, Path) else str(p), "missing": True})
+        except Exception:
+            inputs_detail.append({"path": p.as_posix() if isinstance(p, Path) else str(p), "error": "stat-failed"})
+
+    # Outputs detail: wiki/raw/pages + summary, with record counts where sensible
+    outputs = []
+
+    wiki_fp = exotica_wiki_path()
+    if wiki_fp.exists():
+        w = _file_meta(wiki_fp)
+        w["records"] = _records_in_wiki_or_raw_json(wiki_fp)
+        outputs.append(w)
+
+    raw_fp = exotica_raw_path()
+    if raw_fp.exists():
+        r = _file_meta(raw_fp)
+        r["records"] = _records_in_wiki_or_raw_json(raw_fp)
+        outputs.append(r)
+
+    pages_fp = exotica_pages_path()
+    if pages_fp.exists():
+        pmeta = _file_meta(pages_fp)
+        # `write_pages_and_redirects` already returned aggregate info
+        if isinstance(pages_info, dict):
+            pmeta.update({
+                "pages_count":      pages_info.get("pages_count"),
+                "redirects_count":  pages_info.get("redirects_count"),
+                "conflicts_count":  pages_info.get("conflicts_count"),
+            })
+        outputs.append(pmeta)
+
+    ts_fp = transform_summary_path()
+    if ts_fp.exists():
+        outputs.append(_file_meta(ts_fp))
+
+    # Stats: pull key figures you already computed (small, useful set)
+    stats = {
+        "eligible_parents":                len(eligible_parents),
+        "included_parents":                len(out_map),
+        "parents_with_ports":              parents_with_ports_count,
+        "clones_with_ports":               len(clones_with_ports_set),
+        "systems_with_parent_clone_dupes": systems_with_parent_clone_port_dupes,
+        "audio": {
+            "machines_reporting_channels": audio_total_with_channels,
+            "channel_speaker_mismatches":  audio_channel_speaker_mismatch,
+            "machines_requiring_samples":  audio_samples_required_count,
+        },
+        "overrides": overrides_stats,
+    }
+
+    # Finalise and save
+    stamp_doc["created_utc"]   = finished_utc
+    stamp_doc["inputs_detail"] = inputs_detail
+    stamp_doc["outputs"]       = outputs
+    stamp_doc["stats"]         = stats
+
+    save_stamp(stamp_path, stamp_doc)
+
+    log.info(
+        f"Transformer completed in {duration:.2f}s "
+        f"(eligible_parents={len(eligible_parents)}, included={len(out_map)})"
+    )
     return bool(ok_out and ok_sum)

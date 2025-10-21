@@ -32,12 +32,13 @@ import re
 import time
 import zipfile
 import xml.etree.ElementTree as ET
+import datetime
 
 from mht.utils.logger import debug_log, setup_logger
 from mht.utils.config import LOG_LEVEL
 
 
-__all__ = ["detect_encoding"]
+__all__ = ["detect_encoding", "detect_encodings_from_archives"]
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -187,13 +188,22 @@ def _read_all(zp: Path, member: str) -> Tuple[bytes, int, int]:
 
 # --- Helpers for cache-aware comparison (stable fields only) -------------------
 
+def _utc_now() -> str:
+    """Return an ISO8601 UTC timestamp with a 'Z' suffix."""
+    return datetime.datetime.utcnow().isoformat() + "Z"
+
 def _member_signature(zip_archive: Path, member_fullpath: str, crc32: int, size: int) -> dict:
-    """Stable identity for a ZIP member that we can compare against prior cache."""
+    """
+    Stable identity for a ZIP member.
+    We keep the archive's *filename* for equality checks and also store the
+    full path purely for provenance (not used in signature matching).
+    """
     return {
-        "zip_archive": zip_archive.name,       # filename is enough per-release
-        "zip_member": member_fullpath,         # full path inside the archive
-        "zip_crc32": int(crc32),
-        "zip_size_bytes": int(size),
+        "zip_archive": zip_archive.name,                # used for matching
+        "zip_archive_path": zip_archive.as_posix(),     # provenance only
+        "zip_member": member_fullpath,                  # used for matching
+        "zip_crc32": int(crc32),                        # used for matching
+        "zip_size_bytes": int(size),                    # used for matching
     }
 
 def _signatures_match(a: dict, b: dict) -> bool:
@@ -335,7 +345,7 @@ def detect_encodings_from_archives(
         enc_final, ascii_only = _normalise_label(guess)
         if ascii_only:
             log.info(f"[detect] {leaf_key}: normalising ASCII → UTF-8 and marking ascii_only=true.")
-    
+
         # Version hints while bytes are in hand
         if is_xml:
             xr = _xml_root_version_from_bytes(raw)  # {"build": ..., "version": ...}
@@ -344,14 +354,17 @@ def detect_encodings_from_archives(
             xr = None
             ini_hdr = _ini_version_from_bytes(raw, enc_final)
 
+        detected_at = _utc_now()
+
         record = {
             "encoding": enc_final,
             "source": "zip",
-            **signature,                      # zip_archive, zip_member, zip_crc32, zip_size_bytes
+            **signature,                      # zip_archive, zip_archive_path, zip_member, zip_crc32, zip_size_bytes
             "detected_via": detected_via,
             "chardet": {"encoding": guess, "confidence": conf} if detected_via == "chardet" else {},
             "sample_bytes": len(raw),
             "detection_time_ms": int((time.perf_counter() - t_global) * 1000),  # coarse, but fine
+            "detected_at_utc": detected_at,   # ← new timestamp
             "ascii_only": ascii_only if not is_xml else False,
             # XML extras
             "xml_decl_encoding": decl if is_xml and decl else None,
