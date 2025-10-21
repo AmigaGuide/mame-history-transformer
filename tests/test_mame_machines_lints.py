@@ -2,12 +2,14 @@ import json
 import pathlib
 import warnings
 
-DOC = pathlib.Path("output/mame_machines.json")
+#DOC = pathlib.Path("output/mame_machines.json")
+
 
 # show warnings in pytest output
 warnings.filterwarnings("default")
 
-def test_display_lints_warn_only():
+def test_display_lints_warn_only(outputs_dir):
+    DOC = (outputs_dir / "mame_machines.json")
     d = json.loads(DOC.read_text(encoding="utf-8"))
 
     bad = []

@@ -1,9 +1,11 @@
 import json
 import pathlib
 
-DOC = pathlib.Path("output/mame_machines.json")
+#DOC = pathlib.Path("output/mame_machines.json")
 
-def test_counts_and_arrays_line_up():
+
+def test_counts_and_arrays_line_up(outputs_dir):
+    DOC = (outputs_dir / "mame_machines.json")
     d = json.loads(DOC.read_text(encoding="utf-8"))
 
     for mach, rec in d.items():
@@ -22,7 +24,8 @@ def test_counts_and_arrays_line_up():
             assert dr["samples"] in {"yes","no"}
             assert isinstance(dr["speaker"], int) and dr["speaker"] >= 0
 
-def test_controls_buttons_non_negative_when_present():
+def test_controls_buttons_non_negative_when_present(outputs_dir):
+    DOC = (outputs_dir / "mame_machines.json")
     d = json.loads(DOC.read_text(encoding="utf-8"))
     for mach, rec in d.items():
         for ctrl in rec.get("controls", []):

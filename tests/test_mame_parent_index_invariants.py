@@ -1,9 +1,11 @@
 import json
 import pathlib
 
-DOC = pathlib.Path("output/mame_parent_index.json")
+#DOC = pathlib.Path("output/mame_parent_index.json")
 
-def test_bidirectional_consistency():
+
+def test_bidirectional_consistency(outputs_dir):
+    DOC = (outputs_dir / "mame_parent_index.json")
     d = json.loads(DOC.read_text(encoding="utf-8"))
     parents = d["parents"]
     c2p = d["child_to_parent"]
@@ -39,7 +41,8 @@ def test_bidirectional_consistency():
         assert p in parents, f"child_to_parent refers to parent {p} not present in parents map"
         assert c in parents[p], f"{c} -> {p} missing from parents[{p}] list"
 
-def test_clone_lists_are_sorted_and_unique():
+def test_clone_lists_are_sorted_and_unique(outputs_dir):
+    DOC = (outputs_dir / "mame_parent_index.json")
     d = json.loads(DOC.read_text(encoding="utf-8"))
     parents = d["parents"]
     for p, clones in parents.items():

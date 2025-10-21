@@ -1,9 +1,11 @@
 import json
 import pathlib
 
-DOC = pathlib.Path("output/gh_ini_classifications.json")
+#DOC = pathlib.Path("output/gh_ini_classifications.json")
 
-def test_basic_invariants():
+
+def test_basic_invariants(outputs_dir):
+    DOC = (outputs_dir / "gh_ini_classifications.json")
     data = json.loads(DOC.read_text(encoding="utf-8"))
 
     assert isinstance(data, dict) and data, "expected top-level object with entries"

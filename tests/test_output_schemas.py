@@ -4,7 +4,8 @@ import pytest
 
 from mht.utils.versions import output_schema
 
-OUT = Path("output")
+#OUT = Path("output")
+
 
 CASES = [
     ("exotica_lit_wiki.json", "wiki"),
@@ -19,7 +20,8 @@ def _load(path: Path):
         return json.load(f)
 
 @pytest.mark.parametrize("fname,key", CASES)
-def test_output_schema_id_and_version(fname, key):
+def test_output_schema_id_and_version(fname, key, outputs_dir):
+    OUT = outputs_dir
     d = _load(OUT / fname)
     # Only assert if the fields are present in the file format
     want = output_schema(key)

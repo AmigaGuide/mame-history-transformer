@@ -1,9 +1,11 @@
 import json
 import pathlib
 
-DOC = pathlib.Path("output/gh_system_ports.json")
+#DOC = pathlib.Path("output/gh_system_ports.json")
 
-def test_basic_uniqueness_and_alias_hygiene():
+
+def test_basic_uniqueness_and_alias_hygiene(outputs_dir):
+    DOC = (outputs_dir / "gh_system_ports.json")
     data = json.loads(DOC.read_text(encoding="utf-8"))
 
     # gh_id must be unique across all systems
@@ -21,7 +23,8 @@ def test_basic_uniqueness_and_alias_hygiene():
     bad = [m for m, rec in data.items() if m in set(rec.get("aliases", []))]
     assert not bad, f"Systems listed as their own alias: {bad}"
 
-def test_ports_categories_and_regions():
+def test_ports_categories_and_regions(outputs_dir):
+    DOC = (outputs_dir / "gh_system_ports.json")
     data = json.loads(DOC.read_text(encoding="utf-8"))
     allowed = {"CONSOLES", "HANDHELDS", "COMPUTERS", "OTHERS"}
 

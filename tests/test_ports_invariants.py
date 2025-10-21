@@ -3,7 +3,8 @@
 import json
 from pathlib import Path
 
-RAW = Path("output/exotica_lit_raw_data.json")
+#RAW = Path("output/exotica_lit_raw_data.json")
+
 
 def _has_rows_in_categories(cat_map: dict) -> bool:
     # cat_map is a dict[str, list] like {"ARCADE": [...], "COMPUTER": [...]}
@@ -28,7 +29,8 @@ def _clones_have_rows(ports: dict) -> bool:
             return True
     return False
 
-def test_ports_shape_and_min_content():
+def test_ports_shape_and_min_content(outputs_dir):
+    RAW = (outputs_dir / "exotica_lit_raw_data.json")
     data = json.loads(RAW.read_text(encoding="utf-8"))
 
     # You only write games that have a Ports section
