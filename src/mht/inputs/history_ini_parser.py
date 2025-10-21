@@ -32,12 +32,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from collections import defaultdict
-from typing import Dict
+from typing import Dict, Any
 import time
 import datetime
 import zipfile, tempfile, os
 import shutil
 import io
+import json
+import hashlib
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
@@ -188,6 +190,49 @@ def load_ini_classifications(encodings: Dict[str, str],
 # Orchestrator (I/O + stamps) — ZIP-only
 # --------------------------------------------------------------------------------------
 
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _file_meta(p: Path) -> dict[str, Any]:
+    st = p.stat()
+    return {
+        "path": p.as_posix(),
+        "size_bytes": int(st.st_size),
+        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
+        "sha256": _sha256_file(p),
+    }
+
+def _load_encodings_cache() -> dict[str, Any]:
+    try:
+        with open(ENCODINGS_JSON, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _ini_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
+    """
+    Build a rich input block for a single INI from encodings.json.
+    `leaf` must be the canonical basename your pipeline uses.
+    """
+    rec = cache.get(leaf) or {}
+    return {
+        "kind": kind,                                   # e.g. 'ini_game'
+        "leaf": leaf,
+        "encoding": rec.get("encoding") or "utf-8",
+        "ascii_only": bool(rec.get("ascii_only")),
+        "detected_via": rec.get("detected_via"),
+        "zip_archive": rec.get("zip_archive"),
+        "zip_member": rec.get("zip_member"),
+        "zip_crc32": rec.get("zip_crc32"),
+        "zip_size_bytes": rec.get("zip_size_bytes"),
+        # Optional version/header hints if present
+        "version_hint": (rec.get("ini_header") or {}),
+    }
+
 def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     """
     ZIP-only orchestrator for the History INI stage:
@@ -231,10 +276,59 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     ok_output  = write_json(ini_classifications_path(), class_map, sort_keys=True)
 
     if ok_summary and ok_output:
-        save_stamp(stamp_path, current_stamp)
+        # ---- Build a rich stamp while preserving the freshness core from current_stamp
+        stamp_doc = dict(current_stamp)  # keep keys stage_is_fresh expects
+
+        # Inputs (three INIs) from encodings cache
+        enc_cache = _load_encodings_cache()
+        leaf_game     = ini_game_path(ver).name
+        leaf_category = ini_category_path(ver).name
+        leaf_type     = ini_type_path(ver).name
+
+        inputs_detail = [
+            _ini_input_from_cache(enc_cache, leaf_game, kind="ini_game"),
+            _ini_input_from_cache(enc_cache, leaf_category, kind="ini_category"),
+            _ini_input_from_cache(enc_cache, leaf_type, kind="ini_type"),
+        ]
+
+        # Outputs meta
+        out_summary_fp = ini_summary_path()
+        out_class_fp   = ini_classifications_path()
+        outputs = []
+        if out_summary_fp.exists():
+            smeta = _file_meta(out_summary_fp)
+            outputs.append(smeta)
+        if out_class_fp.exists():
+            ometa = _file_meta(out_class_fp)
+            # Include a light record count for convenience
+            try:
+                with open(out_class_fp, "r", encoding="utf-8") as f:
+                    m = json.load(f)
+                ometa["records"] = len(m) if isinstance(m, dict) else None
+            except Exception:
+                ometa["records"] = None
+            outputs.append(ometa)
+
+        # Stats (lift from the summary we just built)
+        stats = {}
+        try:
+            stats = summary.get("stats", {}) if isinstance(summary, dict) else {}
+        except Exception:
+            stats = {}
+
+        # Attach enrichments (use additive keys so stage_is_fresh comparisons remain stable)
+        stamp_doc["created_utc"] = now_iso
+        stamp_doc["inputs_detail"] = inputs_detail
+        stamp_doc["outputs"] = outputs
+        stamp_doc["stats"] = stats
+
+        save_stamp(stamp_path, stamp_doc)
+
         duration = time.perf_counter() - t0
-        log.info(f"INI parsing completed in {duration:.2f}s (streamed from {zip_path.name}); "
-                 f"ok_summary={ok_summary}, ok_output={ok_output}")
+        log.info(
+            f"INI parsing completed in {duration:.2f}s (streamed from {zip_path.name}); "
+            f"ok_summary={ok_summary}, ok_output={ok_output}"
+        )
         return True
 
     log.error("Failed to write one or more INI outputs; not saving stamp.")

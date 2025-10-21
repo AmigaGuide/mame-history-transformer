@@ -31,6 +31,8 @@ import time
 from collections import Counter, defaultdict
 import zipfile
 import io
+import hashlib, json, datetime
+from typing import Any
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
@@ -38,7 +40,7 @@ from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
     gh_system_ports_path,
     history_summary_path,
-    ENCODINGS_JSON,   # temp shim (from step 0)
+    ENCODINGS_JSON,   # temp shim
     stamps_dir,
     archives_dir, active_version,
 )
@@ -61,6 +63,46 @@ from mht.provenance.peek import find_history_xml_member
 __all__ = ["parse_history_entries"]
 
 log = setup_logger(log_level=LOG_LEVEL)
+
+
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _file_meta(p: Path) -> dict[str, Any]:
+    st = p.stat()
+    return {
+        "path": p.as_posix(),
+        "size_bytes": int(st.st_size),
+        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
+        "sha256": _sha256_file(p),
+    }
+
+def _load_encodings_cache() -> dict[str, Any]:
+    try:
+        with open(ENCODINGS_JSON, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _xml_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
+    rec = cache.get(leaf) or {}
+    return {
+        "kind": kind,                        # e.g. 'history_xml'
+        "leaf": leaf,                        # expected: 'history.xml'
+        "encoding": rec.get("encoding") or "utf-8",
+        "detected_via": rec.get("detected_via"),
+        "zip_archive": rec.get("zip_archive"),
+        "zip_member": rec.get("zip_member"),
+        "zip_crc32": rec.get("zip_crc32"),
+        "zip_size_bytes": rec.get("zip_size_bytes"),
+        "xml_decl_encoding": rec.get("xml_decl_encoding"),
+        "xml_bom": rec.get("xml_bom"),
+        "version_hint": rec.get("xml_root_attrs") or {},   # {'version': '2.80', ...}
+    }
 
 
 def parse_history_entries(file_path: Path, encoding: str) -> bool:
@@ -90,22 +132,35 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     - Emits warnings-only invariants via utils.validator.
     """
     start = time.perf_counter()
-    log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
 
-    # Read <history> root attributes for the summary header
-    history_version, history_date = None, None
+    # --- ZIP-aware freshness (skip if unchanged) ---
+    ver = active_version()
+    arc = archives_dir(ver)
 
-    # --- Stage stamp: skip unchanged (per-release) ---    
+    # Prefer a 'history*.zip'; else take the first .zip if present
+    history_zip = None
+    for p in sorted(arc.glob("*.zip"), key=lambda x: x.name.lower()):
+        if "history" in p.name.lower():
+            history_zip = p
+            break
+    if history_zip is None:
+        history_zip = next(iter(sorted(arc.glob("*.zip"))), None)
+
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "history.json",
         schema_id="mht.stage.history",
         tool="history_parser",
-        inputs=[file_path, ENCODINGS_JSON],
-        stamps_dir=stamps_dir(),
-    )    
+        inputs=[history_zip, ENCODINGS_JSON] if history_zip else [ENCODINGS_JSON],
+    )
+    
     if fresh:
-        log.info("History stage up-to-date (stamp matched) — skipping parse")
+        log.info("History stage up-to-date (stamp matched) — skipping rebuild")
         return True
+
+    log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
+
+    # Read <history> root attributes for the summary header
+    history_version, history_date = None, None
 
     parsing_state = {
         "platforms_found": defaultdict(lambda: {"count": 0, "systems": []}),
@@ -318,6 +373,63 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         KNOWN_PLATFORMS=KNOWN_PLATFORMS,
     )
 
-    # Success: write the stamp now both outputs are good
-    save_stamp(stamp_path, current_stamp)
+    # --- Decide success purely by outputs on disk ---
+    hs = history_summary_path()
+    gh = gh_system_ports_path()
+
+    success = hs.exists() and gh.exists()
+
+    if not success:
+        log.error("History outputs not found (expected history_parsing_summary.json and gh_system_ports.json). Stamp not saved.")
+        return False
+
+    # --- Build and save enriched stamp (inputs_detail, outputs, stats) ---
+    stamp_doc = dict(current_stamp)  # keep the freshness core intact
+
+    enc_cache = _load_encodings_cache()
+    inputs_detail = [_xml_input_from_cache(enc_cache, "history.xml", kind="history_xml")]
+
+    outputs = []
+    # summary meta
+    if hs.exists():
+        outputs.append(_file_meta(hs))
+    # gh_system_ports meta (+ record count)
+    if gh.exists():
+        gmeta = _file_meta(gh)
+        try:
+            with open(gh, "r", encoding="utf-8") as f:
+                gh_map = json.load(f)
+            gmeta["records"] = len(gh_map) if isinstance(gh_map, dict) else None
+        except Exception:
+            gmeta["records"] = None
+        outputs.append(gmeta)
+
+    # stats: lift from the summary you just wrote
+    stats = {}
+    try:
+        with open(hs, "r", encoding="utf-8") as f:
+            s = json.load(f) or {}
+        totals = s.get("totals", {}) or {}
+        systems_total  = totals.get("systems_total")
+        software_total = totals.get("software_total") or 0
+        entries_total  = (systems_total or 0) + (software_total or 0)
+        stats = {
+            "systems_total":        systems_total,
+            "software_total":       software_total,
+            "entries_total":        entries_total,
+            "systems_with_ports":   totals.get("systems_with_ports"),
+            "systems_with_aliases": totals.get("systems_with_aliases"),
+            "port_lines_parsed":    totals.get("port_lines_parsed"),
+            "ports_with_comments":  totals.get("ports_with_comments"),
+        }
+    except Exception:
+        pass
+
+    stamp_doc["created_utc"] = datetime.datetime.utcnow().isoformat() + "Z"
+    stamp_doc["inputs_detail"] = inputs_detail
+    stamp_doc["outputs"] = outputs
+    stamp_doc["stats"] = stats
+
+    save_stamp(stamp_path, stamp_doc)
+    log.info("History parsing completed; stamp saved with ZIP/encoding inputs.")
     return True

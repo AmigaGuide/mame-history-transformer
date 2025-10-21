@@ -43,6 +43,7 @@ from mht.utils.paths import (
     RUN_MANIFEST,  # still points to summaries/run_manifest.json via shim
     # add new helpers:
     incoming_dir, quarantine_dir, set_active_version, active_version, list_release_versions,
+    ENCODINGS_JSON,
 )
 from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
 from mht.provenance.peek import sniff_history_xml, sniff_mame_xml, sniff_ini_file
@@ -184,6 +185,21 @@ def _print_json(obj) -> None:
 def _ver_or_active(ver: Optional[str]) -> str:
     return active_version(ver)
 
+def _find_archive_for(ver: str, prefer_token: str) -> Path | None:
+    """
+    Find a staged ZIP in releases/<ver>/archives that contains prefer_token in its name.
+    Falls back to the first .zip if none match. Returns None if no archives exist.
+    """
+    arc = archives_dir(ver)
+    if not arc.exists():
+        return None
+    zips = sorted(arc.glob("*.zip"), key=lambda p: p.name.lower())
+    preferred = [p for p in zips if prefer_token.lower() in p.name.lower()]
+    return (preferred[0] if preferred else (zips[0] if zips else None))
+
+def _exists_list_safe(items: list[Path | None]) -> list[Path]:
+    """Filter to existing Paths only; tolerate None entries."""
+    return [p for p in items if isinstance(p, Path) and p.exists()]
 
 # --------------------------------------------------------------------------------------
 # Status (stamp freshness) per-stage for the ACTIVE release
@@ -193,7 +209,6 @@ def cmd_status(args: argparse.Namespace) -> int:
     ver = _ver_or_active(args.version)
     ensure_release_dirs(ver)
 
-    # Stage “tool keys” for version display
     tools = {
         "ini":        "ini_summary",
         "mame":       "mame_parser",
@@ -201,37 +216,34 @@ def cmd_status(args: argparse.Namespace) -> int:
         "transform":  "transformer",
     }
 
-    # Build per-stage inputs & stamp (per release)
+    # Prefer staged ZIPs (ZIP-first world); fall back to legacy extracted files if present
+    mame_zip    = _find_archive_for(ver, "mame")
+    history_zip = _find_archive_for(ver, "history")
+
+    # Build per-stage inputs exactly like the runners now do
     stage_cfg = {
         "ini": {
             "schema_id": "mht.stage.ini",
-            "inputs": [
-                ini_game_path(ver),
-                ini_category_path(ver),
-                ini_type_path(ver),
-                summaries_dir(ver) / "encodings.json",  # not strictly used; included for parity if you later move it
-            ],
+            # Runner uses [history ZIP, encodings.json]
+            "inputs": _exists_list_safe([history_zip, ENCODINGS_JSON]),
             "stamp": stamps_dir(ver) / "ini.json",
         },
         "mame": {
             "schema_id": "mht.stage.mame",
-            "inputs": [
-                mame_xml_path(ver),
-                summaries_dir(ver) / "encodings.json",
-            ],
+            # Runner should use [mame ZIP, encodings.json]; fall back to extracted mame.xml if needed
+            "inputs": _exists_list_safe([mame_zip, ENCODINGS_JSON]) or _exists_list_safe([mame_xml_path(ver), ENCODINGS_JSON]),
             "stamp": stamps_dir(ver) / "mame.json",
         },
         "history": {
             "schema_id": "mht.stage.history",
-            "inputs": [
-                history_xml_path(ver),
-                summaries_dir(ver) / "encodings.json",
-            ],
+            # Runner should use [history ZIP, encodings.json]; fall back to extracted history.xml if needed
+            "inputs": _exists_list_safe([history_zip, ENCODINGS_JSON]) or _exists_list_safe([history_xml_path(ver), ENCODINGS_JSON]),
             "stamp": stamps_dir(ver) / "history.json",
         },
         "transform": {
             "schema_id": "mht.stage.transform",
-            "inputs": [
+            # Transform still keys off JSON intermediates + optional lookups
+            "inputs": _exists_list_safe([
                 mame_machines_path(ver),
                 ini_classifications_path(ver),
                 parent_index_path(ver),
@@ -239,8 +251,8 @@ def cmd_status(args: argparse.Namespace) -> int:
                 mame_summary_path(ver),
                 history_summary_path(ver),
                 ini_summary_path(ver),
-                title_overrides_path(),  # global lookup
-            ],
+                title_overrides_path(),
+            ]),
             "stamp": stamps_dir(ver) / "transform.json",
         },
     }
@@ -249,9 +261,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"[status] active release = {ver}  (root: {release_root(ver).as_posix()})\n")
 
     for name, cfg in stage_cfg.items():
-        inputs_exist = _exists_list(cfg["inputs"])
         tv = tool_version(tools[name])
 
+        # Make a current stamp snapshot using the inputs that actually exist
+        inputs_exist = cfg["inputs"]
         current = make_stamp(cfg["schema_id"], tv, inputs=inputs_exist)
         prev = load_stamp(cfg["stamp"])
         fresh = is_fresh(current, prev)
@@ -269,7 +282,6 @@ def cmd_status(args: argparse.Namespace) -> int:
             any_stale = True
 
     return 0 if not any_stale else 1
-
 
 # --------------------------------------------------------------------------------------
 # Clean (per-release)

@@ -26,6 +26,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict
 import zipfile
+import hashlib, json, datetime
+
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, maybe_log_progress
@@ -34,8 +36,9 @@ from mht.utils.paths import (
     mame_machines_path,
     parent_index_path,
     mame_summary_path,
-    ENCODINGS_JSON,   # temp shim (from step 0)
+    ENCODINGS_JSON,   # temp shim
     stamps_dir,
+    archives_dir, active_version,    
 )
 from mht.utils.io import write_json
 from mht.utils.mame_xml import (
@@ -66,6 +69,45 @@ from mht.provenance.peek import find_mame_xml_member
 
 log = setup_logger(log_level=LOG_LEVEL)
 __all__ = ["parse_mame_xml"]
+
+def _sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _file_meta(p: Path) -> dict[str, Any]:
+    st = p.stat()
+    return {
+        "path": p.as_posix(),
+        "size_bytes": int(st.st_size),
+        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
+        "sha256": _sha256_file(p),
+    }
+
+def _load_encodings_cache() -> dict[str, Any]:
+    try:
+        with open(ENCODINGS_JSON, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _xml_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
+    rec = cache.get(leaf) or {}
+    return {
+        "kind": kind,                        # e.g. 'mame_xml'
+        "leaf": leaf,
+        "encoding": rec.get("encoding") or "utf-8",
+        "detected_via": rec.get("detected_via"),
+        "zip_archive": rec.get("zip_archive"),
+        "zip_member": rec.get("zip_member"),
+        "zip_crc32": rec.get("zip_crc32"),
+        "zip_size_bytes": rec.get("zip_size_bytes"),
+        "xml_decl_encoding": rec.get("xml_decl_encoding"),
+        "xml_bom": rec.get("xml_bom"),
+        "version_hint": rec.get("xml_root_attrs") or {},   # {'build': '...', 'version': '...'}
+    }
 
 
 def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int = 0) -> bool:
@@ -104,17 +146,27 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     # Inputs / encoding
     mame_encoding = encodings["mame.xml"]
+   
+    # Stage stamp (skip-unchanged) — per-release stamps dir        
+    ver = active_version()
+    arc = archives_dir(ver)
+    # prefer 'mame*.zip', else any .zip (assuming you still require staged archives)
+    mame_zip = None
+    for p in sorted(arc.glob("*.zip"), key=lambda x: x.name.lower()):
+        if "mame" in p.name.lower():
+            mame_zip = p
+            break
+    if mame_zip is None:
+        mame_zip = next(iter(sorted(arc.glob("*.zip"))), None)
 
-    # Stage stamp (skip-unchanged) — per-release stamps dir    
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "mame.json",
         schema_id="mht.stage.mame",
         tool="mame_parser",
-        inputs=[file_path, ENCODINGS_JSON],
-        stamps_dir=stamps_dir(),
+        inputs=[mame_zip, ENCODINGS_JSON] if mame_zip else [ENCODINGS_JSON],
     )
     if fresh:
-        log.info("MAME stage up-to-date (stamp matched) — skipping parse")
+        log.info("MAME stage up-to-date (stamp matched) — skipping rebuild")
         return True
 
     # Root attributes (if present)
@@ -480,9 +532,74 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         f"{len(parent_index['child_to_parent'])} clones)"
     )
 
-    # All good → persist the stamp
-    save_stamp(stamp_path, current_stamp)
-
     log.info(f"MAME XML parsing completed in {parse_seconds:.2f} seconds")
     log.info(f"Invalid display rows dropped: {dropped_displays_total}")
+
+    # --- Decide success purely by outputs on disk ---
+    ms = mame_summary_path()
+    mm = mame_machines_path()
+    pi = parent_index_path()  # optional
+
+    success = ms.exists() and mm.exists()
+
+    if not success:
+        log.error("MAME outputs not found (expected summary and machines JSON). Stamp not saved.")
+        return False
+
+    # --- Build and save enriched stamp (inputs_detail, outputs, stats) ---
+    stamp_doc = dict(current_stamp)  # keep the freshness core intact
+
+    enc_cache = _load_encodings_cache()
+    inputs_detail = [_xml_input_from_cache(enc_cache, "mame.xml", kind="mame_xml")]
+
+    outputs = []
+    # summary meta
+    if ms.exists():
+        outputs.append(_file_meta(ms))
+    # machines meta (+ record count)
+    if mm.exists():
+        mmeta = _file_meta(mm)
+        try:
+            with open(mm, "r", encoding="utf-8") as f:
+                recs = json.load(f)
+            mmeta["records"] = len(recs) if isinstance(recs, dict) else None
+        except Exception:
+            mmeta["records"] = None
+        outputs.append(mmeta)
+    # parent index meta (+ record count), if present
+    if pi.exists():
+        pmeta = _file_meta(pi)
+        try:
+            with open(pi, "r", encoding="utf-8") as f:
+                idx = json.load(f) or {}
+            pmeta["records"] = len(idx.get("parents", {})) if isinstance(idx, dict) else None
+        except Exception:
+            pmeta["records"] = None
+        outputs.append(pmeta)
+
+    # stats: lift from the summary you just wrote
+    stats = {}
+    try:
+        with open(ms, "r", encoding="utf-8") as f:
+            s = json.load(f) or {}
+        t = s.get("totals", {}) or {}
+        stats = {
+            "total_machines":         t.get("total_machines"),
+            "total_parents":          t.get("total_parents"),
+            "total_clones":           t.get("total_clones"),
+            "total_isbios":           t.get("total_isbios"),
+            "total_isdevice":         t.get("total_isdevice"),
+            "total_ismechanical":     t.get("total_ismechanical"),
+            "total_requires_samples": t.get("total_requires_samples"),
+        }
+    except Exception:
+        pass
+
+    stamp_doc["created_utc"] = datetime.datetime.utcnow().isoformat() + "Z"
+    stamp_doc["inputs_detail"] = inputs_detail
+    stamp_doc["outputs"] = outputs
+    stamp_doc["stats"] = stats
+
+    save_stamp(stamp_path, stamp_doc)
+    log.info("MAME parsing completed; stamp saved with ZIP/encoding inputs.")
     return True
