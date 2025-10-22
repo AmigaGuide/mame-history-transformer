@@ -13,6 +13,7 @@ from mht.utils.paths import (
     ensure_release_dirs,
     release_root,
     archives_dir,
+    extracted_dir,
     active_version,
     incoming_dir as incoming_dir_path,
 )
@@ -30,21 +31,12 @@ def import_incoming_archives(
     *,
     incoming: Path | None = None,
     extract: bool = True,
+    version: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Scan data/incoming for ZIPs, validate them, decide target MAME version
-    from the internal MAME XML, then move them into releases/<ver>/archives/.
-    Optionally extracts the canonical files to releases/<ver>/extracted/.
-
-    Returns a list of action results for each file:
-      {
-        "path": "...",
-        "action": "moved" | "quarantined" | "skipped" | "error",
-        "reason": "...",
-        "version": "0280" | None,
-        "dest_archive": ".../releases/0280/archives/<file>.zip" (if moved),
-        "extracted": { "mame_xml": "...", "history_xml": "...", "inis": {...} } (if extracted),
-      }
+    from the internal MAME XML (unless a version is forced), then move them into
+    releases/<ver>/archives/. Optionally extracts canonical files.
     """
     incoming_dir = Path(incoming or (DATA_DIR / "incoming"))
     quarantine_dir = DATA_DIR / "quarantine"
@@ -57,7 +49,12 @@ def import_incoming_archives(
     for p in sorted(incoming_dir.iterdir()):
         if not (p.is_file() and p.suffix.lower() == ".zip"):
             continue
-        res = _handle_one_archive(p, quarantine_dir=quarantine_dir, extract=extract)
+        res = _handle_one_archive(
+            p,
+            quarantine_dir=quarantine_dir,
+            extract=extract,
+            forced_version=version,   # ← thread explicit version through
+        )
         results.append(res)
 
     return results
@@ -67,7 +64,13 @@ def import_incoming_archives(
 # Core per-archive workflow
 # ---------------------------
 
-def _handle_one_archive(zip_path: Path, *, quarantine_dir: Path, extract: bool) -> Dict[str, Any]:
+def _handle_one_archive(
+    zip_path: Path,
+    *,
+    quarantine_dir: Path,
+    extract: bool,
+    forced_version: Optional[str] = None,
+) -> Dict[str, Any]:
     info: Dict[str, Any] = {
         "path": zip_path.as_posix(),
         "action": "skipped",
@@ -79,45 +82,39 @@ def _handle_one_archive(zip_path: Path, *, quarantine_dir: Path, extract: bool) 
     meta = peek_path(zip_path)
     if meta.get("kind") != "zip" or meta.get("error"):
         info.update({"action": "quarantined", "reason": "not_a_zip_or_bad_zip"})
-        _safe_move(zip_path, quarantine_dir / zip_path.name)
-        info["dest_archive"] = (quarantine_dir / zip_path.name).as_posix()
+        qfinal = _safe_move(zip_path, quarantine_dir / zip_path.name)
+        info["dest_archive"] = qfinal.as_posix()
         return info
 
     mprobe = (meta.get("mame_xml_probe") or {})
     m_build = mprobe.get("mame_build")
-    version = _folder_version_from_mame_build(m_build)
 
-    # Validate: we require a usable MAME build/version to place under releases/<ver>
+    # Prefer forced version; else infer from MAME build
+    version = forced_version or _folder_version_from_mame_build(m_build)
+
     if not version:
         info.update({"action": "quarantined", "reason": "no_mame_build_or_unparsable"})
-        _safe_move(zip_path, quarantine_dir / zip_path.name)
-        info["dest_archive"] = (quarantine_dir / zip_path.name).as_posix()
+        qfinal = _safe_move(zip_path, quarantine_dir / zip_path.name)
+        info["dest_archive"] = qfinal.as_posix()
         return info
-
-    # Optional: tiny History sanity (present & shape OK) — not strictly required to place the archive
-    hprobe = (meta.get("history_xml_probe") or {})
-    # We accept archives without history.xml; if present but clearly malformed, still accept
-    # (the transform will later warn). Only quarantine for totally missing MAME.
-    # If you want stricter policy, add checks here.
 
     # Move archive under the resolved release
     ensure_release_dirs(version)
-    dest_archives = archives_dir(version) / zip_path.name
-    _safe_move(zip_path, dest_archives)
+    dest_candidate = archives_dir(version) / zip_path.name
+    final_path = _safe_move(zip_path, dest_candidate)
 
     info.update({
         "action": "moved",
         "version": version,
-        "dest_archive": dest_archives.as_posix(),
+        "dest_archive": final_path.as_posix(),
     })
 
     # Extract canonical files?
     if extract:
-        extracted = _extract_canonical_files(dest_archives, version)
+        extracted = _extract_canonical_files(final_path, version)
         info["extracted"] = extracted
 
     return info
-
 
 # ---------------------------
 # Canonical extraction
@@ -260,15 +257,15 @@ def _digits_score(name: str) -> int:
     return sum(ch.isdigit() for ch in name)
 
 
-def _safe_move(src: Path, dst: Path) -> None:
+def _safe_move(src: Path, dst: Path) -> Path:
     dst.parent.mkdir(parents=True, exist_ok=True)
-    # If file exists at destination, append a numeric suffix to avoid clobber
     final = dst
     n = 1
     while final.exists():
         final = dst.with_name(f"{dst.stem}__dup{n}{dst.suffix}")
         n += 1
     shutil.move(str(src), str(final))
+    return final
 
 # --- Incoming helpers ---------------------------------------------------------
 def list_incoming_archives(incoming_dir: Path | None = None) -> list[Path]:

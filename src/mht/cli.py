@@ -400,13 +400,43 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         return 2
 
     ver = _ver_or_active(args.version)
-    incoming = Path(args.incoming) if args.incoming else (DATA_DIR / "incoming")
     ensure_release_dirs(ver)
 
-    res = import_incoming_archives(incoming=incoming, extract=(not args.no_extract), version=ver)
-    _print_json(res)
-    return 0 if res.get("ok") else 1
+    incoming = Path(args.incoming) if args.incoming else (DATA_DIR / "incoming")
 
+    results = import_incoming_archives(
+        incoming=incoming,
+        extract=(not args.no_extract),
+        version=ver,
+    )
+
+    if not results:
+        print(f"(nothing found in {incoming.as_posix()})")
+        return 0
+
+    moved = quarantined = skipped = errors = 0
+    for r in results:
+        action  = (r.get("action") or "unknown")
+        reason  = r.get("reason") or ""
+        name    = Path(r.get("path") or "(unknown)").name
+        version = r.get("version") or ver
+        if action == "moved":
+            moved += 1
+            dest = r.get("dest_archive") or "(?)"
+            print(f"  ✔ {name}  →  {dest}  (ver {version})")
+        elif action == "quarantined":
+            quarantined += 1
+            dest = r.get("dest_archive") or "(quarantine)"
+            print(f"  ⚠ {name}  →  QUARANTINE  ({reason or 'unknown reason'})  [{dest}]")
+        elif action == "skipped":
+            skipped += 1
+            print(f"  · {name}  skipped{f' ({reason})' if reason else ''}")
+        else:
+            errors += 1
+            print(f"  ✖ {name}  error{f' ({reason})' if reason else ''}")
+
+    print(f"\nSummary: moved={moved} quarantined={quarantined} skipped={skipped} errors={errors}")
+    return 0 if (errors == 0 and quarantined == 0) else 1
 
 # --------------------------------------------------------------------------------------
 # rebuild releases_index.json
