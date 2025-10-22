@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from argparse import RawTextHelpFormatter
 import json
 from pathlib import Path
 from typing import Iterable, Optional
@@ -12,7 +13,6 @@ from mht.utils.paths import (
     # repo/data roots
     DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
     # active version & dirs
-    active_version,
     ensure_release_dirs,
     release_root,
     archives_dir,
@@ -42,7 +42,7 @@ from mht.utils.paths import (
     # shims (legacy)
     RUN_MANIFEST,  # still points to summaries/run_manifest.json via shim
     # add new helpers:
-    incoming_dir, quarantine_dir, set_active_version, active_version, list_release_versions,
+    incoming_dir, quarantine_dir, set_active_version, active_version, list_release_versions, encodings_cache_path,
     ENCODINGS_JSON,
 )
 from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
@@ -135,11 +135,6 @@ def cmd_incoming_adopt(args: argparse.Namespace) -> int:
 # Incoming handlers
 # --------------------------------------------------------------------------------------
 
-def cmd_releases_index(args: argparse.Namespace) -> int:
-    entries = rebuild_releases_index()
-    print(f"Indexed {len(entries)} release(s). See data/releases_index.json")
-    return 0
-
 def cmd_releases_list(args: argparse.Namespace) -> int:
     current = None
     try:
@@ -201,6 +196,18 @@ def _exists_list_safe(items: list[Path | None]) -> list[Path]:
     """Filter to existing Paths only; tolerate None entries."""
     return [p for p in items if isinstance(p, Path) and p.exists()]
 
+def _ver_or_active(ver: Optional[str]) -> str:
+    """Return <ver> if provided, else the currently active release key (e.g. '0281')."""
+    return ver or active_version()
+
+def _read_json_safe(p: Path) -> Optional[dict]:
+    try:
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+    
 # --------------------------------------------------------------------------------------
 # Status (stamp freshness) per-stage for the ACTIVE release
 # --------------------------------------------------------------------------------------
@@ -221,28 +228,26 @@ def cmd_status(args: argparse.Namespace) -> int:
     history_zip = _find_archive_for(ver, "history")
 
     # Build per-stage inputs exactly like the runners now do
+    enc_cache = encodings_cache_path(ver)
+
     stage_cfg = {
         "ini": {
             "schema_id": "mht.stage.ini",
-            # Runner uses [history ZIP, encodings.json]
-            "inputs": _exists_list_safe([history_zip, ENCODINGS_JSON]),
+            "inputs": _exists_list_safe([history_zip, enc_cache]),
             "stamp": stamps_dir(ver) / "ini.json",
         },
         "mame": {
             "schema_id": "mht.stage.mame",
-            # Runner should use [mame ZIP, encodings.json]; fall back to extracted mame.xml if needed
-            "inputs": _exists_list_safe([mame_zip, ENCODINGS_JSON]) or _exists_list_safe([mame_xml_path(ver), ENCODINGS_JSON]),
+            "inputs": _exists_list_safe([mame_zip, enc_cache]) or _exists_list_safe([mame_xml_path(ver), enc_cache]),
             "stamp": stamps_dir(ver) / "mame.json",
         },
         "history": {
             "schema_id": "mht.stage.history",
-            # Runner should use [history ZIP, encodings.json]; fall back to extracted history.xml if needed
-            "inputs": _exists_list_safe([history_zip, ENCODINGS_JSON]) or _exists_list_safe([history_xml_path(ver), ENCODINGS_JSON]),
+            "inputs": _exists_list_safe([history_zip, enc_cache]) or _exists_list_safe([history_xml_path(ver), enc_cache]),
             "stamp": stamps_dir(ver) / "history.json",
         },
         "transform": {
             "schema_id": "mht.stage.transform",
-            # Transform still keys off JSON intermediates + optional lookups
             "inputs": _exists_list_safe([
                 mame_machines_path(ver),
                 ini_classifications_path(ver),
@@ -407,14 +412,188 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 # rebuild releases_index.json
 # --------------------------------------------------------------------------------------
 
+def cmd_releases_root(args: argparse.Namespace) -> int:
+    # print the subparser help if no subcmd is given
+    print(args._releases_parser.format_help())
+    return 2
+
 def cmd_releases_index(_: argparse.Namespace) -> int:
-    if refresh_releases_index is None:
-        print("The 'releases-index' command requires mht.provenance.releases_index.refresh_releases_index.")
-        return 2
-    doc = refresh_releases_index()
-    _print_json(doc)
+    entries = rebuild_releases_index()
+    print(f"Indexed {len(entries)} release(s). See data/releases_index.json")
     return 0
 
+
+def cmd_releases_info(args: argparse.Namespace) -> int:
+    ver = _ver_or_active(args.version)
+    root = release_root(ver)
+
+    paths = {
+        "archives":  archives_dir(ver),
+        "summaries": summaries_dir(ver),
+        "outputs":   outputs_dir(ver),
+        "stamps":    stamps_dir(ver),
+        "encodings": encodings_cache_path(ver),
+        "manifest":  root / "manifest.json",
+    }
+    print(f"Release: {ver}  Current: {'yes' if ver == active_version() else 'no'}")
+    print("Paths:")
+    for k, p in paths.items():
+        sfx = ""
+        if isinstance(p, Path) and p.exists():
+            try:
+                if p.is_file():
+                    sfx = f"  [{p.stat().st_size} bytes]"
+            except Exception:
+                pass
+            print(f"  {k:9}: {p.as_posix()}{sfx}")
+        else:
+            print(f"  {k:9}: {p.as_posix() if isinstance(p, Path) else str(p)}  (missing)")
+
+    # Try to show quick stats from summaries/outputs if present
+    mame_sum = _read_json_safe(mame_summary_path(ver)) or {}
+    hist_sum = _read_json_safe(history_summary_path(ver)) or {}
+    ini_sum  = _read_json_safe(ini_summary_path(ver)) or {}
+    tr_sum   = _read_json_safe(transform_summary_path(ver)) or {}
+    wiki     = _read_json_safe(exotica_wiki_path(ver)) or {}
+    pages    = _read_json_safe(exotica_pages_path(ver)) or {}
+
+    print("\nStages (presence):")
+    stage_presence = {
+        "history_ini": bool(ini_sum),
+        "mame_parse":  bool(mame_sum),
+        "history_xml": bool(hist_sum),
+        "transform":   bool(tr_sum),
+    }
+    for k, ok in stage_presence.items():
+        print(f"  {k:12} {'✓' if ok else '–'}")
+
+    def _get(d, *keys, default=None):
+        cur = d
+        for k in keys:
+            if not isinstance(cur, dict):
+                return default
+            cur = cur.get(k)
+        return cur if cur is not None else default
+
+    print("\nQuick stats:")
+    total_machines = _get(mame_sum, "totals", "total_machines")
+    total_parents  = _get(mame_sum, "totals", "total_parents")
+    gh_entries     = (_get(hist_sum, "totals", "systems_total", default=0) or 0) + \
+                     (_get(hist_sum, "totals", "software_total", default=0) or 0)
+    wiki_pages     = len((_get(wiki, "games", default={}) or {}))
+    redirects_cnt  = len((_get(pages, "redirects", default=[]) or []))
+
+    print(f"  mame_machines: {total_machines}   parents: {total_parents}")
+    print(f"  gh_entries   : {gh_entries}")
+    print(f"  wiki pages   : {wiki_pages}   redirects: {redirects_cnt}")
+
+    # Encodings cache sha (if manifest has it)
+    manifest = _read_json_safe(paths["manifest"]) or {}
+    enc = manifest.get("encoding_cache") or {}
+    if enc:
+        print(f"\nEncodings cache: {enc.get('path')}  sha256={enc.get('sha256')}")
+
+    return 0
+
+def cmd_releases_prune(args: argparse.Namespace) -> int:
+    keep = max(1, int(args.keep or 2))
+    protect_current = not args.no_protect_current
+
+    versions = list_release_versions() or []
+    if not versions:
+        print("(no releases found)")
+        return 0
+
+    # Sort descending (newest first) assuming your keys are comparable strings '0281' > '0280'
+    versions = sorted(versions, reverse=True)
+
+    current = None
+    try:
+        current = active_version()
+    except Exception:
+        pass
+
+    to_keep = set(versions[:keep])
+    to_remove = [v for v in versions[keep:] if not (protect_current and current and v == current)]
+
+    if not to_remove:
+        print(f"Nothing to prune. Keeping: {', '.join(sorted(to_keep))}")
+        return 0
+
+    print("Prune plan:")
+    for v in to_remove:
+        root = release_root(v)
+        size = 0
+        for p in root.rglob("*"):
+            try:
+                if p.is_file():
+                    size += p.stat().st_size
+            except Exception:
+                pass
+        print(f"  remove {root.as_posix()}  (~{size} bytes)")
+
+    if args.dry_run:
+        print("\nDry-run: nothing deleted.")
+        return 0
+
+    if not args.yes:
+        resp = input("\nProceed with deletion? [y/N] ").strip().lower()
+        if resp not in {"y", "yes"}:
+            print("Aborted.")
+            return 1
+
+    import shutil
+    failed = 0
+    for v in to_remove:
+        try:
+            shutil.rmtree(release_root(v), ignore_errors=False)
+            print(f"Removed: {release_root(v).as_posix()}")
+        except Exception as e:
+            failed += 1
+            print(f"Failed to remove {release_root(v)}: {e}")
+
+    # Rebuild index if available
+    try:
+        rebuild_releases_index()
+    except Exception:
+        pass
+
+    return 1 if failed else 0
+
+def cmd_releases_gc(args: argparse.Namespace) -> int:
+    base = DATA_DIR / "releases"
+    if not base.exists():
+        print("(no releases dir)")
+        return 0
+
+    empties = []
+    for d in sorted(base.rglob("*"), key=lambda p: len(p.as_posix().split("/")), reverse=True):
+        try:
+            if d.is_dir() and not any(d.iterdir()):
+                empties.append(d)
+        except Exception:
+            pass
+
+    if not empties:
+        print("No empty directories to remove.")
+        return 0
+
+    print("Empty directories:")
+    for d in empties:
+        print("  ", d.as_posix())
+
+    if args.dry_run:
+        print("\nDry-run: nothing deleted.")
+        return 0
+
+    for d in empties:
+        try:
+            d.rmdir()
+        except Exception as e:
+            print(f"Failed to remove {d}: {e}")
+
+    print(f"Removed {len(empties)} empty directorie(s).")
+    return 0
 
 # --------------------------------------------------------------------------------------
 # Argparse
@@ -485,6 +664,9 @@ def main() -> None:
     s_rel = sub.add_parser("releases", help="Inspect and manage releases")
     s_rel_sub = s_rel.add_subparsers(dest="subcmd", required=True)
 
+    # stash the parser so the handler can print help
+    s_rel.set_defaults(func=cmd_releases_root, _releases_parser=s_rel)
+
     s_rel_idx = s_rel_sub.add_parser("index", help="Rebuild data/releases_index.json")
     s_rel_idx.set_defaults(func=cmd_releases_index)
 
@@ -494,17 +676,36 @@ def main() -> None:
     s_rel_set = s_rel_sub.add_parser("set", help="Set active version (writes data/current_version.txt)")
     s_rel_set.add_argument("version", help="Release version, e.g. 0280")
     s_rel_set.set_defaults(func=cmd_releases_set)
+               
+    # releases info
+    s_rel_info = s_rel_sub.add_parser("info", help="Show details for a release (default: active)")
+    s_rel_info.add_argument("--version", "-v", help="Release key, e.g. 0281 (default: active)")
+    s_rel_info.set_defaults(func=cmd_releases_info)
 
+    s_rel_info.epilog = """Examples:
+      mht releases info           # Show info for the active release
+      mht releases info -v 0280   # Show info for release 0280
+    """
+    
+    # releases prune
+    s_rel_prune = s_rel_sub.add_parser("prune", help="Delete older releases (keep newest N)")
+    s_rel_prune.add_argument("--keep", type=int, default=2, help="Number of newest releases to keep (default: 2)")
+    s_rel_prune.add_argument("--no-protect-current", action="store_true", help="Allow pruning the current release")
+    s_rel_prune.add_argument("--dry-run", action="store_true", help="Show what would be deleted without deleting")
+    s_rel_prune.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+    s_rel_prune.set_defaults(func=cmd_releases_prune)
+
+    # releases gc
+    s_rel_gc = s_rel_sub.add_parser("gc", help="Remove empty directories under data/releases")
+    s_rel_gc.add_argument("--dry-run", action="store_true", help="Show what would be removed without deleting")
+    s_rel_gc.set_defaults(func=cmd_releases_gc)
+    
     # ingest
     s_ingest = sub.add_parser("ingest", help="Import archives from data/incoming/ into releases/<ver>/archives and (optionally) extract")
     s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
     s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
     s_ingest.add_argument("--no-extract", action="store_true", help="Do not extract after moving")
     s_ingest.set_defaults(func=cmd_ingest)
-
-    # releases-index
-    s_idx = sub.add_parser("releases-index", help="Rebuild data/releases_index.json")
-    s_idx.set_defaults(func=cmd_releases_index)
 
     args = p.parse_args()
     raise SystemExit(args.func(args))

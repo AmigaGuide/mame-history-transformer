@@ -970,6 +970,13 @@ def main() -> None:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     log.info(f"Wrote {mp.as_posix()}")
 
+    try:
+        from mht.provenance.releases_index import rebuild_releases_index
+        rebuild_releases_index()
+    except Exception as ex:
+        print(f"Error rebuilding releases index: {ex}")
+        raise  # Optionally raise the exception to stop the pipeline
+
 
 if __name__ == "__main__":
     main()
