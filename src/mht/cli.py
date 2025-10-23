@@ -625,6 +625,63 @@ def cmd_releases_gc(args: argparse.Namespace) -> int:
     print(f"Removed {len(empties)} empty directorie(s).")
     return 0
 
+# --- fetch (providers) --------------------------------------------------------
+
+def cmd_fetch_check(args: argparse.Namespace) -> int:
+    from mht.provenance.fetch import probe_latest
+    plan = probe_latest(use_cache=(not args.no_cache))
+    if args.json:
+        print(json.dumps(plan.as_dict(), indent=2, ensure_ascii=False))
+        return 0
+    # else a few concise lines:
+    print(f"Current : {plan.current_key}")
+    print(f"Next    : {plan.next_core}  (key={plan.next_key})")
+    print(f"MAME    : {'available' if plan.mame else 'not found'}  {plan.mame.get('url','') if plan.mame else ''}")
+    print(f"GH      : {'available' if plan.gh else 'not found'}    {plan.gh.get('url','') if plan.gh else ''}")
+    print(f"Action  : {plan.action}")
+    
+    if plan.action == "wait-gh":
+        print("Note: MAME is out but GH not yet; no download per policy.")
+    return 0
+
+def cmd_fetch_download(args: argparse.Namespace) -> int:
+    from mht.provenance.fetch import probe_latest, perform_downloads
+
+    if not args.yes:
+        resp = input("Download latest MAME+GH pair if available? [y/N] ").strip().lower()
+        if resp not in {"y", "yes"}:
+            print("Aborted.")
+            return 1
+
+    plan = probe_latest(use_cache=(not args.no_cache))
+    results = perform_downloads(plan, ingest=False, overwrite=args.overwrite)
+
+    # JSON mode: print and exit early
+    if args.json:
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+        return 0
+
+    # Human-readable mode
+    dl = results.get("downloads", [])
+    sk = results.get("skipped", [])
+
+    if not args.quiet:
+        for item in dl:
+            note = item.get("note") or ("ok" if item.get("ok") else "error")
+            size = item.get("size")
+            sz = f" ({size} bytes)" if isinstance(size, int) else ""
+            print(f"  ✔ {item.get('name')} → {item.get('path')}{sz}  [{note}]")
+
+        for item in sk:
+            print(f"  • {item.get('name')}  (skipped: {item.get('reason')})")
+
+    print(f"\nSummary: downloaded={len(dl)} skipped={len(sk)}")
+
+    # Return 0 if either nothing needed downloading ("both" not required) OR all downloads succeeded
+    need_both = (plan.action == "both")
+    all_ok = all(d.get("ok", False) for d in dl)
+    return 0 if (not need_both or all_ok) else 1
+
 # --------------------------------------------------------------------------------------
 # Argparse
 # --------------------------------------------------------------------------------------
@@ -736,6 +793,23 @@ def main() -> None:
     s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
     s_ingest.add_argument("--no-extract", action="store_true", help="Do not extract after moving")
     s_ingest.set_defaults(func=cmd_ingest)
+
+    # fetch
+    s_fetch = sub.add_parser("fetch", help="Check and download upstream MAME/GH zips into data/incoming")
+    s_fetch_sub = s_fetch.add_subparsers(dest="subcmd", required=True)
+
+    s_fetch_check = s_fetch_sub.add_parser("check", help="Probe availability for the next monthly versions")
+    s_fetch_check.add_argument("--no-cache", action="store_true", help="Bypass providers cache")
+    s_fetch_check.set_defaults(func=cmd_fetch_check)
+    s_fetch_check.add_argument("--json", action="store_true", help="Output probe result as JSON")
+
+    s_fetch_dl = s_fetch_sub.add_parser("download", help="Download latest MAME+GH pair into data/incoming")
+    s_fetch_dl.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
+    s_fetch_dl.add_argument("--quiet", "-q", action="store_true", help="Minimal output")
+    s_fetch_dl.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    s_fetch_dl.add_argument("--no-cache", action="store_true", help="Ignore cached probe results")
+    s_fetch_dl.add_argument("--overwrite", action="store_true", help="Re-download even if files already exist")
+    s_fetch_dl.set_defaults(func=cmd_fetch_download)
 
     args = p.parse_args()
     raise SystemExit(args.func(args))

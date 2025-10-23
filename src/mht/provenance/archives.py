@@ -34,26 +34,39 @@ def import_incoming_archives(
     version: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Scan data/incoming for ZIPs, validate them, decide target MAME version
-    from the internal MAME XML (unless a version is forced), then move them into
-    releases/<ver>/archives/. Optionally extracts canonical files.
+    Scan data/incoming for ZIPs, validate them, decide target MAME release per ZIP,
+    and move them into releases/<ver>/archives/. Optionally extract canonical files.
+
+    Version resolution policy per ZIP (oldest to newest signal):
+      1) If 'version' is provided -> use that (forced).
+      2) Else try a filename hint (e.g. mame0281lx.zip -> '0281').
+      3) Else peek the ZIP for the MAME build string and derive '0281'.
+      4) Else fall back to active_version().
+
+    Notes:
+      - Each ZIP is resolved independently (mixed versions in /incoming are fine).
+      - Existing files at the destination get a __dupN suffix (no clobber).
+      - On any verification failure, the ZIP is quarantined.
     """
     incoming_dir = Path(incoming or (DATA_DIR / "incoming"))
     quarantine_dir = DATA_DIR / "quarantine"
     results: List[Dict[str, Any]] = []
 
     if not incoming_dir.exists():
-        log.info("No incoming dir found at %s", incoming_dir)
+        log.info("No incoming dir found at %s", incoming_dir.as_posix())
         return results
 
     for p in sorted(incoming_dir.iterdir()):
         if not (p.is_file() and p.suffix.lower() == ".zip"):
             continue
+
+        # Thread the optional 'forced' version straight through; the helper
+        # will apply the per-zip resolution policy when forced_version is None.
         res = _handle_one_archive(
             p,
             quarantine_dir=quarantine_dir,
             extract=extract,
-            forced_version=version,   # ← thread explicit version through
+            forced_version=version,
         )
         results.append(res)
 
@@ -78,43 +91,42 @@ def _handle_one_archive(
         "version": None,
     }
 
-    # Level 1–3 peek
-    meta = peek_path(zip_path)
-    if meta.get("kind") != "zip" or meta.get("error"):
-        info.update({"action": "quarantined", "reason": "not_a_zip_or_bad_zip"})
-        qfinal = _safe_move(zip_path, quarantine_dir / zip_path.name)
-        info["dest_archive"] = qfinal.as_posix()
-        return info
+    # If the caller forced a version, use that; otherwise resolve:
+    # filename hint -> peek MAME build -> active_version()
+    target_version = forced_version
+    if not target_version:
+        # 1) filename hint (e.g., mame0281..., history281a.zip)
+        hint = derive_mame_version_hint_from_filename(zip_path.name)
+        if hint:
+            target_version = hint
+        else:
+            # 2) peek ZIP (mame build to folder key)
+            meta = peek_path(zip_path)
+            if meta.get("kind") != "zip" or meta.get("error"):
+                info.update({"action": "quarantined", "reason": "not_a_zip_or_bad_zip"})
+                _safe_move(zip_path, (quarantine_dir / zip_path.name))
+                info["dest_archive"] = (quarantine_dir / zip_path.name).as_posix()
+                return info
+            m_build = (meta.get("mame_xml_probe") or {}).get("mame_build")
+            target_version = _folder_version_from_mame_build(m_build) or active_version()
 
-    mprobe = (meta.get("mame_xml_probe") or {})
-    m_build = mprobe.get("mame_build")
-
-    # Prefer forced version; else infer from MAME build
-    version = forced_version or _folder_version_from_mame_build(m_build)
-
-    if not version:
-        info.update({"action": "quarantined", "reason": "no_mame_build_or_unparsable"})
-        qfinal = _safe_move(zip_path, quarantine_dir / zip_path.name)
-        info["dest_archive"] = qfinal.as_posix()
-        return info
-
-    # Move archive under the resolved release
-    ensure_release_dirs(version)
-    dest_candidate = archives_dir(version) / zip_path.name
-    final_path = _safe_move(zip_path, dest_candidate)
+    # Now stage into releases/<target_version>/archives and (optionally) extract…
+    ensure_release_dirs(target_version)
+    dest_archives = archives_dir(target_version) / zip_path.name
+    _safe_move(zip_path, dest_archives)
 
     info.update({
         "action": "moved",
-        "version": version,
-        "dest_archive": final_path.as_posix(),
+        "version": target_version,
+        "dest_archive": dest_archives.as_posix(),
     })
 
-    # Extract canonical files?
     if extract:
-        extracted = _extract_canonical_files(final_path, version)
+        extracted = _extract_canonical_files(dest_archives, target_version)
         info["extracted"] = extracted
 
     return info
+
 
 # ---------------------------
 # Canonical extraction
@@ -314,6 +326,21 @@ def verify_and_stage_zip(zip_path: Path, version: str | None = None, quarantine_
             pass
         return None
 
+
+_FILENAME_VER_RX = re.compile(r"(?:mame0*|history0*)(\d{2,4})", re.IGNORECASE)
+
+def _version_key_from_filename(name: str) -> str | None:
+    """
+    Extract a 3–4 digit version key from common names:
+      - mame0281lx.zip -> 0281
+      - history281.zip / history281a.zip -> 0281
+    Returns None if not recognised.
+    """
+    m = _FILENAME_VER_RX.search(name or "")
+    if not m:
+        return None
+    digits = m.group(1)  # '281' or '0281'
+    return digits.zfill(4)
 
 
 # Export the names the CLI imports
