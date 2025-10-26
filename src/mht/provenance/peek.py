@@ -449,33 +449,39 @@ def sniff_ini_file(path: _Path, *, encoding: str | None = None, header_lines: in
 
 def derive_mame_version_hint_from_filename(name: str | Path) -> str | None:
     """
-    Best-effort MAME version hint from a filename like:
-      - mame0280lx.zip / mame0280.xml     -> '0280'
-      - mame0263.zip                       -> '0263'
-      - mame-0.279-win.zip                 -> '0279'
-      - mame281.zip                        -> '0281' (leading 0 added)
+    Best-effort release-key hint from a filename (works for MAME and GH):
+      - mame0281lx.zip / mame281...       -> '0281'
+      - mame-0.279-win.zip                -> '0279'
+      - history281.zip / history281a.zip  -> '0281'
     Returns None if no obvious hint is found.
     """
     s = Path(name).name.lower()
 
-    # Forms like mame0280*, mame263, mame-0281, mame_0280, etc.
+    # --- MAME forms ---
+    # mame0281..., mame281..., mame-0281, mame_0281
     m = re.search(r"mame[-_]?0?(\d{3,4})(?!\d)", s)
     if m:
         g = m.group(1)
         return g.zfill(4) if g else None
 
-    # Decimal forms like 0.280 / 0.263 (ensure not part of a larger number)
+    # Decimal forms like 0.280 / 0.263
     m2 = re.search(r"(?<!\d)0\.(\d{3})(?!\d)", s)
     if m2:
         return f"0{m2.group(1)}"
 
-    # Fallback: 1.234 -> 1234 (rare, but keep just in case)
+    # Fallback: 1.234 -> 1234
     m3 = re.search(r"(?<!\d)(\d)\.(\d{3})(?!\d)", s)
     if m3:
         return f"{m3.group(1)}{m3.group(2)}".zfill(4)
 
-    return None
+    # --- GH History forms ---
+    # history281.zip, history281a.zip, history-281.zip (accept 2–3 digits just in case)
+    h = re.search(r"history[-_]?(\d{2,3})([a-z])?(?:\.zip)?$", s)
+    if h:
+        core = h.group(1)
+        return core.zfill(4)
 
+    return None
 
 def find_mame_xml_member(zf: ZipFile) -> str | None:
     """

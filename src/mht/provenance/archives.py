@@ -30,7 +30,7 @@ log = setup_logger()
 def import_incoming_archives(
     *,
     incoming: Path | None = None,
-    extract: bool = True,
+    extract: bool = False,
     version: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """

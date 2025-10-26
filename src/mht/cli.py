@@ -69,7 +69,7 @@ def cmd_incoming_verify(args: argparse.Namespace) -> int:
         name = zp.name
         if dest is not None:
             # dest is release_root(<ver>), file was copied to archives/<name>
-            print(f"  OK:   {name}  → {dest / 'archives' / name}")
+            print(f"  OK:   {name}  -> {dest / 'archives' / name}")
         else:
             any_fail = True
             print(f"  FAIL: {name} (moved to quarantine)")
@@ -99,10 +99,10 @@ def cmd_incoming_import(args: argparse.Namespace) -> int:
         msg = r.get("message") or ""
         if status == "ok":
             where = r.get("release_root")
-            print(f"  ✔ {name}  →  {where}  {f'({msg})' if msg else ''}")
+            print(f"  [OK]   {name}  ->  {where}  {f'({msg})' if msg else ''}")
         else:
             failures += 1
-            print(f"  ✖ {name}  —  {msg}")
+            print(f"  [FAIL] {name}  -   {msg}")
 
     return 1 if failures else (0 if ok else 1)
 
@@ -176,9 +176,6 @@ def _iter_json_children(dir_path: Path) -> list[Path]:
 
 def _print_json(obj) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False))
-
-def _ver_or_active(ver: Optional[str]) -> str:
-    return active_version(ver)
 
 def _find_archive_for(ver: str, prefer_token: str) -> Path | None:
     """
@@ -399,15 +396,14 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         print("The 'ingest' command requires mht.provenance.archives.import_incoming_archives to be present.")
         return 2
 
-    ver = _ver_or_active(args.version)
-    ensure_release_dirs(ver)
-
+    # Only use the user-specified version; otherwise leave it None so each file can self-resolve.
+    forced_ver = args.version  # None if not provided
     incoming = Path(args.incoming) if args.incoming else (DATA_DIR / "incoming")
 
     results = import_incoming_archives(
         incoming=incoming,
-        extract=(not args.no_extract),
-        version=ver,
+        extract=False,        # ZIP-only ingestion
+        version=forced_ver,   # None == auto per file
     )
 
     if not results:
@@ -419,21 +415,22 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         action  = (r.get("action") or "unknown")
         reason  = r.get("reason") or ""
         name    = Path(r.get("path") or "(unknown)").name
-        version = r.get("version") or ver
+        rver    = r.get("version") or (forced_ver or "(auto)")
+
         if action == "moved":
             moved += 1
             dest = r.get("dest_archive") or "(?)"
-            print(f"  ✔ {name}  →  {dest}  (ver {version})")
+            print(f"  [OK]   {name}  ->  {dest}  (ver {rver})")
         elif action == "quarantined":
             quarantined += 1
             dest = r.get("dest_archive") or "(quarantine)"
-            print(f"  ⚠ {name}  →  QUARANTINE  ({reason or 'unknown reason'})  [{dest}]")
+            print(f"  [QUARANTINE] {name}  ({reason or 'unknown reason'})  [{dest}]")
         elif action == "skipped":
             skipped += 1
-            print(f"  · {name}  skipped{f' ({reason})' if reason else ''}")
+            print(f"  [SKIP] {name}{f' ({reason})' if reason else ''}")
         else:
             errors += 1
-            print(f"  ✖ {name}  error{f' ({reason})' if reason else ''}")
+            print(f"  [ERROR] {name}{f' ({reason})' if reason else ''}")
 
     print(f"\nSummary: moved={moved} quarantined={quarantined} skipped={skipped} errors={errors}")
     return 0 if (errors == 0 and quarantined == 0) else 1
@@ -495,7 +492,7 @@ def cmd_releases_info(args: argparse.Namespace) -> int:
         "transform":   bool(tr_sum),
     }
     for k, ok in stage_presence.items():
-        print(f"  {k:12} {'✓' if ok else '–'}")
+        print(f"  {k:12} {'OK' if ok else '--'}")
 
     def _get(d, *keys, default=None):
         cur = d
@@ -670,10 +667,10 @@ def cmd_fetch_download(args: argparse.Namespace) -> int:
             note = item.get("note") or ("ok" if item.get("ok") else "error")
             size = item.get("size")
             sz = f" ({size} bytes)" if isinstance(size, int) else ""
-            print(f"  ✔ {item.get('name')} → {item.get('path')}{sz}  [{note}]")
+            print(f"  [OK]   {item.get('name')} -> {item.get('path')}{sz}  [{note}]")
 
         for item in sk:
-            print(f"  • {item.get('name')}  (skipped: {item.get('reason')})")
+            print(f"  [SKIP] {item.get('name')}  (reason: {item.get('reason')})")
 
     print(f"\nSummary: downloaded={len(dl)} skipped={len(sk)}")
 
@@ -788,10 +785,13 @@ def main() -> None:
     s_rel_gc.set_defaults(func=cmd_releases_gc)
     
     # ingest
-    s_ingest = sub.add_parser("ingest", help="Import archives from data/incoming/ into releases/<ver>/archives and (optionally) extract")
+    s_ingest = sub.add_parser(
+        "ingest",
+        help="Import archives from data/incoming/ into releases/<ver>/archives (ZIP-only by default)",
+    )
     s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
     s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
-    s_ingest.add_argument("--no-extract", action="store_true", help="Do not extract after moving")
+    #s_ingest.add_argument("--extract", action="store_true", help="Also extract canonical files into releases/<ver>/extracted/")
     s_ingest.set_defaults(func=cmd_ingest)
 
     # fetch
