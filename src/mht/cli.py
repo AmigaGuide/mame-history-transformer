@@ -612,17 +612,43 @@ def cmd_releases_gc(args: argparse.Namespace) -> int:
 def cmd_fetch_check(args: argparse.Namespace) -> int:
     from mht.provenance.fetch import probe_latest
     plan = probe_latest(use_cache=(not args.no_cache))
+
     if args.json:
-        print(json.dumps(plan.as_dict(), indent=2, ensure_ascii=False))
+        # Works across both old/new FetchPlan variants
+        payload = plan.as_dict() if hasattr(plan, "as_dict") else {
+            "current_core": getattr(plan, "current_core", None),
+            "next_core": getattr(plan, "next_core", None),
+            "next_key": getattr(plan, "next_key", None),
+            "mame": getattr(plan, "mame", None),
+            "gh": getattr(plan, "gh", None),
+            "action": getattr(plan, "action", None),
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0
-    # else a few concise lines:
-    print(f"Current : {plan.current_key}")
-    print(f"Next    : {plan.next_core}  (key={plan.next_key})")
-    print(f"MAME    : {'available' if plan.mame else 'not found'}  {plan.mame.get('url','') if plan.mame else ''}")
-    print(f"GH      : {'available' if plan.gh else 'not found'}    {plan.gh.get('url','') if plan.gh else ''}")
-    print(f"Action  : {plan.action}")
-    
-    if plan.action == "wait-gh":
+
+    # Derive keys robustly across shapes
+    current_core = getattr(plan, "current_core", None)
+    current_key  = getattr(plan, "current_key", None)
+    if not current_key and current_core is not None:
+        s = str(current_core)
+        current_key = s.zfill(4) if s.isdigit() else s  # e.g. "280" -> "0280"
+
+    next_core = getattr(plan, "next_core", None)
+    next_key  = getattr(plan, "next_key", None)
+    if not next_key and next_core is not None:
+        s = str(next_core)
+        next_key = s.zfill(4) if s.isdigit() else s
+
+    # Human-readable lines
+    print(f"Current : {current_key or '(unknown)'}")
+    print(f"Next    : {next_core or '(unknown)'}  (key={next_key or '(unknown)'})")
+    mame = getattr(plan, "mame", None) or {}
+    gh   = getattr(plan, "gh", None) or {}
+    print(f"MAME    : {'available' if mame else 'not found'}  {mame.get('url', '')}")
+    print(f"GH      : {'available' if gh else 'not found'}    {gh.get('url', '')}")
+    print(f"Action  : {getattr(plan, 'action', '(unknown)')}")
+
+    if getattr(plan, "action", None) == "wait-gh":
         print("Note: MAME is out but GH not yet; no download per policy.")
     return 0
 
