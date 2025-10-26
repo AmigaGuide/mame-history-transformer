@@ -116,10 +116,6 @@ def cmd_incoming_adopt(args: argparse.Namespace) -> int:
     print("Adoption failed (file moved to quarantine).")
     return 2
 
-# --------------------------------------------------------------------------------------
-# Incoming handlers
-# --------------------------------------------------------------------------------------
-
 def cmd_releases_list(args: argparse.Namespace) -> int:
     current = None
     try:
@@ -146,6 +142,17 @@ def cmd_releases_set(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------------------
+
+def _coerce_prev_input_paths(prev) -> list[Path]:
+    """Accept list[str] or list[dict{path: str,...}] from a stamp and return existing Paths."""
+    paths: list[Path] = []
+    if isinstance(prev, dict) and isinstance(prev.get("inputs"), list):
+        for item in prev["inputs"]:
+            if isinstance(item, str):
+                paths.append(Path(item))
+            elif isinstance(item, dict) and isinstance(item.get("path"), str):
+                paths.append(Path(item["path"]))
+    return [p for p in paths if p.exists()]
 
 def _exists_list(paths: Iterable[Path]) -> list[Path]:
     return [p for p in paths if p.exists()]
@@ -248,12 +255,14 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"[status] active release = {ver}  (root: {release_root(ver).as_posix()})\n")
 
     for name, cfg in stage_cfg.items():
-        tv = tool_version(tools[name])
-
-        # Make a current stamp snapshot using the inputs that actually exist
-        inputs_exist = cfg["inputs"]
-        current = make_stamp(cfg["schema_id"], tv, inputs=inputs_exist)
+        tv = tool_version(tools[name])                
+        
         prev = load_stamp(cfg["stamp"])
+        inputs_exist = _coerce_prev_input_paths(prev)
+        if not inputs_exist:
+            inputs_exist = cfg["inputs"]  # fall back to discovery only if no stamp inputs
+
+        current = make_stamp(cfg["schema_id"], tv, inputs=inputs_exist)
         fresh = is_fresh(current, prev)
 
         note = []
@@ -347,6 +356,11 @@ def cmd_clean(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------------------
 
 def cmd_validate(args: argparse.Namespace) -> int:
+    try:
+        ver = active_version()
+        print(f"[validate] active release = {ver}")
+    except Exception:
+        pass
     names = args.only or None
     errors = validate_outputs(names)
     if errors:
@@ -356,7 +370,6 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 1
     print("Validation OK")
     return 0
-
 
 # --------------------------------------------------------------------------------------
 # Run (delegate to your existing main.py)

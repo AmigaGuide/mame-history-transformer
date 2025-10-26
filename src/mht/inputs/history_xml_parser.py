@@ -40,9 +40,9 @@ from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
     gh_system_ports_path,
     history_summary_path,
-    ENCODINGS_JSON,   # temp shim
-    stamps_dir,
-    archives_dir, active_version,
+    history_xml_path,
+    #ENCODINGS_JSON,   # temp shim
+    stamps_dir, archives_dir, active_version, encodings_cache_path,
 )
 from mht.utils.io import write_json
 from mht.inputs.history_constants import KNOWN_PLATFORMS
@@ -136,8 +136,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     # --- ZIP-aware freshness (skip if unchanged) ---
     ver = active_version()
     arc = archives_dir(ver)
+    enc_path = encodings_cache_path(ver)  # data/releases/<ver>/encodings.json
 
-    # Prefer a 'history*.zip'; else take the first .zip if present
+    # Prefer a 'history*.zip'; else first .zip; else fall back to extracted history.xml
     history_zip = None
     for p in sorted(arc.glob("*.zip"), key=lambda x: x.name.lower()):
         if "history" in p.name.lower():
@@ -146,13 +147,15 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     if history_zip is None:
         history_zip = next(iter(sorted(arc.glob("*.zip"))), None)
 
+    primary_input = history_zip if history_zip else history_xml_path(ver)
+
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "history.json",
         schema_id="mht.stage.history",
         tool="history_parser",
-        inputs=[history_zip, ENCODINGS_JSON] if history_zip else [ENCODINGS_JSON],
+        inputs=[primary_input, enc_path],
     )
-    
+
     if fresh:
         log.info("History stage up-to-date (stamp matched) — skipping rebuild")
         return True

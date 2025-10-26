@@ -45,9 +45,10 @@ from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    ini_game_path, ini_category_path, ini_type_path,   # INI inputs
-    ini_summary_path, ini_classifications_path,        # outputs
-    ENCODINGS_JSON, stamps_dir,                        # stamp input + per-release stamps
+    ini_game_path, ini_category_path, ini_type_path,
+    ini_summary_path, ini_classifications_path,
+    #ENCODINGS_JSON,
+    stamps_dir, encodings_cache_path,    
     archives_dir, active_version,
 )
 from mht.utils.io import write_json
@@ -243,18 +244,28 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     """
     t0 = time.perf_counter()
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
-
+        
     ver = active_version()
     zip_path = _pick_history_zip(ver)
-    log.info(f"Reading GH INIs directly from archive: {zip_path.name}")
+    if not zip_path:
+        # optional: fall back to extracted history.xml if you still support it
+        hx = history_xml_path(ver)
+        if not hx.exists():
+            log.error("No History ZIP (or extracted history.xml) found for release %s", ver)
+            return False
+        primary_input = hx
+    else:
+        primary_input = zip_path
 
-    # Stage freshness: depend on the ZIP and the global encodings cache
+    enc_path = encodings_cache_path(ver)  # data/releases/<ver>/encodings.json
+
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "ini.json",
         schema_id="mht.stage.ini",
         tool="ini_summary",
-        inputs=[zip_path, ENCODINGS_JSON],
+        inputs=[primary_input, enc_path],
     )
+
     if fresh:
         log.info("INI stage up-to-date (stamp matched) — skipping rebuild")
         return True

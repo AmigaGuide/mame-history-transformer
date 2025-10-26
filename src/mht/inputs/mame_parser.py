@@ -34,9 +34,11 @@ from mht.utils.logger import setup_logger, maybe_log_progress
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
     mame_machines_path,
+    mame_xml_path,
     parent_index_path,
     mame_summary_path,
-    ENCODINGS_JSON,   # temp shim
+    #ENCODINGS_JSON,   # temp shim
+    encodings_cache_path,
     stamps_dir,
     archives_dir, active_version,    
 )
@@ -146,11 +148,13 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
 
     # Inputs / encoding
     mame_encoding = encodings["mame.xml"]
-   
-    # Stage stamp (skip-unchanged) — per-release stamps dir        
+
+    # Per-release context
     ver = active_version()
     arc = archives_dir(ver)
-    # prefer 'mame*.zip', else any .zip (assuming you still require staged archives)
+    enc_path = encodings_cache_path(ver)   # data/releases/<ver>/encodings.json
+
+    # Prefer a staged MAME zip; fall back to extracted mame.xml if needed
     mame_zip = None
     for p in sorted(arc.glob("*.zip"), key=lambda x: x.name.lower()):
         if "mame" in p.name.lower():
@@ -159,11 +163,14 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     if mame_zip is None:
         mame_zip = next(iter(sorted(arc.glob("*.zip"))), None)
 
+    primary_input = mame_zip if mame_zip else mame_xml_path(ver)
+
+    # IMPORTANT: use the per-release encodings.json in the stamp inputs
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "mame.json",
         schema_id="mht.stage.mame",
         tool="mame_parser",
-        inputs=[mame_zip, ENCODINGS_JSON] if mame_zip else [ENCODINGS_JSON],
+        inputs=[primary_input, enc_path],
     )
     if fresh:
         log.info("MAME stage up-to-date (stamp matched) — skipping rebuild")
