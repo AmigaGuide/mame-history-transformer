@@ -46,7 +46,7 @@ from mht.utils.paths import (
     ENCODINGS_JSON,
 )
 from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
-from mht.provenance.peek import sniff_history_xml, sniff_mame_xml, sniff_ini_file
+from mht.provenance.peek import sniff_history_xml, sniff_mame_xml, sniff_ini_file, peek_path, derive_mame_version_hint_from_filename
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
 
@@ -55,56 +55,41 @@ from mht.provenance.releases_index import rebuild_releases_index
 # --------------------------------------------------------------------------------------
 
 def cmd_incoming_verify(args: argparse.Namespace) -> int:
+    """Probe ZIPs in data/incoming without moving anything."""
+    from mht.provenance.archives import _folder_version_from_mame_build  # internal helper
+
     inc = incoming_dir()
     zips = list_incoming_archives(inc)
+    print(f"Verifying archives in {inc}:")
     if not zips:
-        print(f"(no zip files in {inc})")
+        print("  (none)")
         return 0
 
-    print(f"Verifying archives in {inc}...")
-    any_fail = False
+    any_bad = False
     for zp in zips:
-        # verify_and_stage_zip returns Path | None
-        dest = verify_and_stage_zip(zp, args.version)
+        meta = peek_path(zp)
         name = zp.name
-        if dest is not None:
-            # dest is release_root(<ver>), file was copied to archives/<name>
-            print(f"  OK:   {name}  -> {dest / 'archives' / name}")
-        else:
-            any_fail = True
-            print(f"  FAIL: {name} (moved to quarantine)")
+        if meta.get("kind") != "zip" or meta.get("error"):
+            any_bad = True
+            print(f"  FAIL: {name}  — not a valid zip or unreadable")
+            continue
 
-    return 1 if any_fail else 0
+        mprobe = (meta.get("mame_xml_probe") or {})
+        m_build = mprobe.get("mame_build")
+        hinted = derive_mame_version_hint_from_filename(name)
+        resolved = hinted or _folder_version_from_mame_build(m_build)
 
+        ver_txt = resolved or "(unknown)"
+        build_txt = m_build or "(no build tag)"
+        print(f"  OK  : {name}")
+        print(f"        mame_build: {build_txt}")
+        print(f"        would stage to: releases/{ver_txt}/archives")
 
-def cmd_incoming_import(args: argparse.Namespace) -> int:
-    # Moves/copies into data/releases/<ver>/archives, extracts, and updates index
-    ok, results = import_incoming_archives(
-        target_version=args.version,
-        mode=("move" if args.move else "copy"),
-        quarantine_on_fail=True,
-        dry_run=args.dry_run,
-    )
+        hprobe = (meta.get("history_xml_probe") or {})
+        if hprobe.get("error"):
+            print(f"        note: history.xml probe had issues (not fatal for staging)")
 
-    action = "DRY-RUN import" if args.dry_run else "Import"
-    print(f"{action} results for version {args.version or '(auto)'}:")
-    if not results:
-        print("  (nothing to do)")
-        return 0 if ok else 1
-
-    failures = 0
-    for r in results:
-        name = r.get("name") or "(unknown.zip)"
-        status = r.get("status") or "unknown"
-        msg = r.get("message") or ""
-        if status == "ok":
-            where = r.get("release_root")
-            print(f"  [OK]   {name}  ->  {where}  {f'({msg})' if msg else ''}")
-        else:
-            failures += 1
-            print(f"  [FAIL] {name}  -   {msg}")
-
-    return 1 if failures else (0 if ok else 1)
+    return 1 if any_bad else 0
 
 def cmd_incoming_scan(args: argparse.Namespace) -> int:
     inc = incoming_dir()
@@ -726,23 +711,16 @@ def main() -> None:
     s_inc_scan = s_incoming_sub.add_parser("scan", help="List ZIPs in data/incoming")
     s_inc_scan.set_defaults(func=cmd_incoming_scan)
 
-    s_inc_adopt = s_incoming_sub.add_parser("adopt", help="Verify + move/copy a ZIP into a release")
+    s_inc_adopt = s_incoming_sub.add_parser("adopt", help="Stage a single ZIP into a release (move/copy).")
     s_inc_adopt.add_argument("zip", type=Path, help="Path to the ZIP in data/incoming")
     s_inc_adopt.add_argument("--version", required=True, help="Target release version, e.g. 0280")
     s_inc_adopt.add_argument("--copy", action="store_true", help="Copy instead of move")
     s_inc_adopt.set_defaults(func=cmd_incoming_adopt)
 
     # incoming verify (check all ZIPs without modifying anything)
-    s_inc_verify = s_incoming_sub.add_parser("verify", help="Verify ZIPs are valid before import")
+    s_inc_verify = s_incoming_sub.add_parser("verify", help="Show what each ZIP in data/incoming/ would resolve to - no changes.")
     s_inc_verify.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
     s_inc_verify.set_defaults(func=cmd_incoming_verify)
-
-    # incoming import (ingest all valid ZIPs; copy by default)
-    s_inc_import = s_incoming_sub.add_parser("import", help="Ingest valid ZIPs into releases/<ver>/archives and extract")
-    s_inc_import.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
-    s_inc_import.add_argument("--move", action="store_true", help="Move files instead of copying")
-    s_inc_import.add_argument("--dry-run", action="store_true", help="Show what would happen without writing")
-    s_inc_import.set_defaults(func=cmd_incoming_import)
 
     # releases
     s_rel = sub.add_parser("releases", help="Inspect and manage releases")
@@ -787,7 +765,7 @@ def main() -> None:
     # ingest
     s_ingest = sub.add_parser(
         "ingest",
-        help="Import archives from data/incoming/ into releases/<ver>/archives (ZIP-only by default)",
+        help="Bulk-stage all valid ZIPs from data/incoming/ into releases (ZIP-only).",
     )
     s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
     s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
