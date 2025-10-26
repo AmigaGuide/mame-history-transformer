@@ -17,6 +17,7 @@ from mht.utils.paths import (
     outputs_dir,
     summaries_dir,
     encodings_cache_path,
+    stamps_dir,
 )
 from mht.utils.versions import SCHEMA_IDS, SCHEMA_INFO
 
@@ -24,6 +25,41 @@ from mht.utils.versions import SCHEMA_IDS, SCHEMA_INFO
 # mame:     summaries/mame_parsing_summary.json
 # history:  summaries/history_parsing_summary.json
 # ini:      summaries/ini_parsing_summary.json
+
+def _as_data_rel(p: Path) -> str:
+    """
+    Return a 'data/…' POSIX path string for any file/dir under the project data root.
+    Falls back to as_posix() if we can't relativize (shouldn't happen in this repo).
+    """
+    try:
+        base = DATA_DIR.parent  # repo root (parent of 'data')
+        rel = os.path.relpath(p, start=base)
+        # Ensure forward slashes regardless of platform
+        s = rel.replace("\\", "/")
+        # Guard: enforce the 'data/' prefix if not present
+        if not s.startswith("data/"):
+            s = f"data/{s.lstrip('./')}"
+        return s
+    except Exception:
+        return p.as_posix().replace("\\", "/")
+
+def _normalize_posix(obj):
+    if isinstance(obj, dict):
+        return {k: _normalize_posix(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_normalize_posix(v) for v in obj]
+    if isinstance(obj, str):
+        # Convert any Windows-style backslashes to forward slashes
+        return obj.replace("\\", "/")
+    return obj
+
+def _file_meta(p: Path) -> Dict[str, Any]:
+    return {
+        "path": p.as_posix(),
+        "size_bytes": (p.stat().st_size if p.exists() and p.is_file() else None),
+        "modified_utc": _mtime_iso(p),
+    }
+
 
 def _get_sha256(path: Path) -> str:
     """Compute SHA256 of the file at 'path'."""
@@ -155,72 +191,83 @@ def _read_versions_from_summaries(ver: str) -> Dict[str, Any]:
 
 def build_release_record(ver: str) -> Dict[str, Any]:
     root = release_root(ver)
-    
-    # Calculate file sizes and timestamps
-    created_utc = _mtime_iso(min(root.glob("*"), key=lambda p: p.stat().st_mtime))  # Earliest mtime
-    updated_utc = _mtime_iso(max(root.glob("*"), key=lambda p: p.stat().st_mtime))  # Latest mtime
-    byte_size = sum(f.stat().st_size for f in root.glob("*") if f.is_file())  # Total size of the release
 
-    # Add the new 'dotted_version' and other flags
-    dotted_version = f"0.{ver[1:]}"  # e.g., '0281' -> '0.281'
+    # Compute created/updated/size robustly (ignore dirs)
+    all_files = [p for p in root.rglob("*") if p.is_file()]
+    created_utc = min((_mtime_iso(p) for p in all_files), default=None)
+    updated_utc = max((_mtime_iso(p) for p in all_files), default=None)
+    byte_size   = sum((p.stat().st_size for p in all_files), 0)
 
-    # Check if encodings.json exists and get its metadata
+    dotted_version = f"0.{ver[1:]}"  # '0281' -> '0.281'
+
     encodings = encodings_cache_path(ver)
     encodings_data = None
     if encodings.exists():
         encodings_data = {
-            "path": encodings.as_posix(),
+            "path": _as_data_rel(encodings),
             "size_bytes": encodings.stat().st_size,
             "sha256": _get_sha256(encodings),
             "modified_utc": _mtime_iso(encodings),
         }
 
-    # Now build the release record with the additional fields
-    return {
+    # Lists
+    archives_list = [
+        {"path": _as_data_rel(p), "size_bytes": p.stat().st_size}
+        for p in archives_dir(ver).glob("*.zip")
+    ]
+    outputs_list = [
+        {"path": _as_data_rel(p), "size_bytes": p.stat().st_size}
+        for p in outputs_dir(ver).glob("*.json")
+    ]
+    summaries_list = [
+        {"name": p.name, "path": _as_data_rel(p), "size_bytes": p.stat().st_size}
+        for p in summaries_dir(ver).glob("*.json")
+    ]
+
+    record = {
         "version": ver,
         "dotted_version": dotted_version,
         "created_utc": created_utc,
         "updated_utc": updated_utc,
         "byte_size": byte_size,
         "flags": {
-            "archives": bool(list(archives_dir(ver).glob("*.zip"))),
-            "summaries": bool(list(summaries_dir(ver).glob("*.json"))),
-            "outputs": bool(list(outputs_dir(ver).glob("*.json"))),
+            "archives": bool(archives_list),
+            "summaries": bool(summaries_list),
+            "outputs":  bool(outputs_list),
             "encodings": bool(encodings_data),
-            "stamps": True,  # Assuming stamps are always there if the release exists
+            "stamps": True,
         },
         "paths": {
-            "root": root.as_posix(),
-            "archives": archives_dir(ver).as_posix(),
-            "outputs": outputs_dir(ver).as_posix(),
-            "summaries": summaries_dir(ver).as_posix(),
-            "stamps": (root / ".stamps").as_posix(),
-            "encodings": encodings.as_posix() if encodings.exists() else None,
+            "root":      _as_data_rel(root),
+            "archives":  _as_data_rel(archives_dir(ver)),
+            "outputs":   _as_data_rel(outputs_dir(ver)),
+            "summaries": _as_data_rel(summaries_dir(ver)),
+            "stamps":    _as_data_rel(root / ".stamps"),
+            "encodings": _as_data_rel(encodings) if encodings.exists() else None,
         },
-        "archives": [{"path": p.as_posix(), "size_bytes": p.stat().st_size} for p in archives_dir(ver).glob("*.zip")],
+        "archives":  archives_list,
         "encodings": encodings_data,
-        "outputs": [{"path": p.as_posix(), "size_bytes": p.stat().st_size} for p in outputs_dir(ver).glob("*.json")],
-        "summaries": [{"name": p.name, "path": p.as_posix(), "size_bytes": p.stat().st_size} for p in summaries_dir(ver).glob("*.json")],
-        "versions": _read_versions_from_summaries(ver),
+        "outputs":   outputs_list,
+        "summaries": summaries_list,
+        "versions":  _read_versions_from_summaries(ver),
         "notes": {},
         "indexed_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
-    
+
+    return record
+
 def rebuild_releases_index() -> List[Dict[str, Any]]:
     rr = releases_root()
     entries: List[Dict[str, Any]] = []
     if rr.exists():
-        for child in sorted(rr.iterdir()):
+        for child in sorted(rr.iterdir(), key=lambda p: p.name):
             if child.is_dir():
-                print(f"Processing release: {child.name}")  # Debugging line
+                print(f"Processing release: {child.name}")
                 entries.append(build_release_record(child.name))
     else:
-        print(f"Release root not found at {rr.as_posix()}")  # Debugging line
-    
-    
-    
-    # Write the index after processing releases
+        print(f"Release root not found at {rr.as_posix()}")
+
     if entries:
-        print(f"Writing {len(entries)} releases to index")  # Debugging line
+        print(f"Writing {len(entries)} releases to index")
     write_json(DATA_DIR / "releases_index.json", entries, sort_keys=False)
     return entries

@@ -449,22 +449,20 @@ def sniff_ini_file(path: _Path, *, encoding: str | None = None, header_lines: in
 
 def derive_mame_version_hint_from_filename(name: str | Path) -> str | None:
     """
-    Best-effort release-key hint from a filename (works for MAME and GH):
-      - mame0281lx.zip / mame281...       -> '0281'
-      - mame-0.279-win.zip                -> '0279'
-      - history281.zip / history281a.zip  -> '0281'
+    Best-effort release key ('0281') from filenames like:
+      - mame0281lx.zip / mame-0281.zip / mame_0281.zip
+      - history281.zip / history281a.zip
+      - mame-0.281-foo.zip / history-0.281.zip
     Returns None if no obvious hint is found.
     """
     s = Path(name).name.lower()
 
-    # --- MAME forms ---
-    # mame0281..., mame281..., mame-0281, mame_0281
-    m = re.search(r"mame[-_]?0?(\d{3,4})(?!\d)", s)
+    # Prefer explicit tokens “mame” or “history” followed by 3–4 digits (optionally with one leading 0)
+    m = re.search(r"(?:mame|history)[-_]?0?(\d{3,4})(?!\d)", s)
     if m:
-        g = m.group(1)
-        return g.zfill(4) if g else None
+        return m.group(1).zfill(4)
 
-    # Decimal forms like 0.280 / 0.263
+    # Decimal forms like 0.281
     m2 = re.search(r"(?<!\d)0\.(\d{3})(?!\d)", s)
     if m2:
         return f"0{m2.group(1)}"
@@ -473,13 +471,6 @@ def derive_mame_version_hint_from_filename(name: str | Path) -> str | None:
     m3 = re.search(r"(?<!\d)(\d)\.(\d{3})(?!\d)", s)
     if m3:
         return f"{m3.group(1)}{m3.group(2)}".zfill(4)
-
-    # --- GH History forms ---
-    # history281.zip, history281a.zip, history-281.zip (accept 2–3 digits just in case)
-    h = re.search(r"history[-_]?(\d{2,3})([a-z])?(?:\.zip)?$", s)
-    if h:
-        core = h.group(1)
-        return core.zfill(4)
 
     return None
 

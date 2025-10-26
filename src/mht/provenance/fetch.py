@@ -43,8 +43,11 @@ def _bump_core(core: str) -> Tuple[str, str]:
         return ("0001", "0.001")
 
 def _core_no_dot(core: str) -> str:
-    # '0.281' -> '281'
-    return core.replace(".", "")
+    # "0.282" -> "282"; "0.280" -> "280"; already "282" -> "282"
+    c = core.strip()
+    if c.startswith("0."):
+        return c.split(".", 1)[1]
+    return c.replace(".", "")
 
 def _read_cache() -> Dict[str, object]:
     try:

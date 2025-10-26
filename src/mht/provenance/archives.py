@@ -91,28 +91,24 @@ def _handle_one_archive(
         "version": None,
     }
 
-    # If the caller forced a version, use that; otherwise resolve:
-    # filename hint -> peek MAME build -> active_version()
-    target_version = forced_version
+    # Resolve target version: forced → filename hint → peek MAME build → active
+    target_version = forced_version or derive_mame_version_hint_from_filename(zip_path.name)
     if not target_version:
-        # 1) filename hint (e.g., mame0281..., history281a.zip)
-        hint = derive_mame_version_hint_from_filename(zip_path.name)
-        if hint:
-            target_version = hint
-        else:
-            # 2) peek ZIP (mame build to folder key)
-            meta = peek_path(zip_path)
-            if meta.get("kind") != "zip" or meta.get("error"):
-                info.update({"action": "quarantined", "reason": "not_a_zip_or_bad_zip"})
-                _safe_move(zip_path, (quarantine_dir / zip_path.name))
-                info["dest_archive"] = (quarantine_dir / zip_path.name).as_posix()
-                return info
-            m_build = (meta.get("mame_xml_probe") or {}).get("mame_build")
-            target_version = _folder_version_from_mame_build(m_build) or active_version()
+        meta = peek_path(zip_path)
+        if meta.get("kind") != "zip" or meta.get("error"):
+            info.update({"action": "quarantined", "reason": "not_a_zip_or_bad_zip"})
+            _safe_move(zip_path, (quarantine_dir / zip_path.name))
+            info["dest_archive"] = (quarantine_dir / zip_path.name).as_posix()
+            return info
+        m_build = (meta.get("mame_xml_probe") or {}).get("mame_build")
+        target_version = _folder_version_from_mame_build(m_build) or active_version()
 
-    # Now stage into releases/<target_version>/archives and (optionally) extract…
+    # Stage under releases/<target_version>/archives/ (build path explicitly)
     ensure_release_dirs(target_version)
-    dest_archives = archives_dir(target_version) / zip_path.name
+    dest_archives_dir = (DATA_DIR / "releases" / target_version / "archives")
+    dest_archives_dir.mkdir(parents=True, exist_ok=True)
+    dest_archives = dest_archives_dir / zip_path.name
+
     _safe_move(zip_path, dest_archives)
 
     info.update({
@@ -120,13 +116,7 @@ def _handle_one_archive(
         "version": target_version,
         "dest_archive": dest_archives.as_posix(),
     })
-
-    if extract:
-        extracted = _extract_canonical_files(dest_archives, target_version)
-        info["extracted"] = extracted
-
     return info
-
 
 # ---------------------------
 # Canonical extraction
@@ -341,6 +331,21 @@ def _version_key_from_filename(name: str) -> str | None:
         return None
     digits = m.group(1)  # '281' or '0281'
     return digits.zfill(4)
+
+def _safe_stage(src: Path, dst: Path) -> tuple[str, Path]:
+    """
+    Stage 'src' to 'dst'. If 'dst' already exists, don't create a duplicate;
+    treat it as a skip and keep the canonical filename.
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        return ("skipped", dst)
+    import shutil
+    shutil.move(str(src), str(dst))
+    return ("moved", dst)
+
+def _posix(s: str | Path) -> str:
+    return s.as_posix() if isinstance(s, Path) else s.replace("\\", "/")
 
 
 # Export the names the CLI imports
