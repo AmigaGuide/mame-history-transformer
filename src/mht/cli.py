@@ -678,10 +678,16 @@ def cmd_fetch_download(args: argparse.Namespace) -> int:
             note = item.get("note") or ("ok" if item.get("ok") else "error")
             size = item.get("size")
             sz = f" ({size} bytes)" if isinstance(size, int) else ""
-            print(f"  [OK]   {item.get('name')} -> {item.get('path')}{sz}  [{note}]")
+            print(f"  [OK]   {item.get('name')} -> {item.get('path')}{sz} [{note}]")
 
         for item in sk:
-            print(f"  [SKIP] {item.get('name')}  (reason: {item.get('reason')})")
+            if isinstance(item, dict):
+                name = item.get("name") or "-"
+                reason = item.get("reason") or item.get("note") or "skipped"
+                print(f"  [SKIP] {name} (reason: {reason})")
+            else:
+                # item is a plain string (e.g., policy note)
+                print(f"  [SKIP] {item}")
 
     print(f"\nSummary: downloaded={len(dl)} skipped={len(sk)}")
 
