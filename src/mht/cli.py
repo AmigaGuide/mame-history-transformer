@@ -50,9 +50,27 @@ from mht.provenance.peek import sniff_history_xml, sniff_mame_xml, sniff_ini_fil
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
 
+
+def _print_active_banner() -> None:
+    try:
+        ver = active_version()
+        print(f"[active] release = {ver}  (root: {release_root(ver).as_posix()})\n")
+    except Exception:
+        pass
+
 # --------------------------------------------------------------------------------------
 # Incoming handlers
 # --------------------------------------------------------------------------------------
+
+def cmd_incoming_root(args: argparse.Namespace) -> int:
+    print(args._incoming_parser.format_help())
+    return 2
+
+def cmd_root(args: argparse.Namespace) -> int:
+    # Default action: print active banner (if any) and the top-level help
+    _print_active_banner()
+    print(args._root_parser.format_help())
+    return 0
 
 def cmd_incoming_verify(args: argparse.Namespace) -> int:
     """Probe ZIPs in data/incoming without moving anything."""
@@ -624,7 +642,7 @@ def cmd_releases_gc(args: argparse.Namespace) -> int:
 
 def cmd_fetch_check(args: argparse.Namespace) -> int:
     from mht.provenance.fetch import probe_latest
-    plan = probe_latest(use_cache=(not args.no_cache))
+    plan = probe_latest(use_cache=(not args.no_cache), debug=args.debug)
 
     if args.json:
         # Works across both old/new FetchPlan variants
@@ -674,8 +692,8 @@ def cmd_fetch_download(args: argparse.Namespace) -> int:
             print("Aborted.")
             return 1
 
-    plan = probe_latest(use_cache=(not args.no_cache))
-    results = perform_downloads(plan, ingest=False, overwrite=args.overwrite)
+    plan = probe_latest(use_cache=(not args.no_cache), debug=args.debug)
+    results = perform_downloads(plan, ingest=False, overwrite=args.overwrite, debug=args.debug)
 
     # JSON mode: print and exit early
     if args.json:
@@ -717,8 +735,8 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="mht", description="MAME-History-Transformer CLI")
     sub = p.add_subparsers(dest="cmd", required=False)
 
-    # default: run the full pipeline
-    p.set_defaults(func=cmd_run)
+    # Default: show active + help (do NOT run the pipeline automatically)
+    p.set_defaults(func=cmd_root, _root_parser=p)
 
     # status
     s_status = sub.add_parser("status", help="Report freshness (stamp-based) for the active (or given) release")
@@ -735,7 +753,7 @@ def main() -> None:
     s_clean.add_argument("--data-summaries", action="store_true", help="Delete *_summary.json and run_manifest.json")
     s_clean.set_defaults(func=cmd_clean)
 
-    # run
+    # run (explicit only)
     s_run = sub.add_parser("run", help="Run the full incremental pipeline (delegates to main.py)")
     s_run.set_defaults(func=cmd_run)
 
@@ -749,72 +767,61 @@ def main() -> None:
     )
     s_validate.set_defaults(func=cmd_validate)
 
-    # incoming
+    # incoming    
     s_incoming = sub.add_parser("incoming", help="Manage incoming ZIP archives")
-    s_incoming_sub = s_incoming.add_subparsers(dest="subcmd", required=True)
-
+    s_incoming_sub = s_incoming.add_subparsers(dest="subcmd", required=False)
+    s_incoming.set_defaults(func=cmd_incoming_root, _incoming_parser=s_incoming)            
     s_inc_scan = s_incoming_sub.add_parser("scan", help="List ZIPs in data/incoming")
     s_inc_scan.set_defaults(func=cmd_incoming_scan)
-
-    s_inc_adopt = s_incoming_sub.add_parser("adopt", help="Stage a single ZIP into a release (move/copy).")
+    s_inc_adopt = s_incoming_sub.add_parser("adopt", help="Verify + move/copy a ZIP into a release")
     s_inc_adopt.add_argument("zip", type=Path, help="Path to the ZIP in data/incoming")
     s_inc_adopt.add_argument("--version", required=True, help="Target release version, e.g. 0280")
     s_inc_adopt.add_argument("--copy", action="store_true", help="Copy instead of move")
     s_inc_adopt.set_defaults(func=cmd_incoming_adopt)
-
-    # incoming verify (check all ZIPs without modifying anything)
-    s_inc_verify = s_incoming_sub.add_parser("verify", help="Show what each ZIP in data/incoming/ would resolve to - no changes.")
+    s_inc_verify = s_incoming_sub.add_parser("verify", help="Verify ZIPs are valid before import")
     s_inc_verify.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
     s_inc_verify.set_defaults(func=cmd_incoming_verify)
+    #s_inc_import = s_incoming_sub.add_parser("import", help="Ingest valid ZIPs into releases/<ver>/archives and extract")
+    #s_inc_import.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
+    #s_inc_import.add_argument("--move", action="store_true", help="Move files instead of copying")
+    #s_inc_import.add_argument("--dry-run", action="store_true", help="Show what would happen without writing")
+    #s_inc_import.set_defaults(func=cmd_incoming_import)
 
     # releases
     s_rel = sub.add_parser("releases", help="Inspect and manage releases")
     s_rel_sub = s_rel.add_subparsers(dest="subcmd", required=True)
-
-    # stash the parser so the handler can print help
     s_rel.set_defaults(func=cmd_releases_root, _releases_parser=s_rel)
-
     s_rel_idx = s_rel_sub.add_parser("index", help="Rebuild data/releases_index.json")
     s_rel_idx.set_defaults(func=cmd_releases_index)
-
     s_rel_list = s_rel_sub.add_parser("list", help="List discovered releases; marks active one")
     s_rel_list.set_defaults(func=cmd_releases_list)
-
     s_rel_set = s_rel_sub.add_parser("set", help="Set active version (writes data/current_version.txt)")
     s_rel_set.add_argument("version", help="Release version, e.g. 0280")
     s_rel_set.set_defaults(func=cmd_releases_set)
-               
-    # releases info
     s_rel_info = s_rel_sub.add_parser("info", help="Show details for a release (default: active)")
     s_rel_info.add_argument("--version", "-v", help="Release key, e.g. 0281 (default: active)")
     s_rel_info.set_defaults(func=cmd_releases_info)
-
     s_rel_info.epilog = """Examples:
       mht releases info           # Show info for the active release
       mht releases info -v 0280   # Show info for release 0280
     """
-    
-    # releases prune
     s_rel_prune = s_rel_sub.add_parser("prune", help="Delete older releases (keep newest N)")
     s_rel_prune.add_argument("--keep", type=int, default=2, help="Number of newest releases to keep (default: 2)")
     s_rel_prune.add_argument("--no-protect-current", action="store_true", help="Allow pruning the current release")
     s_rel_prune.add_argument("--dry-run", action="store_true", help="Show what would be deleted without deleting")
     s_rel_prune.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
     s_rel_prune.set_defaults(func=cmd_releases_prune)
-
-    # releases gc
     s_rel_gc = s_rel_sub.add_parser("gc", help="Remove empty directories under data/releases")
     s_rel_gc.add_argument("--dry-run", action="store_true", help="Show what would be removed without deleting")
     s_rel_gc.set_defaults(func=cmd_releases_gc)
-    
-    # ingest
+
+    # ingest (ZIP-only by default)
     s_ingest = sub.add_parser(
         "ingest",
-        help="Bulk-stage all valid ZIPs from data/incoming/ into releases (ZIP-only).",
+        help="Import archives from data/incoming/ into releases/<ver>/archives (ZIP-only by default)",
     )
     s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
     s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
-    #s_ingest.add_argument("--extract", action="store_true", help="Also extract canonical files into releases/<ver>/extracted/")
     s_ingest.set_defaults(func=cmd_ingest)
 
     # fetch
@@ -823,8 +830,9 @@ def main() -> None:
 
     s_fetch_check = s_fetch_sub.add_parser("check", help="Probe availability for the next monthly versions")
     s_fetch_check.add_argument("--no-cache", action="store_true", help="Bypass providers cache")
-    s_fetch_check.set_defaults(func=cmd_fetch_check)
+    s_fetch_check.add_argument("--debug", action="store_true", help="Verbose HTTP probe logging")
     s_fetch_check.add_argument("--json", action="store_true", help="Output probe result as JSON")
+    s_fetch_check.set_defaults(func=cmd_fetch_check)
 
     s_fetch_dl = s_fetch_sub.add_parser("download", help="Download latest MAME+GH pair into data/incoming")
     s_fetch_dl.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
@@ -832,9 +840,15 @@ def main() -> None:
     s_fetch_dl.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     s_fetch_dl.add_argument("--no-cache", action="store_true", help="Ignore cached probe results")
     s_fetch_dl.add_argument("--overwrite", action="store_true", help="Re-download even if files already exist")
+    s_fetch_dl.add_argument("--debug", action="store_true", help="Verbose HTTP probe logging")
     s_fetch_dl.set_defaults(func=cmd_fetch_download)
 
     args = p.parse_args()
+
+    # Print active banner for every actual command
+    if args.func is not cmd_root:
+        _print_active_banner()
+
     raise SystemExit(args.func(args))
 
 if __name__ == "__main__":
