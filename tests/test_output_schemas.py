@@ -4,8 +4,6 @@ import pytest
 
 from mht.utils.versions import output_schema
 
-#OUT = Path("output")
-
 
 CASES = [
     ("exotica_lit_wiki.json", "wiki"),

@@ -65,8 +65,13 @@ def _print_active_banner() -> None:
 # --------------------------------------------------------------------------------------
 
 def cmd_incoming_root(args: argparse.Namespace) -> int:
-    print(args._incoming_parser.format_help())
-    return 2
+    """Show help for the 'incoming' group when no subcommand is provided."""
+    parser = getattr(args, "_incoming_parser", None)
+    if parser:
+        print(parser.format_help())
+    else:
+        print("usage: mht incoming {scan,adopt,verify} ...")
+    return 0
 
 def cmd_root(args: argparse.Namespace) -> int:
     # Default action: print active banner (if any) and the top-level help
@@ -297,6 +302,17 @@ def cmd_status(args: argparse.Namespace) -> int:
         if not fresh:
             any_stale = True
 
+    if args.json:
+        payload = {
+            "release": ver,
+            "stages": {
+                k: {"fresh": is_fresh(make_stamp(cfg["schema_id"], tool_version(tools[k]), inputs=cfg["inputs"]), load_stamp(cfg["stamp"]))}
+                for k, cfg in stage_cfg.items()
+            }
+        }
+        _print_json(payload)
+        return 0 if not any(not v["fresh"] for v in payload["stages"].values()) else 1
+
     return 0 if not any_stale else 1
 
 # --------------------------------------------------------------------------------------
@@ -372,15 +388,12 @@ def cmd_clean(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------------------
-# Validate (unchanged)
+# Validate
 # --------------------------------------------------------------------------------------
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    try:
-        ver = active_version()
-        print(f"[validate] active release = {ver}")
-    except Exception:
-        pass
+    ver = args.version or active_version()
+    print(f"[validate] release = {ver}")
     names = args.only or None
     errors = validate_outputs(names)
     if errors:
@@ -451,6 +464,12 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             print(f"  [ERROR] {name}{f' ({reason})' if reason else ''}")
 
     print(f"\nSummary: moved={moved} quarantined={quarantined} skipped={skipped} errors={errors}")
+    
+    try:
+        rebuild_releases_index()
+    except Exception as e:
+        print(f"(note) could not rebuild releases index: {e}")
+        
     return 0 if (errors == 0 and quarantined == 0) else 1
 
 # --------------------------------------------------------------------------------------
@@ -535,6 +554,23 @@ def cmd_releases_info(args: argparse.Namespace) -> int:
     enc = manifest.get("encoding_cache") or {}
     if enc:
         print(f"\nEncodings cache: {enc.get('path')}  sha256={enc.get('sha256')}")
+        
+    if args.json:
+        out = {
+            "release": ver,
+            "paths": {k: (p.as_posix() if isinstance(p, Path) else p) for k, p in paths.items()},
+            "stage_presence": stage_presence,
+            "quick_stats": {
+                "mame_machines": total_machines,
+                "parents": total_parents,
+                "gh_entries": gh_entries,
+                "wiki_pages": wiki_pages,
+                "redirects": redirects_cnt,
+            },
+            "encodings_cache": enc or {},
+        }
+        _print_json(out)
+        return 0
 
     return 0
 
@@ -745,6 +781,7 @@ def main() -> None:
     # status
     s_status = sub.add_parser("status", help="Report freshness (stamp-based) for the active (or given) release")
     s_status.add_argument("--version", "-v", help="Release version (e.g. 0280). Defaults to active_version().")
+    s_status.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     s_status.set_defaults(func=cmd_status)
 
     # clean
@@ -763,22 +800,21 @@ def main() -> None:
 
     # validate
     s_validate = sub.add_parser("validate", help="Validate output JSONs against schemas")
+    s_validate.add_argument("--version", "-v", help="Release version to validate (default: active)")
     s_validate.add_argument(
-        "--only",
-        nargs="+",
-        choices=sorted(VALIDATION_REGISTRY.keys()),
+        "--only", nargs="+", choices=sorted(VALIDATION_REGISTRY.keys()),
         help="Limit validation to one or more of: " + ", ".join(sorted(VALIDATION_REGISTRY.keys())),
     )
     s_validate.set_defaults(func=cmd_validate)
-
-    # incoming    
+    
+    # incoming
     s_incoming = sub.add_parser("incoming", help="Manage incoming ZIP archives")
     s_incoming_sub = s_incoming.add_subparsers(dest="subcmd", required=False)
     s_incoming.set_defaults(func=cmd_incoming_root, _incoming_parser=s_incoming)
 
     s_inc_scan   = s_incoming_sub.add_parser("scan", help="List ZIPs in data/incoming")
     s_inc_scan.set_defaults(func=cmd_incoming_scan)
-
+    
     s_inc_adopt  = s_incoming_sub.add_parser("adopt", help="Verify + move/copy a ZIP into a release")
     s_inc_adopt.add_argument("zip", type=Path, help="Path to the ZIP in data/incoming")
     s_inc_adopt.add_argument("--version", required=True, help="Target release version, e.g. 0280")
@@ -788,7 +824,6 @@ def main() -> None:
     s_inc_verify = s_incoming_sub.add_parser("verify", help="Verify ZIPs are valid before import")
     s_inc_verify.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
     s_inc_verify.set_defaults(func=cmd_incoming_verify)
-
 
     # releases
     s_rel = sub.add_parser("releases", help="Inspect and manage releases")
@@ -807,6 +842,7 @@ def main() -> None:
 
     s_rel_info = s_rel_sub.add_parser("info", help="Show details for a release (default: active)")
     s_rel_info.add_argument("--version", "-v", help="Release key, e.g. 0281 (default: active)")
+    s_rel_info.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     s_rel_info.set_defaults(func=cmd_releases_info)
 
     s_rel_prune = s_rel_sub.add_parser("prune", help="Delete older releases (keep newest N)")
