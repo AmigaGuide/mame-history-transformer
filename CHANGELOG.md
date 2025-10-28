@@ -3,9 +3,71 @@
 All notable changes to this project will be documented here.
 
 ## [Unreleased]
-- CLI flags for `qa.py` (e.g. --no-tests)
-- Centralise data-source versions (optional) and minor header utilities
-- Plan removal of legacy summary fields in a future major release
+
+* `diff` command to compare outputs between two release versions (planned).
+* CLI tab-completion support.
+* Optional JSON schema validation on stamps.
+* Performance metrics and timing summaries for each stage.
+
+---
+
+## [1.1.0] – 2025-10-28
+
+### Added
+
+* **CLI enhancements**
+
+  * New root behaviour: running `python -m mht` now displays the **active release banner** and top-level help instead of executing the pipeline.
+  * Each subcommand (`status`, `clean`, `fetch`, etc.) now prints a concise `[active] release = <ver>` banner at startup.
+  * Parent groups (`incoming`, `releases`, `fetch`) now show **contextual help** instead of exiting with argparse errors.
+  * New `--debug` flag for `fetch check` and `fetch download` to log HTTP probes (via `debug_log()`).
+* **Fetch / provenance**
+
+  * Improved remote probing: debug output clearly lists each attempted URL (e.g. `history282.zip`, `history282a.zip`, `history282b.zip`).
+  * Duplicate downloads skipped unless `--overwrite` is provided.
+  * Safe version detection from ZIP filenames ensures automatic routing to correct `releases/<ver>/archives`.
+* **Ingest / provenance**
+
+  * ZIP import now determines the correct target version automatically by inspecting filenames and build metadata.
+  * All paths normalised via `as_posix()` for cross-platform consistency.
+* **Tests**
+
+  * Added new suite covering:
+
+    * CLI root and help group behaviours (`test_cli_groups.py`, `test_cli_help.py`).
+    * Active banner and fetch debug output (`test_active_banner.py`, `test_fetch_downloads.py`).
+    * Ingest routing and provenance logic (`test_ingest_routing.py`).
+    * Releases index generation (`test_releases_index.py`).
+    * Stamp inputs and per-release encodings (`test_stamps_inputs.py`).
+    * Version hint extraction (`test_version_hints.py`).
+  * All tests now pass on Windows paths using `as_posix()` conversions.
+* **Developer utilities**
+
+  * `pyflakes` and `pytest` workflow tested and documented for refactoring/QA.
+  * Optional `vulture`/`ruff` recommendations for dead-code detection.
+
+### Changed
+
+* `__main__.py` no longer runs the full pipeline by default; requires explicit `mht run`.
+* CLI output fully emoji-free and consistent across platforms.
+* `fetch.download()` and `fetch.check()` print more structured summaries (downloaded/skipped counts).
+* `releases_index.py` now ensures all internal paths are relative to the `data/` root and always written using `as_posix()`.
+* `stage_is_fresh()` now references per-release `encodings.json` instead of a global one.
+* Tests and stamps updated for ZIP-only parsing (no extracted XML).
+
+### Fixed
+
+* False “stale” detection due to global `encodings.json` path.
+* `cmd_ingest` no longer raises `AttributeError` for missing `no_extract` flag.
+* History and INI stages correctly stamp their own ZIP inputs.
+* `test_releases_index_builds_with_posix_paths` and related path checks now pass consistently.
+* Pytest Windows temp directory edge cases resolved.
+
+### Notes
+
+* Versioned release workflow validated with **MAME 0.281 / GH 2.81** datasets.
+* CLI behaviour now mirrors mature data pipelines (explicit stages, reproducible versions, per-release provenance).
+* This update concludes the CLI stabilisation and provenance refactor phase.
 
 ## [1.0.2] - 2025-10-11
 ### Added
