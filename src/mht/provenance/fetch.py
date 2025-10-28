@@ -191,45 +191,47 @@ def _core_no_dot(core: str) -> str:
     # for GH naming; core like '282' already has no dot
     return core
 
-def perform_downloads(plan: FetchPlan, *, ingest: bool = False, overwrite: bool = False, debug: bool = False) -> Dict[str, object]:
-    """
-    Download the latest pair if policy allows.
-    Returns {"downloads":[...], "skipped":[...], "action": plan.action}
-    """
+def perform_downloads(
+    plan: FetchPlan,
+    *,
+    ingest: bool = False,
+    overwrite: bool = False,   # <- add this
+) -> Dict[str, object]:
     INCOMING_DIR.mkdir(parents=True, exist_ok=True)
-    results: Dict[str, object] = {"downloads": [], "skipped": [], "action": plan.action}
+    results = {"downloads": [], "skipped": [], "action": plan.action}
 
-    # Policy: only download when both are available
+    # Only proceed when both are present (project policy)
     if plan.action != "both":
-        if debug:
-            debug_log(f"[fetch] Policy prevents download (action={plan.action})")
-        results["skipped"] = ["policy: not downloading unless both MAME and GH are available"]
+        results["skipped"].append("policy: not downloading unless both MAME and GH are available")
         return results
 
-    # MAME: stable name mame{KEY}lx.zip
-    mame_url  = (plan.mame or {}).get("url") or ""
+    # MAME
+    mame_url  = plan.mame.get("url") or ""
     mame_name = f"mame{plan.next_key}lx.zip"
     mame_dest = INCOMING_DIR / mame_name
-    r1 = mame_download(mame_url, mame_dest, overwrite=overwrite, debug=debug)
-
-    if r1.get("reason") == "exists":
-        results["skipped"].append({"name": mame_name, **r1})
+    if mame_dest.exists() and not overwrite:
+        results["skipped"].append({
+            "name": mame_name, "path": mame_dest.as_posix(),
+            "reason": "exists", "note": "already in data/incoming; not re-downloaded"
+        })
     else:
+        r1 = mame_download(mame_url, mame_dest)
         results["downloads"].append({"name": mame_name, **r1})
 
-    # GH: preserve suffix if present
-    gh_url   = (plan.gh or {}).get("url") or ""
-    gh_sfx   = (plan.gh or {}).get("suffix") or ""
-    gh_name  = f"history{_core_no_dot(plan.next_core)}{gh_sfx}.zip"
+    # GH (preserve suffix if any)
+    gh_url   = plan.gh.get("url") or ""
+    gh_suf   = plan.gh.get("suffix") or ""
+    gh_name  = f"history{_core_no_dot(plan.next_core)}{gh_suf}.zip"
     gh_dest  = INCOMING_DIR / gh_name
-    r2 = gh_download(gh_url, gh_dest, overwrite=overwrite, debug=debug)
-
-    if r2.get("reason") == "exists":
-        results["skipped"].append({"name": gh_name, **r2})
+    if gh_dest.exists() and not overwrite:
+        results["skipped"].append({
+            "name": gh_name, "path": gh_dest.as_posix(),
+            "reason": "exists", "note": "already in data/incoming; not re-downloaded"
+        })
     else:
+        r2 = gh_download(gh_url, gh_dest)
         results["downloads"].append({"name": gh_name, **r2})
 
-    # Optional auto-ingest (disabled by default)
     if ingest:
         try:
             from mht.provenance.archives import import_incoming_archives
