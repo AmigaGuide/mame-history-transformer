@@ -19,10 +19,10 @@ from __future__ import annotations
 import datetime
 import time
 from typing import Dict, Any, List
-import hashlib, json
+import json
 from pathlib import Path
 
-from mht.utils.config import LOG_LEVEL, _IGNORED_TOP_N
+from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.versions import SCHEMA_IDS, schema_version, output_schema
 from mht.utils.paths import (
@@ -35,7 +35,7 @@ from mht.utils.paths import (
     stamps_dir,
 )
 from mht.utils.headers import build_summary_header
-from mht.utils.io import write_json
+from mht.utils.io import write_json, file_meta
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.ports import (
     render_ports_display,
@@ -95,25 +95,6 @@ SCHEMA_ID_PAGES  = output_schema("pages")["id"]
 SCHEMA_VER_PAGES = output_schema("pages")["version"]
 
 # --- stamp + file meta helpers (add near imports) ---
-import hashlib, json
-from pathlib import Path
-from typing import Any
-
-def _sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-def _file_meta(p: Path) -> dict[str, Any]:
-    st = p.stat()
-    return {
-        "path": p.as_posix(),
-        "size_bytes": int(st.st_size),
-        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
-        "sha256": _sha256_file(p),
-    }
 
 def _records_in_wiki_or_raw_json(p: Path) -> int | None:
     try:
@@ -125,7 +106,6 @@ def _records_in_wiki_or_raw_json(p: Path) -> int | None:
     except Exception:
         pass
     return None
-
 
 def run_transformer() -> bool:
     """
@@ -169,7 +149,6 @@ def run_transformer() -> bool:
         "ini_versions": {}
     }
 
-    #overrides_path = title_overrides_path()
     overrides_path = title_overrides_path()
     overrides = _load_title_overrides(overrides_path)
     have_overrides = isinstance(overrides, dict) and bool(overrides)
@@ -215,7 +194,6 @@ def run_transformer() -> bool:
 
     out_map: Dict[str, Dict[str, Any]] = {}
     included_flags = {"isbios": 0, "isdevice": 0, "ismechanical": 0}
-    missing_in_mame: List[str] = []
     systems_with_parent_clone_port_dupes = 0
     systems_with_parent_clone_port_dupes_list: list[str] = []
     title_anomalies: Dict[str, List[Dict[str, str]]] = {
@@ -361,7 +339,6 @@ def run_transformer() -> bool:
         "header": wiki_header,
         "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()},
     }
-    #ok_out_wiki = write_json(exotica_wiki_path(), wiki_doc, sort_keys=False)
     ok_out_wiki = write_json(exotica_wiki_path(), wiki_doc, sort_keys=False)
 
     raw_header = build_summary_header(
@@ -373,7 +350,6 @@ def run_transformer() -> bool:
         "header": raw_header,
         "games": {m: _project_for_raw(m, rec) for m, rec in out_map.items()},
     }
-    #ok_out_raw  = write_json(exotica_raw_path(),  raw_doc,  sort_keys=False)
     ok_out_raw  = write_json(exotica_raw_path(),  raw_doc,  sort_keys=False)
 
     parents_total, clones_total = universe_parent_clone_counts(mame)
@@ -396,8 +372,7 @@ def run_transformer() -> bool:
     outputs_map = build_outputs_map()
 
     title_anomalies = _dedupe_anomalies_preferring_pre_override(title_anomalies)
-    ignored_sorted = sorted(ignored_device_counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    ignored_top = [{"device": k, "count": v} for k, v in ignored_sorted[:_IGNORED_TOP_N]]
+    # (removed unused `ignored_sorted` assignment)
 
     included_parents_set = set(out_map.keys())
     included_clones_set: set[str] = set()
@@ -455,7 +430,7 @@ def run_transformer() -> bool:
         },
         ports=summary_ports,
         excluded_parents_by_reason=excluded_reasons,
-        included_flags={"isbios": 0, "isdevice": 0, "ismechanical": 0},
+        included_flags=included_flags,  # use the computed variable
         title_anomalies=title_anomalies,
         title_overrides={"stats": overrides_stats, "applied": overrides_applied},
         errors=[],
@@ -464,7 +439,6 @@ def run_transformer() -> bool:
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
 
-    #ok_sum = write_json(transform_summary_path(), summary, sort_keys=False)
     ok_sum = write_json(transform_summary_path(), summary, sort_keys=False)
 
     # --- Build a rich stamp mirroring other stages ---
@@ -475,7 +449,7 @@ def run_transformer() -> bool:
     for p in stamp_inputs:
         try:
             if p and p.exists():
-                inputs_detail.append(_file_meta(p))
+                inputs_detail.append(file_meta(p))
             else:
                 inputs_detail.append({"path": p.as_posix() if isinstance(p, Path) else str(p), "missing": True})
         except Exception:
@@ -486,20 +460,19 @@ def run_transformer() -> bool:
 
     wiki_fp = exotica_wiki_path()
     if wiki_fp.exists():
-        w = _file_meta(wiki_fp)
+        w = file_meta(wiki_fp)
         w["records"] = _records_in_wiki_or_raw_json(wiki_fp)
         outputs.append(w)
 
     raw_fp = exotica_raw_path()
     if raw_fp.exists():
-        r = _file_meta(raw_fp)
+        r = file_meta(raw_fp)
         r["records"] = _records_in_wiki_or_raw_json(raw_fp)
         outputs.append(r)
 
     pages_fp = exotica_pages_path()
     if pages_fp.exists():
-        pmeta = _file_meta(pages_fp)
-        # `write_pages_and_redirects` already returned aggregate info
+        pmeta = file_meta(pages_fp)
         if isinstance(pages_info, dict):
             pmeta.update({
                 "pages_count":      pages_info.get("pages_count"),
@@ -510,7 +483,7 @@ def run_transformer() -> bool:
 
     ts_fp = transform_summary_path()
     if ts_fp.exists():
-        outputs.append(_file_meta(ts_fp))
+        outputs.append(file_meta(ts_fp))
 
     # Stats: pull key figures you already computed (small, useful set)
     stats = {

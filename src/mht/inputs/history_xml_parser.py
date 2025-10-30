@@ -1,26 +1,27 @@
 """
-Gaming-History XML → structured JSON orchestrator (stage: history)
+Gaming-History XML → structured JSON orchestrator (stage: history) — ZIP-only
 
-Streams `history.xml` <entry> elements and delegates work to focused helpers:
+Streams `history.xml` from the release ZIP and delegates work to focused helpers:
 - Section segmentation, PORTS parsing (with banners/inheritance)
 - Per-system record assembly
 - Totals/distributions summary and invariants
 
-Inputs
-------
-- history.xml (Gaming-History export), with encoding provided by caller.
-- Optional CONTRIBUTE lines containing a gh_id in the form 'id=<int>'.
+Inputs (ZIP-only)
+-----------------
+- data/releases/<ver>/archives/history*.zip (must exist)
+- encoding is taken from encodings.json and passed in by caller
 
 Outputs
 -------
-- data/releases/<ver>/outputs/gh_system_ports.json         (per-system structured PORTS data, sorted)
-- data/releases/<ver>/summaries/history_parsing_summary.json   (totals, distributions, anomalies, audits)
+- data/releases/<ver>/outputs/gh_system_ports.json
+- data/releases/<ver>/summaries/history_parsing_summary.json
+- data/releases/<ver>/.stamps/history.json
 
 Notes
 -----
 - No selection/filtering beyond excluding non-arcade <software> entries.
 - Progress is logged every 10,000 entries.
-- Stage is stamped for reproducibility in data/releases/<ver>/.stamps/history.json.
+- Stage is stamped for reproducibility.
 """
 
 from __future__ import annotations
@@ -31,140 +32,124 @@ import time
 from collections import Counter, defaultdict
 import zipfile
 import io
-import hashlib, json, datetime
-from typing import Any
+import json, datetime
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    gh_system_ports_path,
-    history_summary_path,
-    history_xml_path,
-    #ENCODINGS_JSON,   # temp shim
-    stamps_dir, archives_dir, active_version, encodings_cache_path,
+    gh_system_ports_path, history_summary_path,
+    archives_dir, active_version,
+    encodings_cache_path,
 )
-from mht.utils.io import write_json
+from mht.utils.io import write_json, file_meta
 from mht.inputs.history_constants import KNOWN_PLATFORMS
 from mht.inputs.history_ports import extract_ports_section
 from mht.inputs.history_text import parse_gh_id_from_contribute, extract_text_sections
 from mht.inputs.history_summary import build_history_summary
-from mht.utils.history_xml import (
-    iter_history_events,
-    capture_history_root_attrs,
-    classify_entry,
-)
+from mht.utils.history_xml import capture_history_root_attrs, classify_entry
 from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
-from mht.provenance.peek import find_history_xml_member
-
+from mht.utils.encoding_utils import load_encodings_cache
 
 __all__ = ["parse_history_entries"]
 
 log = setup_logger(log_level=LOG_LEVEL)
 
+# --- ZIP-only helpers ---------------------------------------------------------
 
-def _sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def _pick_history_zip(version: str) -> Path:
+    """Return the preferred History ZIP for this release, or raise FileNotFoundError."""
+    arc_dir = archives_dir(version)
+    if not arc_dir.exists():
+        raise FileNotFoundError(f"Archives folder missing: {arc_dir.as_posix()}")
+    zips = sorted(arc_dir.glob("*.zip"), key=lambda p: p.name.lower())
+    if not zips:
+        raise FileNotFoundError(f"No .zip files found under {arc_dir.as_posix()}")
+    # Prefer names that contain 'history'
+    prefer = [p for p in zips if "history" in p.name.lower()] or zips
+    return prefer[0]
 
-def _file_meta(p: Path) -> dict[str, Any]:
-    st = p.stat()
-    return {
-        "path": p.as_posix(),
-        "size_bytes": int(st.st_size),
-        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
-        "sha256": _sha256_file(p),
-    }
+def _find_history_xml_member(zf: zipfile.ZipFile) -> str | None:
+    """
+    Locate the Gaming-History XML inside a GH zip.
+    Prefer leaf named 'history.xml'; else fall back to largest *.xml.
+    """
+    names = zf.namelist()
+    exact = [n for n in names if Path(n).name.lower() == "history.xml"]
+    if exact:
+        return exact[0]
+    xmls = [n for n in names if n.lower().endswith(".xml")]
+    if not xmls:
+        return None
+    sizes = {n: zf.getinfo(n).file_size for n in xmls}
+    return max(xmls, key=lambda n: sizes.get(n, 0))
 
-def _load_encodings_cache() -> dict[str, Any]:
-    try:
-        with open(ENCODINGS_JSON, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-def _xml_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
+def _xml_input_from_cache(cache: dict, leaf: str, *, kind: str) -> dict:
+    """
+    Build a rich input block for 'history.xml' from encodings.json.
+    """
     rec = cache.get(leaf) or {}
     return {
-        "kind": kind,                        # e.g. 'history_xml'
-        "leaf": leaf,                        # expected: 'history.xml'
+        "kind": kind,
+        "leaf": leaf,
         "encoding": rec.get("encoding") or "utf-8",
+        "ascii_only": bool(rec.get("ascii_only")),
         "detected_via": rec.get("detected_via"),
         "zip_archive": rec.get("zip_archive"),
         "zip_member": rec.get("zip_member"),
         "zip_crc32": rec.get("zip_crc32"),
         "zip_size_bytes": rec.get("zip_size_bytes"),
-        "xml_decl_encoding": rec.get("xml_decl_encoding"),
-        "xml_bom": rec.get("xml_bom"),
-        "version_hint": rec.get("xml_root_attrs") or {},   # {'version': '2.80', ...}
+        "version_hint": rec.get("xml_header") or {},
     }
 
+# --- Main ---------------------------------------------------------------------
 
 def parse_history_entries(file_path: Path, encoding: str) -> bool:
     """
-    Stream-parse `history.xml` and emit per-system PORTS JSON plus a summary.
+    ZIP-only streaming of `history.xml` and emit per-system PORTS JSON plus a summary.
 
     Parameters
     ----------
     file_path : Path
-        Path to the Gaming-History XML (history.xml).
+        Ignored in ZIP-only mode (kept for call-site compatibility).
     encoding : str
-        Text encoding for the XML, supplied by the caller.
+        Text encoding for the XML (used when wrapping the ZIP member stream).
 
     Returns
     -------
     bool
         True on success or when the stage is up-to-date (stamp matched);
-        False only on XML parse error or failed writes.
-
-    Side effects
-    ------------
-    - Writes:
-        * data/releases/<ver>/outputs/gh_system_ports.json
-        * data/releases/<ver>/summaries/history_parsing_summary.json
-    - Maintains a stage stamp at data/releases/<ver>/.stamps/history.json.
-    - Logs progress every 10,000 entries.
-    - Emits warnings-only invariants via utils.validator.
+        False only on ZIP/missing error, XML parse error, or failed writes.
     """
     start = time.perf_counter()
-
-    # --- ZIP-aware freshness (skip if unchanged) ---
     ver = active_version()
-    arc = archives_dir(ver)
-    enc_path = encodings_cache_path(ver)  # data/releases/<ver>/encodings.json
 
-    # Prefer a 'history*.zip'; else first .zip; else fall back to extracted history.xml
-    history_zip = None
-    for p in sorted(arc.glob("*.zip"), key=lambda x: x.name.lower()):
-        if "history" in p.name.lower():
-            history_zip = p
-            break
-    if history_zip is None:
-        history_zip = next(iter(sorted(arc.glob("*.zip"))), None)
+    # Require a history ZIP; no fallback to extracted history.xml
+    try:
+        history_zip = _pick_history_zip(ver)
+    except FileNotFoundError as e:
+        log.error(str(e))
+        return False
 
-    primary_input = history_zip if history_zip else history_xml_path(ver)
+    enc_path = encodings_cache_path(ver)
 
+    # Freshness: key strictly on the ZIP + encodings.json
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "history.json",
         schema_id="mht.stage.history",
         tool="history_parser",
-        inputs=[primary_input, enc_path],
+        inputs=[history_zip, enc_path],
     )
-
     if fresh:
         log.info("History stage up-to-date (stamp matched) — skipping rebuild")
         return True
 
-    log.info(f"Parsing history.xml entries from: {file_path.name} using {encoding}")
+    log.info(f"Parsing history.xml from zip: {history_zip.name} (encoding={encoding})")
 
-    # Read <history> root attributes for the summary header
+    # State for summary & invariants
     history_version, history_date = None, None
-
     parsing_state = {
         "platforms_found": defaultdict(lambda: {"count": 0, "systems": []}),
         "ports_with_comments": 0,
@@ -191,7 +176,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         "disk_size_quotes": defaultdict(list),
     }
 
-    # Totals
     total_entries = 0
     systems_count = 0
     software_count = 0
@@ -201,144 +185,95 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     total_port_lines_all = 0
 
     gh_systems: dict[str, dict] = {}
-    
-    # --- Event source that supports ZIP-only setups ---------------------------
-    def _event_source():
-        # 1) If the extracted XML exists, use the standard iterator.
-        if file_path.exists():
-            for ev in iter_history_events(file_path, encoding):
-                yield ev
-            return
 
-        # 2) Fallback: look for history*.zip in releases/<ver>/archives and stream its XML.
-        try:
-            ver = active_version()
-        except Exception:
-            ver = None
-
-        if ver:
-            adir = archives_dir(ver)
-            if adir.exists():
-                for zp in sorted(adir.glob("history*.zip")):
-                    try:
-                        with zipfile.ZipFile(zp) as zf:
-                            # Prefer entry literally named 'history.xml'; else first *.xml
-                            members = zf.namelist()
-                            choice = None
-                            for name in members:
-                                if name.lower().endswith(".xml"):
-                                    choice = name
-                                    if Path(name).name.lower() == "history.xml":
-                                        break
-                            if not choice:
-                                continue
-                            with zf.open(choice, "r") as zfh:
-                                wrapper = io.TextIOWrapper(zfh, encoding=encoding, errors="replace")
-                                for ev in ET.iterparse(wrapper, events=("start", "end")):
-                                    yield ev
-                            return  # streamed one archive; stop
-                    except zipfile.BadZipFile:
-                        continue
-
-        # 3) Nothing worked: surface a clear error
-        raise FileNotFoundError(
-            f"history.xml not found: {file_path} (and no usable history*.zip in archives)"
-        )
-
-    # --- Streaming parse ------------------------------------------------------
+    # --- Stream XML from the ZIP ---------------------------------------------
     try:
-        for event, elem in _event_source():
-            # Capture <history> root attributes on the start event (once)
-            hdr = capture_history_root_attrs(event, elem)
-            if hdr is not None:
-                if history_version is None:
-                    history_version = hdr.get("version")
-                if history_date is None:
-                    history_date = hdr.get("date")
-                continue
+        with zipfile.ZipFile(history_zip) as zf:
+            member = _find_history_xml_member(zf)
+            if not member:
+                log.error(f"No XML member found inside {history_zip.name}")
+                return False
 
-            # Process each <entry> at its end tag
-            if event == "end" and elem.tag == "entry":
-                # Classify first so we know which counters to bump
-                kind, primary, aliases = classify_entry(elem)
+            with zf.open(member, "r") as zfh:
+                wrapper = io.TextIOWrapper(zfh, encoding=encoding, errors="replace")
 
-                # Totals update (replaces manual increments)
-                total_entries, systems_count, software_count, systems_with_aliases = update_history_totals(
-                    total_entries,
-                    systems_count,
-                    software_count,
-                    systems_with_aliases,
-                    kind=kind,
-                    aliases=aliases,
-                )
-
-                # Progress log using the updated total_entries
-                maybe_log_progress(
-                    log,
-                    total_entries,
-                    step=10000,
-                    prefix="[history_parser::parse_history_entries]",
-                    fmt="{prefix} Parsed {count:,} entries so far...",
-                )
-
-                if kind == "systems":
-                    if not primary:
-                        elem.clear()
+                # Stream parse
+                for event, elem in ET.iterparse(wrapper, events=("start", "end")):
+                    # Root attributes
+                    hdr = capture_history_root_attrs(event, elem)
+                    if hdr is not None:
+                        if history_version is None:
+                            history_version = hdr.get("version")
+                        if history_date is None:
+                            history_date = hdr.get("date")
                         continue
-                    entry_data = build_history_system_record(aliases=aliases)
 
-                elif kind == "software":
-                    elem.clear()
-                    continue
+                    if event == "end" and elem.tag == "entry":
+                        kind, primary, aliases = classify_entry(elem)
 
-                else:
-                    elem.clear()
-                    continue
-
-                sectioned = extract_text_sections(elem, parsing_state)
-                if sectioned:
-                    if "CONTRIBUTE" in sectioned:
-                        gh_id = parse_gh_id_from_contribute(sectioned["CONTRIBUTE"])
-                        if gh_id is not None:
-                            entry_data["gh_id"] = gh_id
-
-                    if "PORTS" in sectioned:
-                        overview, platform_counts, platform_ports, port_lines = extract_ports_section(
-                            sectioned["PORTS"], primary, parsing_state
-                        )
-                        systems_with_ports, port_overview_count, total_port_lines_all, entry_data = apply_ports_results(
-                            parsing_state=parsing_state,
-                            primary=primary,
-                            entry_data=entry_data,
-                            overview=overview,
-                            platform_counts=platform_counts,
-                            platform_ports=platform_ports,
-                            port_lines=port_lines,
-                            systems_with_ports=systems_with_ports,
-                            port_overview_count=port_overview_count,
-                            total_port_lines_all=total_port_lines_all,
+                        total_entries, systems_count, software_count, systems_with_aliases = update_history_totals(
+                            total_entries, systems_count, software_count, systems_with_aliases,
+                            kind=kind, aliases=aliases,
                         )
 
-                gh_systems[primary] = entry_data
+                        maybe_log_progress(
+                            log,
+                            total_entries,
+                            step=10000,
+                            prefix="[history_parser::parse_history_entries]",
+                            fmt="{prefix} Parsed {count:,} entries so far...",
+                        )
 
-                # free memory for this <entry>
-                elem.clear()
+                        if kind != "systems" or not primary:
+                            elem.clear()
+                            continue
+
+                        entry_data = build_history_system_record(aliases=aliases)
+
+                        sectioned = extract_text_sections(elem, parsing_state)
+                        if sectioned:
+                            if "CONTRIBUTE" in sectioned:
+                                gh_id = parse_gh_id_from_contribute(sectioned["CONTRIBUTE"])
+                                if gh_id is not None:
+                                    entry_data["gh_id"] = gh_id
+
+                            if "PORTS" in sectioned:
+                                overview, platform_counts, platform_ports, port_lines = extract_ports_section(
+                                    sectioned["PORTS"], primary, parsing_state
+                                )
+                                systems_with_ports, port_overview_count, total_port_lines_all, entry_data = apply_ports_results(
+                                    parsing_state=parsing_state,
+                                    primary=primary,
+                                    entry_data=entry_data,
+                                    overview=overview,
+                                    platform_counts=platform_counts,
+                                    platform_ports=platform_ports,
+                                    port_lines=port_lines,
+                                    systems_with_ports=systems_with_ports,
+                                    port_overview_count=port_overview_count,
+                                    total_port_lines_all=total_port_lines_all,
+                                )
+
+                        gh_systems[primary] = entry_data
+                        elem.clear()
 
     except ET.ParseError as e:
-        log.error(f"XML parse error in {file_path.name}: {e}")
+        log.error(f"XML parse error inside {history_zip.name}: {e}")
+        return False
+    except zipfile.BadZipFile:
+        log.error(f"Bad ZIP: {history_zip.as_posix()}")
         return False
     except FileNotFoundError as e:
         log.error(str(e))
         return False
 
-    log.info(f"Parsed {total_entries} <entry> elements from history.xml")
+    log.info(f"Parsed {total_entries} <entry> elements from {history_zip.name}")
     log.info(f"  - {systems_count} entries had <systems> (arcade-relevant)")
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
     log.info(f"  - {port_overview_count} entries contained a port overview")
 
     # Write parsed per-system output (sorted)
     systems_sorted = build_history_systems_sorted(gh_systems)
-    #if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):  # preserve your explicit order
     if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {gh_system_ports_path()} ({len(systems_sorted)} systems)")
@@ -354,14 +289,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         total_port_lines_all=total_port_lines_all,
     )
 
-    #if not write_json(history_summary_path(), summary, sort_keys=False):
     if not write_json(history_summary_path(), summary, sort_keys=False):
         return False
     debug_log(f"Wrote parsing summary to {history_summary_path()}")
 
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
-    # Cache some tallies for the checker (read-only convenience)
+    # Cache tallies for checker
     parsing_state["total_port_lines_all"] = total_port_lines_all
     parsing_state["systems_with_ports_count"] = systems_with_ports
     parsing_state["port_overview_count"] = port_overview_count
@@ -376,29 +310,28 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         KNOWN_PLATFORMS=KNOWN_PLATFORMS,
     )
 
-    # --- Decide success purely by outputs on disk ---
+    # Decide success by outputs on disk
     hs = history_summary_path()
     gh = gh_system_ports_path()
-
     success = hs.exists() and gh.exists()
-
     if not success:
-        log.error("History outputs not found (expected history_parsing_summary.json and gh_system_ports.json). Stamp not saved.")
+        log.error("History outputs not found. Stamp not saved.")
         return False
 
-    # --- Build and save enriched stamp (inputs_detail, outputs, stats) ---
-    stamp_doc = dict(current_stamp)  # keep the freshness core intact
+    # --- Enriched stamp (ZIP + encoding inputs, outputs, stats) --------------
+    stamp_doc = dict(current_stamp)
 
-    enc_cache = _load_encodings_cache()
+    #ver = active_version()
+    enc_path = encodings_cache_path(ver)
+    enc_cache = load_encodings_cache(enc_path)
+
     inputs_detail = [_xml_input_from_cache(enc_cache, "history.xml", kind="history_xml")]
 
     outputs = []
-    # summary meta
     if hs.exists():
-        outputs.append(_file_meta(hs))
-    # gh_system_ports meta (+ record count)
+        outputs.append(file_meta(hs))
     if gh.exists():
-        gmeta = _file_meta(gh)
+        gmeta = file_meta(gh)
         try:
             with open(gh, "r", encoding="utf-8") as f:
                 gh_map = json.load(f)
@@ -407,7 +340,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             gmeta["records"] = None
         outputs.append(gmeta)
 
-    # stats: lift from the summary you just wrote
     stats = {}
     try:
         with open(hs, "r", encoding="utf-8") as f:

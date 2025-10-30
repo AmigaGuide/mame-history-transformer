@@ -1,7 +1,4 @@
 import json
-from pathlib import Path
-
-#RAW_PATH = Path("output/exotica_lit_raw_data.json")
 
 
 def _groups(doc):

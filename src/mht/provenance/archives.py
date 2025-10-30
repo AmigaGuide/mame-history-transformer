@@ -4,10 +4,9 @@ import re
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from mht.utils.logger import setup_logger
-
 from mht.utils.paths import (
     DATA_DIR,
     ensure_release_dirs,
@@ -18,6 +17,7 @@ from mht.utils.paths import (
     incoming_dir as incoming_dir_path,
 )
 from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
+from mht.utils.strings import digits_score
 
 
 log = setup_logger()
@@ -34,21 +34,16 @@ def import_incoming_archives(
     version: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Scan data/incoming for ZIPs, validate them, decide target MAME release per ZIP,
+    Scan data/incoming (or a provided dir) for ZIPs, decide target MAME release per ZIP,
     and move them into releases/<ver>/archives/. Optionally extract canonical files.
 
-    Version resolution policy per ZIP (oldest to newest signal):
-      1) If 'version' is provided -> use that (forced).
-      2) Else try a filename hint (e.g. mame0281lx.zip -> '0281').
-      3) Else peek the ZIP for the MAME build string and derive '0281'.
-      4) Else fall back to active_version().
-
-    Notes:
-      - Each ZIP is resolved independently (mixed versions in /incoming are fine).
-      - Existing files at the destination get a __dupN suffix (no clobber).
-      - On any verification failure, the ZIP is quarantined.
+    Version resolution per ZIP:
+      1) Forced `version` if provided
+      2) Filename hint (e.g. mame0281lx.zip -> '0281')
+      3) MAME build from peek (if any)
+      4) Fallback to active_version()
     """
-    incoming_dir = Path(incoming or (DATA_DIR / "incoming"))
+    incoming_dir = Path(incoming) if incoming is not None else (DATA_DIR / "incoming")
     quarantine_dir = DATA_DIR / "quarantine"
     results: List[Dict[str, Any]] = []
 
@@ -56,22 +51,57 @@ def import_incoming_archives(
         log.info("No incoming dir found at %s", incoming_dir.as_posix())
         return results
 
-    for p in sorted(incoming_dir.iterdir()):
-        if not (p.is_file() and p.suffix.lower() == ".zip"):
+    # Only consider *.zip (case-insensitive) using glob for reliability
+    zips = sorted(incoming_dir.glob("*.zip")) + sorted(incoming_dir.glob("*.ZIP"))
+    for p in zips:
+        if not p.is_file():
             continue
 
-        # Thread the optional 'forced' version straight through; the helper
-        # will apply the per-zip resolution policy when forced_version is None.
-        res = _handle_one_archive(
-            p,
-            quarantine_dir=quarantine_dir,
-            extract=extract,
-            forced_version=version,
-        )
-        results.append(res)
+        info: Dict[str, Any] = {
+            "name": p.name,
+            "path": p.as_posix(),
+            "action": "skipped",
+            "reason": "",
+            "version": None,
+        }
+
+        # Resolve version: forced → filename hint → peek → active
+        target_version = version or derive_mame_version_hint_from_filename(p.name)
+        if not target_version:
+            meta = peek_path(p)
+            if meta.get("kind") != "zip" or meta.get("error"):
+                info.update({"action": "quarantined", "reason": "not_a_zip_or_bad_zip"})
+                dest_q = _safe_move(p, (quarantine_dir / p.name))
+                info["dest_archive"] = dest_q.as_posix()
+                results.append(info)
+                continue
+            m_build = (meta.get("mame_xml_probe") or {}).get("mame_build")
+            target_version = _folder_version_from_mame_build(m_build) or active_version()
+
+        ensure_release_dirs(target_version)
+        dest_archives_dir = (DATA_DIR / "releases" / target_version / "archives")
+        dest_archives_dir.mkdir(parents=True, exist_ok=True)
+        dest_archives = dest_archives_dir / p.name
+
+        _safe_move(p, dest_archives)
+
+        info.update({
+            "action": "moved",
+            "version": target_version,
+            "dest_archive": dest_archives.as_posix(),
+        })
+
+        # Optional extraction (unchanged behaviour)
+        if extract:
+            try:
+                x = _extract_canonical_files(dest_archives, target_version)
+                info["extraction"] = x
+            except Exception as e:
+                info["extract_error"] = f"{type(e).__name__}: {e}"
+
+        results.append(info)
 
     return results
-
 
 # ---------------------------
 # Core per-archive workflow
@@ -211,10 +241,10 @@ def _choose_match(zf: zipfile.ZipFile, *, prefer: str) -> Optional[zipfile.ZipIn
     # names containing 'mame' + digits are best (e.g., mame0280.xml)
     mamey = [zi for zi in xmls if "mame" in zi.filename.lower()]
     if mamey:
-        mamey.sort(key=lambda z: (-_digits_score(Path(z.filename).name), -len(Path(z.filename).name)))
+        mamey.sort(key=lambda z: (-digits_score(Path(z.filename).name), -len(Path(z.filename).name)))
         return mamey[0]
     # fallback: any xml
-    xmls.sort(key=lambda z: (-_digits_score(Path(z.filename).name), -len(Path(z.filename).name)))
+    xmls.sort(key=lambda z: (-digits_score(Path(z.filename).name), -len(Path(z.filename).name)))
     return xmls[0]
 
 
@@ -253,10 +283,6 @@ def _folder_version_from_mame_build(build: Optional[str]) -> Optional[str]:
         return None
     # Pad to 4 (covers 0.80 -> 0080, 0.263 -> 0263). If longer, keep as-is.
     return digits.zfill(4)
-
-
-def _digits_score(name: str) -> int:
-    return sum(ch.isdigit() for ch in name)
 
 
 def _safe_move(src: Path, dst: Path) -> Path:

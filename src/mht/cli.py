@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from argparse import RawTextHelpFormatter
 import json
 from pathlib import Path
 from typing import Iterable, Optional
@@ -11,21 +10,17 @@ from mht.utils.versions import tool_version
 from mht.utils.stamps import make_stamp, load_stamp, is_fresh
 from mht.utils.paths import (
     # repo/data roots
-    DATA_DIR, OUTPUT_DIR, STAMPS_DIR,
+    DATA_DIR,
     # active version & dirs
     ensure_release_dirs,
     release_root,
     archives_dir,
-    extracted_dir,
     outputs_dir,
     summaries_dir,
     stamps_dir,
     # per-release artefacts
     mame_xml_path,
     history_xml_path,
-    ini_game_path,
-    ini_category_path,
-    ini_type_path,
     mame_machines_path,
     parent_index_path,
     gh_system_ports_path,
@@ -35,18 +30,16 @@ from mht.utils.paths import (
     ini_summary_path,
     transform_summary_path,
     exotica_wiki_path,
-    exotica_raw_path,
     exotica_pages_path,
     # shared lookups
     title_overrides_path,
     # shims (legacy)
     RUN_MANIFEST,  # still points to summaries/run_manifest.json via shim
     # add new helpers:
-    incoming_dir, quarantine_dir, set_active_version, active_version, list_release_versions, encodings_cache_path,
-    ENCODINGS_JSON,
+    incoming_dir, set_active_version, active_version, list_release_versions, encodings_cache_path,
 )
 from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
-from mht.provenance.peek import sniff_history_xml, sniff_mame_xml, sniff_ini_file, peek_path, derive_mame_version_hint_from_filename
+from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
 
@@ -112,7 +105,7 @@ def cmd_incoming_verify(args: argparse.Namespace) -> int:
 
         hprobe = (meta.get("history_xml_probe") or {})
         if hprobe.get("error"):
-            print(f"        note: history.xml probe had issues (not fatal for staging)")
+            print("        note: history.xml probe had issues (not fatal for staging)")
 
     return 1 if any_bad else 0
 

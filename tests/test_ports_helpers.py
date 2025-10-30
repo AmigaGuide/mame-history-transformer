@@ -1,5 +1,6 @@
 from mht.utils.ports import norm_regions, norm_tags
 
+
 def test_norm_regions_roundtrip_and_type():
     inp = ["US", "jp", "EU"]
     out = norm_regions(inp)

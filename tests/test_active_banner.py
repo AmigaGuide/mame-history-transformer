@@ -1,5 +1,6 @@
 import subprocess, sys
 
+
 def _run(args):
     proc = subprocess.run([sys.executable, "-m", "mht", *args],
                           capture_output=True, text=True)

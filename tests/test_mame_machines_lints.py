@@ -1,9 +1,5 @@
 import json
-import pathlib
 import warnings
-
-#DOC = pathlib.Path("output/mame_machines.json")
-
 
 # show warnings in pytest output
 warnings.filterwarnings("default")

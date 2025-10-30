@@ -1,7 +1,3 @@
-from pathlib import Path
-import json
-import pytest
-
 def test_stamp_uses_per_release_encodings(monkeypatch, tmp_path):
     data = tmp_path / "data"
     (data / "releases" / "0281" / "archives").mkdir(parents=True)

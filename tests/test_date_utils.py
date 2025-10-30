@@ -2,6 +2,7 @@ import pytest
 
 from mht.utils.date_utils import parse_date_string
 
+
 @pytest.mark.parametrize("raw,expected", [
     # Year-only & fuzzy years
     ("1985",               "1985-XX-XX"),

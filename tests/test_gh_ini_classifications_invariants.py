@@ -1,7 +1,4 @@
 import json
-import pathlib
-
-#DOC = pathlib.Path("output/gh_ini_classifications.json")
 
 
 def test_basic_invariants(outputs_dir):

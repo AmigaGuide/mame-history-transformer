@@ -1,7 +1,4 @@
 import json
-import pathlib
-
-#DOC = pathlib.Path("output/exotica_lit_wiki.json")
 
 
 def test_wiki_core_invariants(outputs_dir):
@@ -32,7 +29,7 @@ def test_redirects_point_somewhere_realistic(outputs_dir):
     DOC = (outputs_dir / "exotica_lit_wiki.json")
     d = json.loads(DOC.read_text(encoding="utf-8"))
     games = d["games"]
-    all_pages = {rec["wiki_page_name"] for rec in games.values()}
+    #all_pages = {rec["wiki_page_name"] for rec in games.values()}
 
     for mach, rec in games.items():
         for rd in rec.get("wiki_redirects", []):

@@ -25,24 +25,19 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict
-import zipfile
-import hashlib, json, datetime
+import json, datetime
 
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, maybe_log_progress
 from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
-    mame_machines_path,
-    mame_xml_path,
-    parent_index_path,
-    mame_summary_path,
-    #ENCODINGS_JSON,   # temp shim
+    mame_machines_path, mame_xml_path,
+    parent_index_path, mame_summary_path,
     encodings_cache_path,
-    stamps_dir,
-    archives_dir, active_version,    
+    archives_dir, active_version,
 )
-from mht.utils.io import write_json
+from mht.utils.io import write_json, file_meta
 from mht.utils.mame_xml import (
     int_or_none, capture_root_attrs,
     get_machine_header, get_core_text_fields, iter_mame_events
@@ -66,34 +61,13 @@ from mht.utils.booleans import yesno_str
 _yesno_str = yesno_str
 from mht.utils.records import build_mame_machine_record
 from mht.utils.strings import year_bucket_key, manufacturer_bucket_key
-from mht.provenance.peek import find_mame_xml_member
+from mht.utils.encoding_utils import load_encodings_cache
 
 
 log = setup_logger(log_level=LOG_LEVEL)
+
 __all__ = ["parse_mame_xml"]
 
-def _sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-def _file_meta(p: Path) -> dict[str, Any]:
-    st = p.stat()
-    return {
-        "path": p.as_posix(),
-        "size_bytes": int(st.st_size),
-        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
-        "sha256": _sha256_file(p),
-    }
-
-def _load_encodings_cache() -> dict[str, Any]:
-    try:
-        with open(ENCODINGS_JSON, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
 
 def _xml_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
     rec = cache.get(leaf) or {}
@@ -556,16 +530,19 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     # --- Build and save enriched stamp (inputs_detail, outputs, stats) ---
     stamp_doc = dict(current_stamp)  # keep the freshness core intact
 
-    enc_cache = _load_encodings_cache()
+    #ver = active_version()
+    enc_path = encodings_cache_path(ver)
+    enc_cache = load_encodings_cache(enc_path)
+
     inputs_detail = [_xml_input_from_cache(enc_cache, "mame.xml", kind="mame_xml")]
 
     outputs = []
     # summary meta
     if ms.exists():
-        outputs.append(_file_meta(ms))
+        outputs.append(file_meta(ms))
     # machines meta (+ record count)
     if mm.exists():
-        mmeta = _file_meta(mm)
+        mmeta = file_meta(mm)
         try:
             with open(mm, "r", encoding="utf-8") as f:
                 recs = json.load(f)
@@ -575,7 +552,7 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         outputs.append(mmeta)
     # parent index meta (+ record count), if present
     if pi.exists():
-        pmeta = _file_meta(pi)
+        pmeta = file_meta(pi)
         try:
             with open(pi, "r", encoding="utf-8") as f:
                 idx = json.load(f) or {}

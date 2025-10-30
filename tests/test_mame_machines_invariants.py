@@ -1,7 +1,4 @@
 import json
-import pathlib
-
-#DOC = pathlib.Path("output/mame_machines.json")
 
 
 def test_counts_and_arrays_line_up(outputs_dir):

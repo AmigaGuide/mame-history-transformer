@@ -6,6 +6,7 @@ from mht.utils.media import join_with_ampersand  # reuse existing one
 
 _SPLIT_TOKEN = "/"  # we split on "/" outside any parentheses
 
+
 def split_outside_parens(text: str | None) -> List[str]:
     """
     Split `text` on '/' that are NOT inside parentheses, preserving everything else.
@@ -61,3 +62,12 @@ def manufacturer_bucket_key(text: str | None) -> str:
         return "unknown"
     cleaned = s.strip("-.,;:/()[]{}").strip()
     return cleaned if cleaned else "unknown"
+
+def digits_score(s: str) -> int:
+    """
+    Count how many digit characters appear in the input.
+    Used by provenance heuristics when ranking candidate names/paths.
+    """
+    if not s:
+        return 0
+    return sum(ch.isdigit() for ch in s)

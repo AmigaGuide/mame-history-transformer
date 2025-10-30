@@ -1,9 +1,4 @@
-# test_ports_invariants.py
-
 import json
-from pathlib import Path
-
-#RAW = Path("output/exotica_lit_raw_data.json")
 
 
 def _has_rows_in_categories(cat_map: dict) -> bool:

@@ -5,6 +5,7 @@ import pytest
 # Central truth
 from mht.utils.versions import SCHEMA_IDS, schema_version
 
+
 def _load_from(dirpath: Path, fname: str):
     p = dirpath / fname
     if not p.exists():

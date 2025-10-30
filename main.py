@@ -50,15 +50,13 @@ import zipfile
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
-from mht.utils.encoding_utils import detect_encoding
 from mht.inputs.mame_parser import parse_mame_xml
 from mht.inputs.history_xml_parser import parse_history_entries
 from mht.inputs.history_ini_parser import parse_history_inis
 from mht.transform.pipeline import run_transformer
 from mht.utils.paths import (
     # release resolution + dirs
-    active_version, ensure_release_dirs, archives_dir,
-    outputs_dir, summaries_dir, stamps_dir,
+    active_version, archives_dir,
 
     # per-release inputs (extracted)
     mame_xml_path, history_xml_path,
@@ -72,7 +70,7 @@ from mht.utils.paths import (
     exotica_wiki_path, exotica_raw_path, exotica_pages_path, manifest_path,
 
     # shared
-    DATA_DIR, TITLE_OVERRIDES, run_manifest_path, title_overrides_path,
+    DATA_DIR, title_overrides_path,
     
     # legacy global cache path (read-only for migration)
     ENCODINGS_JSON,
@@ -80,7 +78,6 @@ from mht.utils.paths import (
     # NEW: per-release cache path
     encodings_cache_path,
 )
-from mht.utils.history_xml import capture_history_root_attrs
 
 # Public API (this module is intended to be run as a script, but the helpers are importable)
 __all__ = [
@@ -230,20 +227,6 @@ def _find_mame_archive_for_manifest(version: Optional[str]) -> Optional[Path]:
             return zp
     return None
     
-def _find_history_archive_for_manifest(ver: str) -> Path | None:
-    """Pick a representative History archive to show in the manifest."""
-    arc = archives_dir(ver)
-    if not arc.exists():
-        return None
-    for pat in ("history*.zip", "History*.zip"):
-        for p in arc.glob(pat):
-            if p.is_file():
-                return p
-    for p in arc.glob("*.zip"):
-        if p.is_file():
-            return p
-    return None
-
 def parse_version_loose(s: str) -> Tuple[Tuple[int, ...], Optional[str]]:
     """
     Parse a version string into a numeric core tuple and optional suffix.

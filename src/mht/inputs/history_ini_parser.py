@@ -35,11 +35,9 @@ from collections import defaultdict
 from typing import Dict, Any
 import time
 import datetime
-import zipfile, tempfile, os
-import shutil
+import zipfile
 import io
 import json
-import hashlib
 
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
@@ -47,11 +45,10 @@ from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.paths import (
     ini_game_path, ini_category_path, ini_type_path,
     ini_summary_path, ini_classifications_path,
-    #ENCODINGS_JSON,
-    stamps_dir, encodings_cache_path,    
+    encodings_cache_path,
     archives_dir, active_version,
 )
-from mht.utils.io import write_json
+from mht.utils.io import write_json, file_meta
 from mht.utils.ini import (
     ini_version_info,
     parse_ini_file_extended,
@@ -59,8 +56,7 @@ from mht.utils.ini import (
 from mht.inputs.ini_summary import build_ini_summary
 from mht.utils.records import build_ini_class_map
 from mht.utils.validator import validate_ini_parsed_bundle
-from mht.provenance.peek import find_gh_ini_members
-from mht.utils.encoding_utils import detect_encoding
+from mht.utils.encoding_utils import load_encodings_cache
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -68,9 +64,6 @@ log = setup_logger(log_level=LOG_LEVEL)
 # Output normalisation
 GAME_STATUS_MAP = {"Game": "game", "No Game": "no_game"}
 UNKNOWN = "unknown"
-
-# Module-level (will be set per run inside parse_history_inis)
-#INI_FILES: dict[str, Path] = {}
 
 
 __all__ = [
@@ -191,29 +184,6 @@ def load_ini_classifications(encodings: Dict[str, str],
 # Orchestrator (I/O + stamps) — ZIP-only
 # --------------------------------------------------------------------------------------
 
-def _sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-def _file_meta(p: Path) -> dict[str, Any]:
-    st = p.stat()
-    return {
-        "path": p.as_posix(),
-        "size_bytes": int(st.st_size),
-        "modified_utc": datetime.datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z",
-        "sha256": _sha256_file(p),
-    }
-
-def _load_encodings_cache() -> dict[str, Any]:
-    try:
-        with open(ENCODINGS_JSON, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
 def _ini_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
     """
     Build a rich input block for a single INI from encodings.json.
@@ -244,20 +214,11 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     """
     t0 = time.perf_counter()
     now_iso = datetime.datetime.utcnow().isoformat() + "Z"
-        
-    ver = active_version()
-    zip_path = _pick_history_zip(ver)
-    if not zip_path:
-        # optional: fall back to extracted history.xml if you still support it
-        hx = history_xml_path(ver)
-        if not hx.exists():
-            log.error("No History ZIP (or extracted history.xml) found for release %s", ver)
-            return False
-        primary_input = hx
-    else:
-        primary_input = zip_path
 
-    enc_path = encodings_cache_path(ver)  # data/releases/<ver>/encodings.json
+    ver = active_version()
+    zip_path = _pick_history_zip(ver)          # raises if not found
+    primary_input = zip_path                   # zip-only: always the archive
+    enc_path = encodings_cache_path(ver)       # data/releases/<ver>/encodings.json
 
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "ini.json",
@@ -286,12 +247,13 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     ok_summary = write_json(ini_summary_path(), summary, sort_keys=False)
     ok_output  = write_json(ini_classifications_path(), class_map, sort_keys=True)
 
-    if ok_summary and ok_output:
+    if ok_summary and ok_output:           
         # ---- Build a rich stamp while preserving the freshness core from current_stamp
         stamp_doc = dict(current_stamp)  # keep keys stage_is_fresh expects
 
         # Inputs (three INIs) from encodings cache
-        enc_cache = _load_encodings_cache()
+        enc_cache_path = encodings_cache_path(ver)  # data/releases/<ver>/encodings.json
+        enc_cache     = load_encodings_cache(enc_cache_path)
         leaf_game     = ini_game_path(ver).name
         leaf_category = ini_category_path(ver).name
         leaf_type     = ini_type_path(ver).name
@@ -301,16 +263,16 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
             _ini_input_from_cache(enc_cache, leaf_category, kind="ini_category"),
             _ini_input_from_cache(enc_cache, leaf_type, kind="ini_type"),
         ]
-
+                        
         # Outputs meta
         out_summary_fp = ini_summary_path()
         out_class_fp   = ini_classifications_path()
         outputs = []
         if out_summary_fp.exists():
-            smeta = _file_meta(out_summary_fp)
+            smeta = file_meta(out_summary_fp)
             outputs.append(smeta)
         if out_class_fp.exists():
-            ometa = _file_meta(out_class_fp)
+            ometa = file_meta(out_class_fp)
             # Include a light record count for convenience
             try:
                 with open(out_class_fp, "r", encoding="utf-8") as f:
@@ -327,7 +289,7 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
         except Exception:
             stats = {}
 
-        # Attach enrichments (use additive keys so stage_is_fresh comparisons remain stable)
+        # Attach enrichments (additive keys so stage_is_fresh comparisons remain stable)
         stamp_doc["created_utc"] = now_iso
         stamp_doc["inputs_detail"] = inputs_detail
         stamp_doc["outputs"] = outputs
@@ -344,4 +306,3 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
 
     log.error("Failed to write one or more INI outputs; not saving stamp.")
     return False
-    

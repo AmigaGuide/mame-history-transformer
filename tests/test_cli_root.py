@@ -1,4 +1,5 @@
-import subprocess, sys, re
+import subprocess, sys
+
 
 def test_root_shows_help_and_not_running_pipeline(tmp_path, monkeypatch):
     # Run the module with no args: expect help text, not pipeline output keywords.

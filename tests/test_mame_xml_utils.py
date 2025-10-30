@@ -1,7 +1,9 @@
 import xml.etree.ElementTree as ET
+
 from mht.utils.mame_xml import element_text, attr_yesno_bool
 from mht.inputs.mame_parser import _int_or_none, _yesno_str
 from mht.utils.summaries import bucket_key_int
+
 
 def test_element_text_defaults_and_strip():
     root = ET.fromstring("<m><year>  1985 </year></m>")

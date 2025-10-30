@@ -1,7 +1,4 @@
 import json
-import pathlib
-
-#DOC = pathlib.Path("output/gh_system_ports.json")
 
 
 def test_basic_uniqueness_and_alias_hygiene(outputs_dir):

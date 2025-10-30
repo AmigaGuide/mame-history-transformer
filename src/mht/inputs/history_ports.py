@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 import re
 
+from mht.inputs.history_text import (
+    segment_text_sections,  # canonical implementation
+)
 from mht.inputs.history_constants import (
-    SECTION_PATTERN,
     CATEGORY_HEADING_PATTERN,
     KNOWN_PLATFORMS,
 )
@@ -12,37 +14,10 @@ from mht.utils.date_utils import parse_date_string
 
 
 __all__ = [
-    "segment_text_sections",
+    "segment_text_sections",   # re-exported from history_text
     "extract_ports_section",
     "parse_port_entry",
 ]
-
-
-def segment_text_sections(text: str, parsing_state: dict) -> dict:
-    """Split a GH <text> block into named sections; preserve blank lines only in PORTS."""
-    sections = defaultdict(list)
-    current_section = "OVERVIEW"
-
-    for raw in text.splitlines():
-        norm = re.sub(r"\u00A0", " ", raw or "")
-        line = norm.strip()
-
-        # dashed section heading
-        m = SECTION_PATTERN.match(line)
-        if m:
-            name = m.group(1).strip().upper()
-            current_section = name
-            parsing_state.setdefault("section_headings_found", Counter())[name] += 1
-            continue
-
-        if line == "":
-            if current_section == "PORTS":
-                sections[current_section].append("")  # separator marker
-            continue
-
-        sections[current_section].append(line)
-
-    return sections
 
 
 def extract_ports_section(lines: list[str], system_name: str, parsing_state: dict

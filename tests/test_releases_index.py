@@ -1,6 +1,5 @@
-from pathlib import Path
 import json
-import pytest
+
 
 def test_releases_index_builds_with_posix_paths(monkeypatch, tmp_path):
     data = tmp_path / "data"

@@ -5,8 +5,10 @@ import re
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from zipfile import ZipFile  # for type hints used below
 
+from mht.utils.strings import digits_score
 
 # ----------------------------
 # Public API (main entrypoints)
@@ -124,11 +126,9 @@ def _peek_zip(p: Path) -> Dict[str, Any]:
                     "is_xml": bool(_XML_CAND_RX.search(zi.filename)),
                     "is_ini": bool(_INI_CAND_RX.search(zi.filename)),
                 }
-                # heuristics: likely mame xml name often contains 'mame' + digits, history often 'history'
                 lower = zi.filename.lower()
                 entry["mame_xml_guess"] = entry["is_xml"] and ("mame" in lower)
                 entry["history_xml_guess"] = entry["is_xml"] and ("history" in lower)
-
                 zmeta["zip_members"].append(entry)
 
             # Pick best candidates
@@ -160,12 +160,10 @@ def _choose_best_mame_member(members: List[Dict[str, Any]]) -> Optional[Dict[str
     cands = [m for m in members if m.get("is_xml")]
     cands_mame = [m for m in cands if m.get("mame_xml_guess")]
     if cands_mame:
-        # prefer longer filenames with digits (e.g., mame0280.xml)
-        cands_mame.sort(key=lambda m: (-_digits_score(m["name"]), -len(m["name"])))
+        cands_mame.sort(key=lambda m: (-digits_score(m["name"]), -len(m["name"])))
         return cands_mame[0]
     if cands:
-        # fallback: any xml
-        cands.sort(key=lambda m: (-_digits_score(m["name"]), -len(m["name"])))
+        cands.sort(key=lambda m: (-digits_score(m["name"]), -len(m["name"])))
         return cands[0]
     return None
 
@@ -174,18 +172,12 @@ def _choose_best_history_member(members: List[Dict[str, Any]]) -> Optional[Dict[
     cands = [m for m in members if m.get("is_xml")]
     cands_hist = [m for m in cands if m.get("history_xml_guess")]
     if cands_hist:
-        # history.xml is typically smallish; prefer exact name if present
         cands_hist.sort(key=lambda m: (0 if Path(m["name"]).name.lower() == "history.xml" else 1, len(m["name"])))
         return cands_hist[0]
     if cands:
-        # fallback: any xml
         cands.sort(key=lambda m: (0 if Path(m["name"]).name.lower() == "history.xml" else 1, len(m["name"])))
         return cands[0]
     return None
-
-
-def _digits_score(s: str) -> int:
-    return sum(ch.isdigit() for ch in s)
 
 
 def _safe_datetime_tuple(dt: Tuple[int, int, int, int, int, int]) -> str:
@@ -205,7 +197,6 @@ def _peek_loose_xml(p: Path) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
     Decide if loose XML is MAME or History by sniffing root.
     Returns (kind, level2, level3)
     """
-    # Root-only probe
     try:
         for event, elem in ET.iterparse(p, events=("start",)):
             tag = elem.tag.lower()
@@ -215,7 +206,6 @@ def _peek_loose_xml(p: Path) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
             if tag == "history":
                 lvl2, lvl3 = _level23_history_xml(p)
                 return "history_xml", lvl2, lvl3
-            # Unknown root → stop early
             break
     except ET.ParseError as e:
         return "unknown", {"parse_error": str(e)}, {}
@@ -241,7 +231,6 @@ def _level23_mame_xml(p: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Level 2/3 info for a MAME XML file by streaming minimal parts."""
     lvl2: Dict[str, Any] = {}
     lvl3: Dict[str, Any] = {}
-    # Root attributes
     build, mameconfig = None, None
     try:
         for event, elem in ET.iterparse(p, events=("start",)):
@@ -256,7 +245,6 @@ def _level23_mame_xml(p: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         lvl2["error"] = f"{type(e).__name__}: {e}"
         return lvl2, lvl3
 
-    # Minimal structure peek: count until we see both a parent and a clone
     parent_seen = False
     clone_seen = False
     machine_sample = 0
@@ -273,7 +261,6 @@ def _level23_mame_xml(p: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
                 if parent_seen and clone_seen:
                     break
                 if machine_sample >= 3000:
-                    # safety valve; we learned enough
                     break
     except Exception as e:
         lvl2["scan_error"] = f"{type(e).__name__}: {e}"
@@ -290,7 +277,6 @@ def _probe_mame_xml_stream(fh) -> Dict[str, Any]:
     """Root-only probe for MAME XML inside ZIP (file-like object)."""
     out: Dict[str, Any] = {}
     try:
-        # Parse only the first start event
         for event, elem in ET.iterparse(_rewindable(fh), events=("start",)):
             if elem.tag.lower() == "mame":
                 out["mame_build"] = elem.attrib.get("build")
@@ -309,7 +295,6 @@ def _level23_history_xml(p: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     lvl2: Dict[str, Any] = {}
     lvl3: Dict[str, Any] = {}
 
-    # Root attributes (version/date)
     version, date = None, None
     try:
         for event, elem in ET.iterparse(p, events=("start",)):
@@ -323,14 +308,12 @@ def _level23_history_xml(p: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         lvl2["error"] = f"{type(e).__name__}: {e}"
         return lvl2, lvl3
 
-    # Minimal structure: require at least one <systems> and one <software> entry overall.
     has_systems = False
     has_software = False
     entries_scanned = 0
     try:
         for event, elem in ET.iterparse(p, events=("end",)):
             if event == "end" and elem.tag == "entry":
-                # cheap classification
                 kinds = {c.tag for c in elem}
                 if "systems" in kinds:
                     has_systems = True
@@ -341,7 +324,6 @@ def _level23_history_xml(p: Path) -> Tuple[Dict[str, Any], Dict[str, Any]]:
                 if has_systems and has_software:
                     break
                 if entries_scanned >= 10000:
-                    # safety: very large file; we’ve looked enough
                     break
     except Exception as e:
         lvl2["scan_error"] = f"{type(e).__name__}: {e}"
@@ -411,68 +393,63 @@ def _rewindable(file_like) -> io.BytesIO:
     Take a file-like (as provided by ZipFile.open) and return a rewindable buffer
     with only the prefix needed for ElementTree to see the root.
     """
-    # Read a small chunk — XML root and prolog are at the start. 64 KiB is generous.
-    head = file_like.read(65536)
+    head = file_like.read(65536)  # 64 KiB is generous for XML prolog+root
     return io.BytesIO(head)
 
+
 # ---------------------------------------------------------------------
-# Adapters expected by cli.py (back-compat shims)
+# Thin sniffers (keep for CLI imports, no undefined references)
 # ---------------------------------------------------------------------
 from pathlib import Path as _Path
 
-# If your internal function names differ, just swap the right targets below.
-# For example, if you use class-based sniffers, instantiate and call them here.
-
 def sniff_mame_xml(path: _Path, **kwargs) -> dict:
     """
-    Back-compat wrapper expected by mht.cli.
-    Delegates to your existing MAME XML peek function.
+    Return minimal facts for a MAME XML, whether passed a loose XML or a ZIP.
     """
-    # CHANGE the target below to match your actual function/class:
-    return peek_mame_xml(_Path(path), **kwargs)  # noqa: F821
+    p = _Path(path)
+    if p.suffix.lower() == ".zip":
+        z = _peek_zip(p)
+        return z.get("mame_xml_probe") or {}
+    if p.suffix.lower() == ".xml":
+        kind, lvl2, lvl3 = _peek_loose_xml(p)
+        if kind == "mame_xml":
+            out: Dict[str, Any] = {}
+            out.update(lvl3 or {})
+            out.update(lvl2 or {})
+            return out
+    return {}
 
 def sniff_history_xml(path: _Path, **kwargs) -> dict:
     """
-    Back-compat wrapper expected by mht.cli.
-    Delegates to your existing History XML peek function.
+    Return minimal facts for a History XML, whether passed a loose XML or a ZIP.
     """
-    # CHANGE the target below to match your actual function/class:
-    return peek_history_xml(_Path(path), **kwargs)  # noqa: F821
+    p = _Path(path)
+    if p.suffix.lower() == ".zip":
+        z = _peek_zip(p)
+        return z.get("history_xml_probe") or {}
+    if p.suffix.lower() == ".xml":
+        kind, lvl2, lvl3 = _peek_loose_xml(p)
+        if kind == "history_xml":
+            out: Dict[str, Any] = {}
+            out.update(lvl3 or {})
+            out.update(lvl2 or {})
+            return out
+    return {}
 
 def sniff_ini_file(path: _Path, *, encoding: str | None = None, header_lines: int = 16, **kwargs) -> dict:
     """
-    Back-compat wrapper expected by mht.cli.
-    Delegates to your existing INI header peek function.
+    Return a tiny header summary for a GH INI file (loose file only).
     """
-    # CHANGE the target below to match your actual function/class:
-    return peek_ini_header(_Path(path), encoding=encoding, header_lines=header_lines, **kwargs)  # noqa: F821
+    p = _Path(path)
+    return {
+        "has_header_hint": _ini_has_mame_header_hint(p),
+        "probable_mame_version": _ini_extract_mame_version_header(p),
+    }
 
-def derive_mame_version_hint_from_filename(name: str | Path) -> str | None:
-    """
-    Best-effort release key ('0281') from filenames like:
-      - mame0281lx.zip / mame-0281.zip / mame_0281.zip
-      - history281.zip / history281a.zip
-      - mame-0.281-foo.zip / history-0.281.zip
-    Returns None if no obvious hint is found.
-    """
-    s = Path(name).name.lower()
 
-    # Prefer explicit tokens “mame” or “history” followed by 3–4 digits (optionally with one leading 0)
-    m = re.search(r"(?:mame|history)[-_]?0?(\d{3,4})(?!\d)", s)
-    if m:
-        return m.group(1).zfill(4)
-
-    # Decimal forms like 0.281
-    m2 = re.search(r"(?<!\d)0\.(\d{3})(?!\d)", s)
-    if m2:
-        return f"0{m2.group(1)}"
-
-    # Fallback: 1.234 -> 1234
-    m3 = re.search(r"(?<!\d)(\d)\.(\d{3})(?!\d)", s)
-    if m3:
-        return f"{m3.group(1)}{m3.group(2)}".zfill(4)
-
-    return None
+# ---------------------------------------------------------------------
+# ZIP member discovery helpers (used elsewhere)
+# ---------------------------------------------------------------------
 
 def find_mame_xml_member(zf: ZipFile) -> str | None:
     """
@@ -486,7 +463,6 @@ def find_mame_xml_member(zf: ZipFile) -> str | None:
         candidates = [n for n in names if n.lower().endswith(".xml")]
     if not candidates:
         return None
-    # Prefer the largest candidate
     sizes = {n: zf.getinfo(n).file_size for n in candidates}
     return max(candidates, key=lambda n: sizes.get(n, 0))
 
@@ -512,11 +488,9 @@ def find_gh_ini_members(zf: ZipFile) -> dict[str, str]:
     """
     names = zf.namelist()
     def pick(substrs: tuple[str, ...]) -> str | None:
-        # prefer exact '[GAMING HISTORY] X.ini' names if present
         exact = [n for n in names if n.lower().endswith(".ini") and all(s in n.lower() for s in substrs)]
         if exact:
             return exact[0]
-        # fallback: any .ini containing the substrings
         loose = [n for n in names if n.lower().endswith(".ini") and all(s in n.lower() for s in substrs)]
         return loose[0] if loose else None
 
@@ -526,8 +500,35 @@ def find_gh_ini_members(zf: ZipFile) -> dict[str, str]:
     out["type"]     = pick(("type",))                                      # 'Machine Type'
     return {k: v for k, v in out.items() if v}
 
+def derive_mame_version_hint_from_filename(name: str | Path) -> Optional[str]:
+    """
+    Best-effort release key ('0281') from filenames like:
+      - mame0281lx.zip / mame-0281.zip / mame_0281.zip
+      - history281.zip / history281a.zip
+      - mame-0.281-foo.zip / history-0.281.zip
+      - 1.281 → 1281
+    Returns None if no obvious hint is found.
+    """
+    s = Path(name).name.lower()
 
-# (Optional) make sure these names are exported if you maintain __all__
+    # Prefer explicit tokens “mame” or “history” followed by 3–4 digits
+    m = re.search(r"(?:mame|history)[-_]?0?(\d{3,4})(?!\d)", s)
+    if m:
+        return m.group(1).zfill(4)
+
+    # Decimal forms like 0.281 -> 0281
+    m2 = re.search(r"(?<!\d)0\.(\d{3})(?!\d)", s)
+    if m2:
+        return f"0{m2.group(1)}"
+
+    # Fallback: 1.234 -> 1234 (zfilled to 4)
+    m3 = re.search(r"(?<!\d)(\d)\.(\d{3})(?!\d)", s)
+    if m3:
+        return f"{m3.group(1)}{m3.group(2)}".zfill(4)
+
+    return None
+
+
 try:
     __all__  # type: ignore[name-defined]
 except NameError:

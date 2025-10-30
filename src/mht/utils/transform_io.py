@@ -53,4 +53,19 @@ def build_outputs_map() -> Dict[str, str]:
         "exotica_lit_raw_data":     _path_s(exotica_raw_path()),
         "wiki_pages_and_redirects": _path_s(exotica_pages_path()),
     }
-    
+        
+def _xml_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
+    rec = cache.get(leaf) or {}
+    return {
+        "kind": kind,                        # e.g. 'history_xml'
+        "leaf": leaf,                        # expected: 'history.xml'
+        "encoding": rec.get("encoding") or "utf-8",
+        "detected_via": rec.get("detected_via"),
+        "zip_archive": rec.get("zip_archive"),
+        "zip_member": rec.get("zip_member"),
+        "zip_crc32": rec.get("zip_crc32"),
+        "zip_size_bytes": rec.get("zip_size_bytes"),
+        "xml_decl_encoding": rec.get("xml_decl_encoding"),
+        "xml_bom": rec.get("xml_bom"),
+        "version_hint": rec.get("xml_root_attrs") or {},   # {'version': '2.80', ...}
+    }

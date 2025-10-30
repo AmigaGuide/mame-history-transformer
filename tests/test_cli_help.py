@@ -1,5 +1,6 @@
 import subprocess, sys, pytest
 
+
 def run_cli(args):
     proc = subprocess.run([sys.executable, "-m", "mht", *args], capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr

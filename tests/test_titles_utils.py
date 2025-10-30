@@ -1,5 +1,6 @@
 from mht.utils.titles import parse_description, build_redirect_sources
 
+
 def test_parse_single_unit_with_version():
     desc, anomalies = parse_description('Pac-Land (Rev B)')
     assert desc["title1"] == "Pac-Land"

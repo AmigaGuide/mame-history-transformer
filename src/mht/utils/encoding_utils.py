@@ -33,12 +33,20 @@ import time
 import zipfile
 import xml.etree.ElementTree as ET
 import datetime
+import json
+import os
 
 from mht.utils.logger import debug_log, setup_logger
 from mht.utils.config import LOG_LEVEL
 
 
-__all__ = ["detect_encoding", "detect_encodings_from_archives"]
+__all__ = [
+    "detect_encoding",
+    "detect_encodings_from_archives",
+    "load_encodings_cache",
+    "save_encodings_cache",
+]
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -338,8 +346,10 @@ def detect_encodings_from_archives(
             # Single chardet pass for BOTH label and confidence
             result = chardet.detect(raw or b"")
             guess = result.get("encoding") or "Unknown"
-            conf  = result.get("confidence")
-            log.info(f"[detect] chardet: {leaf_key} → {guess} (confidence {conf:.2f} if not None)")
+            conf  = result.get("confidence")            
+            conf_str = f"{conf:.2f}" if conf is not None else "n/a"
+            log.info(f"[detect] chardet: {leaf_key} -> {guess} (confidence {conf_str})")    
+            #log.info(f"[detect] chardet: {leaf_key} → {guess} (confidence {conf:.2f} if not None)")
             detected_via = "chardet"
 
         enc_final, ascii_only = _normalise_label(guess)
@@ -468,3 +478,27 @@ def _read_all_with_progress(zp: Path, member: str, *, log_label: str) -> tuple[b
         speed = _human_mb(total_size) / max(elapsed, 1e-6)
         log.info(f"[detect] {log_label}: done in {elapsed:.1f}s, avg {speed:.1f} MiB/s")
         return raw, crc32, total_size
+
+# --- Cache helpers (canonical; used by callers — no global ENCODINGS_JSON here) ---
+
+def load_encodings_cache(path: Path) -> dict[str, Any]:
+    """
+    Load the encodings cache JSON from `path`. Returns {} if missing/invalid.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_encodings_cache(path: Path, data: dict[str, Any]) -> None:
+    """
+    Persist the encodings cache JSON to `path` deterministically.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+    if not text.endswith("\n"):
+        text += "\n"
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
+    os.replace(tmp, path)  # atomic replace

@@ -2,6 +2,7 @@ import pytest
 
 from mht.provenance.peek import derive_mame_version_hint_from_filename as hint
 
+
 @pytest.mark.parametrize("name,expected", [
     ("mame0281lx.zip", "0281"),
     ("MAME-0282-WIN.ZIP", "0282"),

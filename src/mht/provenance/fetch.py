@@ -3,29 +3,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any
-import hashlib
-import json
-import time
 import requests
 
 from mht.utils.paths import DATA_DIR
 from mht.utils.logger import debug_log
+from mht.utils.io import sha256_file
 
 INCOMING_DIR = DATA_DIR / "incoming"
 INCOMING_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------
-# Utilities
+# Canonical HTTP helpers
 # ---------------------------
 
-def _sha256_file(p: Path) -> str:
-    h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-def _head(url: str, *, timeout: float = 12.0, debug: bool = False) -> Optional[int]:
+def head_status(url: str, *, timeout: float = 12.0, debug: bool = False) -> Optional[int]:
+    """
+    Lightweight HEAD returning only the status code (or None on error).
+    Used for probing release availability.
+    """
     if debug:
         debug_log(f"[fetch] HEAD {url}")
     try:
@@ -38,12 +33,17 @@ def _head(url: str, *, timeout: float = 12.0, debug: bool = False) -> Optional[i
             debug_log(f"[fetch] ERROR {type(e).__name__}: {e}  ({url})")
         return None
 
-def _get(url: str, *, dest: Path, timeout: float = 60.0, debug: bool = False) -> Dict[str, Any]:
+
+def download_zip(url: str, dest: Path, *, timeout: float = 60.0, debug: bool = False) -> Dict[str, Any]:
+    """
+    Stream a ZIP to disk. Returns a dict with ok/path/size/sha256 (or error).
+    """
     if debug:
-        debug_log(f"[fetch] GET {url} → {dest.as_posix()}")
+        debug_log(f"[fetch] GET {url} -> {dest.as_posix()}")
     try:
         with requests.get(url, stream=True, timeout=timeout) as r:
             r.raise_for_status()
+            dest.parent.mkdir(parents=True, exist_ok=True)
             with dest.open("wb") as f:
                 for chunk in r.iter_content(chunk_size=1 << 20):
                     if chunk:
@@ -52,7 +52,7 @@ def _get(url: str, *, dest: Path, timeout: float = 60.0, debug: bool = False) ->
             "ok": True,
             "path": dest.as_posix(),
             "size": dest.stat().st_size,
-            "sha256": _sha256_file(dest),
+            "sha256": sha256_file(dest),
             "note": "downloaded",
         }
         if debug:
@@ -62,6 +62,18 @@ def _get(url: str, *, dest: Path, timeout: float = 60.0, debug: bool = False) ->
         if debug:
             debug_log(f"[fetch] FAIL {type(e).__name__}: {e}  ({url})")
         return {"ok": False, "path": dest.as_posix(), "error": f"{type(e).__name__}: {e}"}
+
+# ---------------------------
+# Internal compatibility wrappers
+# ---------------------------
+
+# Keep these two for existing call sites inside this module; elsewhere prefer
+# importing head_status/download_zip directly.
+def _head(url: str, *, timeout: float = 12.0, debug: bool = False) -> Optional[int]:
+    return head_status(url, timeout=timeout, debug=debug)
+
+def _get(url: str, *, dest: Path, timeout: float = 60.0, debug: bool = False) -> Dict[str, Any]:
+    return download_zip(url, dest, timeout=timeout, debug=debug)
 
 # ---------------------------
 # Plan object
@@ -96,7 +108,7 @@ def _mame_url_for(key: str) -> str:
 
 def _probe_mame(next_key: str, *, debug: bool = False) -> Optional[Dict[str, str]]:
     url = _mame_url_for(next_key)
-    status = _head(url, debug=debug)
+    status = head_status(url, debug=debug)
     if status == 200:
         return {"url": url}
     return None
@@ -104,13 +116,13 @@ def _probe_mame(next_key: str, *, debug: bool = False) -> Optional[Dict[str, str
 def _probe_gh(next_core: str, *, debug: bool = False) -> Optional[Dict[str, str]]:
     """
     GH keeps old revisions live; probe descending suffixes:
-      'c' → 'b' → 'a' → '' (no suffix).
+      'c' -> 'b' -> 'a' -> '' (no suffix).
     Stop at the first 200.
     """
     base = f"https://www.arcade-history.com/dats/history{next_core}"
     for suffix in ("c", "b", "a", ""):
         url = f"{base}{suffix}.zip"
-        code = _head(url, debug=debug)
+        code = head_status(url, debug=debug)
         if code == 200:
             return {"url": url, "suffix": suffix}
     return None
@@ -139,7 +151,7 @@ def probe_latest(*, use_cache: bool = True, debug: bool = False) -> FetchPlan:
     """
     Decide whether MAME and GH for the *next* month are available.
     current_key: read from data/current_version.txt (e.g., '0281')
-    next_key:    increment (→ '0282')
+    next_key:    increment (-> '0282')
     Returns a plan with action:
       - 'both'    : MAME & GH available
       - 'wait-gh' : MAME yes, GH no
@@ -173,19 +185,19 @@ def probe_latest(*, use_cache: bool = True, debug: bool = False) -> FetchPlan:
 # Downloads
 # ---------------------------
 
-def mame_download(url: str, dest: Path, *, overwrite: bool, debug: bool) -> Dict[str, Any]:
+def mame_download(url: str, dest: Path, *, overwrite: bool = False, debug: bool = False) -> Dict[str, Any]:
     if dest.exists() and not overwrite:
         if debug:
             debug_log(f"[fetch] SKIP exists: {dest.as_posix()}")
         return {"ok": True, "path": dest.as_posix(), "reason": "exists", "note": "already in data/incoming; not re-downloaded"}
-    return _get(url, dest=dest, debug=debug)
+    return download_zip(url, dest, debug=debug)
 
-def gh_download(url: str, dest: Path, *, overwrite: bool, debug: bool) -> Dict[str, Any]:
+def gh_download(url: str, dest: Path, *, overwrite: bool = False, debug: bool = False) -> Dict[str, Any]:
     if dest.exists() and not overwrite:
         if debug:
             debug_log(f"[fetch] SKIP exists: {dest.as_posix()}")
         return {"ok": True, "path": dest.as_posix(), "reason": "exists", "note": "already in data/incoming; not re-downloaded"}
-    return _get(url, dest=dest, debug=debug)
+    return download_zip(url, dest, debug=debug)
 
 def _core_no_dot(core: str) -> str:
     # for GH naming; core like '282' already has no dot
@@ -195,7 +207,7 @@ def perform_downloads(
     plan: FetchPlan,
     *,
     ingest: bool = False,
-    overwrite: bool = False,   # <- add this
+    overwrite: bool = False,
 ) -> Dict[str, object]:
     INCOMING_DIR.mkdir(parents=True, exist_ok=True)
     results = {"downloads": [], "skipped": [], "action": plan.action}
@@ -215,7 +227,7 @@ def perform_downloads(
             "reason": "exists", "note": "already in data/incoming; not re-downloaded"
         })
     else:
-        r1 = mame_download(mame_url, mame_dest)
+        r1 = mame_download(mame_url, mame_dest, overwrite=overwrite)
         results["downloads"].append({"name": mame_name, **r1})
 
     # GH (preserve suffix if any)
@@ -229,7 +241,7 @@ def perform_downloads(
             "reason": "exists", "note": "already in data/incoming; not re-downloaded"
         })
     else:
-        r2 = gh_download(gh_url, gh_dest)
+        r2 = gh_download(gh_url, gh_dest, overwrite=overwrite)
         results["downloads"].append({"name": gh_name, **r2})
 
     if ingest:

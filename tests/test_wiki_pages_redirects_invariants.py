@@ -1,5 +1,6 @@
 import pytest
 
+
 @pytest.fixture(scope="module")
 def load_doc(outputs_dir, read_json):
     """Load the wiki pages/redirects doc once for this module."""

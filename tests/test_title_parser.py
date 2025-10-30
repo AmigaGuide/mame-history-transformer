@@ -1,5 +1,5 @@
-# tests/test_title_parser.py
 from mht.title.parser import parse_description
+
 
 def test_simple_split_and_global():
     desc, anoms = parse_description('Title (Rev 2)')

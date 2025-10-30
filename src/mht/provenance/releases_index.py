@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 import datetime
-import json
 import hashlib
 
 from mht.utils.io import write_json, read_json
@@ -17,9 +16,7 @@ from mht.utils.paths import (
     outputs_dir,
     summaries_dir,
     encodings_cache_path,
-    stamps_dir,
 )
-from mht.utils.versions import SCHEMA_IDS, SCHEMA_INFO
 
 # Optional: we only read summaries if present
 # mame:     summaries/mame_parsing_summary.json
@@ -202,7 +199,7 @@ def _read_versions_from_summaries(ver: str) -> Dict[str, Any]:
     # ini
     ip = sdir / "ini_parsing_summary.json"
     i = read_json(ip) or {}
-    ini_files = []
+    #ini_files = []
     # try a couple shapes the code already supports
     ini_root = (i.get("ini") or {}) if isinstance(i, dict) else {}
     files_node = ini_root.get("files")

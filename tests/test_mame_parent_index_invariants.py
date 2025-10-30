@@ -1,7 +1,4 @@
 import json
-import pathlib
-
-#DOC = pathlib.Path("output/mame_parent_index.json")
 
 
 def test_bidirectional_consistency(outputs_dir):
