@@ -11,8 +11,8 @@ def _build_section_anomalies(parsing_state: dict) -> dict:
     src = parsing_state.get("non_standard_sections") or {}
     out = {
         "non_standard_headings": {},
-        "mapped_headings": {},     # subset of the above where we applied alias/fuzzy mapping
-        "unmapped_headings": {}    # subset where we kept as-is (rare/special sections)
+        "mapped_headings": {},
+        "unmapped_headings": {}
     }
     for normalised, rec in sorted(src.items()):
         systems = sorted(rec.get("systems") or [])
@@ -44,8 +44,6 @@ def build_history_summary(
     systems_with_aliases: int,
     total_port_lines_all: int,
 ) -> Dict:
-    """Rebuild the exact summary JSON structure previously in history_parser.py."""
-
     # platforms_found → collapse to unique systems per platform
     platforms_found_summary = {}
     for platform, data in parsing_state["platforms_found"].items():
@@ -61,8 +59,6 @@ def build_history_summary(
         "unique": len(_section_heads),
         "distribution": dict(sorted(_section_heads.items(), key=lambda kv: kv[0].upper())),
     }
-
-    section_anomalies_block = _build_section_anomalies(parsing_state)
 
     # platform categories (top-level PORTS headings)
     _cats = dict(parsing_state["platform_categories_found"])
@@ -185,6 +181,23 @@ def build_history_summary(
         },
     }
 
+    # Block classifier metrics
+    block_type_counts_block = dict(parsing_state.get("block_type_counts", {}))
+    _ub_map = parsing_state.get("unknown_blocks", {}) or {}
+    unknown_blocks_block = {
+        "sections_affected": len(_ub_map),
+        "by_section": dict(sorted(_ub_map.items(), key=lambda kv: kv[0])),
+    }
+
+    # Suppressions
+    _sup = parsing_state.get("suppressions", {}) or {}
+    _sup_counts = dict(_sup.get("counts", {}))
+    _sup_by_system = {k: v for k, v in sorted((_sup.get("by_system") or {}).items(), key=lambda kv: kv[0].lower())}
+    suppressions_block = {
+        "counts": _sup_counts,
+        "by_system": _sup_by_system
+    }
+
     header = build_summary_header(
         schema_id=SCHEMA_IDS["history"],
         schema_version=schema_version(SCHEMA_IDS["history"]),
@@ -194,21 +207,6 @@ def build_history_summary(
             "history_parser_version": tool_version("history_parser"),
         },
     )
-
-    _banner_anoms = parsing_state.get("banner_spacing_anomalies") or {}
-    banner_spacing_block = {
-        "systems_affected": len(_banner_anoms),
-        "by_system": dict(sorted(_banner_anoms.items(), key=lambda kv: kv[0].lower())),
-    }
-
-    # Block classification metrics (from history_blocks.classify_section_blocks)
-    block_type_counts_block = dict(parsing_state.get("block_type_counts", {}))
-
-    _ub_map = parsing_state.get("unknown_blocks", {}) or {}
-    unknown_blocks_block = {
-        "sections_affected": len(_ub_map),
-        "by_section": dict(sorted(_ub_map.items(), key=lambda kv: kv[0])),
-    }
 
     summary = {
         "header": header,
@@ -225,7 +223,7 @@ def build_history_summary(
             "publisher_count_unique": len(parsing_state["publishers_found"]),
             "platform_count_unique": len(platforms_found_summary),
             "model_count_unique": len(parsing_state["models_found"].keys()),
-            "additional_tag_count_unique": len(_tags_map),
+            "additional_tag_count_unique": len(parsing_state["additional_tags_found"]),
             "ports_with_comments": parsing_state["ports_with_comments"],
             "systems_with_port_overview": len(overviews_map),
         },
@@ -243,7 +241,8 @@ def build_history_summary(
             "port_overview_texts": port_overview_block,
             "block_types": {
                 "counts": block_type_counts_block
-            },            
+            },
+            "suppressions": suppressions_block,
         },
         "anomalies": {
             "unexpected_platform_categories": unexpected_platform_categories_block,
@@ -269,10 +268,7 @@ def build_history_summary(
                 ),
                 "by_system_lines": {k: v for k, v in parsing_state["null_platform_examples"].items()},
             },
-            # >>> NEW: record all near-misses/aliases/non-standard headings with every affected system
-            "section_headings": section_anomalies_block,                         
-            "banner_spacing": banner_spacing_block,
-            "unknown_blocks": unknown_blocks_block,            
+            "unknown_blocks": unknown_blocks_block,
         },
         "residue_flags": {
             "unparsable_dates": unparsable_dates_block,

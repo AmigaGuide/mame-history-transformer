@@ -5,7 +5,7 @@ Streams `history.xml` from the release ZIP and delegates work to focused helpers
 - Section segmentation, PORTS parsing (with banners/inheritance)
 - Per-system record assembly
 - Totals/distributions summary and invariants
-- NEW: emits gh_system_trivia.json with sections_raw and sections_blocks
+- TRIVIA: emits gh_system_trivia.json with sections_raw and sections_blocks (now with suppressions applied)
 
 Inputs (ZIP-only)
 -----------------
@@ -18,12 +18,6 @@ Outputs
 - data/releases/<ver>/outputs/gh_system_trivia.json
 - data/releases/<ver>/summaries/history_parsing_summary.json
 - data/releases/<ver>/.stamps/history.json
-
-Notes
------
-- No selection/filtering beyond excluding non-arcade <software> entries.
-- Progress is logged every 10,000 entries.
-- Stage is stamped for reproducibility.
 """
 
 from __future__ import annotations
@@ -55,7 +49,8 @@ from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
-from mht.inputs.history_blocks import classify_section_blocks   # NEW
+from mht.inputs.history_blocks import classify_section_blocks
+from mht.inputs.history_suppress import apply_suppressions   # NEW
 
 __all__ = ["parse_history_entries"]
 
@@ -64,22 +59,16 @@ log = setup_logger(log_level=LOG_LEVEL)
 # --- ZIP-only helpers ---------------------------------------------------------
 
 def _pick_history_zip(version: str) -> Path:
-    """Return the preferred History ZIP for this release, or raise FileNotFoundError."""
     arc_dir = archives_dir(version)
     if not arc_dir.exists():
         raise FileNotFoundError(f"Archives folder missing: {arc_dir.as_posix()}")
     zips = sorted(arc_dir.glob("*.zip"), key=lambda p: p.name.lower())
     if not zips:
         raise FileNotFoundError(f"No .zip files found under {arc_dir.as_posix()}")
-    # Prefer names that contain 'history'
     prefer = [p for p in zips if "history" in p.name.lower()] or zips
     return prefer[0]
 
 def _find_history_xml_member(zf: zipfile.ZipFile) -> str | None:
-    """
-    Locate the Gaming-History XML inside a GH zip.
-    Prefer leaf named 'history.xml'; else fall back to largest *.xml.
-    """
     names = zf.namelist()
     exact = [n for n in names if Path(n).name.lower() == "history.xml"]
     if exact:
@@ -91,9 +80,6 @@ def _find_history_xml_member(zf: zipfile.ZipFile) -> str | None:
     return max(xmls, key=lambda n: sizes.get(n, 0))
 
 def _xml_input_from_cache(cache: dict, leaf: str, *, kind: str) -> dict:
-    """
-    Build a rich input block for 'history.xml' from encodings.json.
-    """
     rec = cache.get(leaf) or {}
     return {
         "kind": kind,
@@ -111,26 +97,9 @@ def _xml_input_from_cache(cache: dict, leaf: str, *, kind: str) -> dict:
 # --- Main ---------------------------------------------------------------------
 
 def parse_history_entries(file_path: Path, encoding: str) -> bool:
-    """
-    ZIP-only streaming of `history.xml` and emit per-system PORTS JSON, TRIVIA JSON, plus a summary.
-
-    Parameters
-    ----------
-    file_path : Path
-        Ignored in ZIP-only mode (kept for call-site compatibility).
-    encoding : str
-        Text encoding for the XML (used when wrapping the ZIP member stream).
-
-    Returns
-    -------
-    bool
-        True on success or when the stage is up-to-date (stamp matched);
-        False only on ZIP/missing error, XML parse error, or failed writes.
-    """
     start = time.perf_counter()
     ver = active_version()
 
-    # Require a history ZIP; no fallback to extracted history.xml
     try:
         history_zip = _pick_history_zip(ver)
     except FileNotFoundError as e:
@@ -139,7 +108,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     enc_path = encodings_cache_path(ver)
 
-    # Freshness: key strictly on the ZIP + encodings.json
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "history.json",
         schema_id="mht.stage.history",
@@ -152,7 +120,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     log.info(f"Parsing history.xml from zip: {history_zip.name} (encoding={encoding})")
 
-    # State for summary & invariants
     history_version, history_date = None, None
     parsing_state = {
         "platforms_found": defaultdict(lambda: {"count": 0, "systems": []}),
@@ -179,12 +146,15 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         "null_platform_examples": defaultdict(list),
 
         # Heading canonicalisation / anomalies
-        "non_standard_sections": {},   # {norm: {"count": int, "systems": set(), "mapped_to": str|None, "via": str|None}}
+        "non_standard_sections": {},
         "banner_spacing_anomalies": {},
 
         # Block classification metrics
         "block_type_counts": Counter(),
         "unknown_blocks": {},
+
+        # Suppressions summary
+        "suppressions": {"counts": {}, "by_system": {}},
     }
 
     total_entries = 0
@@ -196,9 +166,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     total_port_lines_all = 0
 
     gh_systems: dict[str, dict] = {}
-    gh_trivia: dict[str, dict] = {}          # NEW
+    gh_trivia: dict[str, dict] = {}
 
-    # --- Stream XML from the ZIP ---------------------------------------------
     try:
         with zipfile.ZipFile(history_zip) as zf:
             member = _find_history_xml_member(zf)
@@ -209,9 +178,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             with zf.open(member, "r") as zfh:
                 wrapper = io.TextIOWrapper(zfh, encoding=encoding, errors="replace")
 
-                # Stream parse
                 for event, elem in ET.iterparse(wrapper, events=("start", "end")):
-                    # Root attributes
                     hdr = capture_history_root_attrs(event, elem)
                     if hdr is not None:
                         if history_version is None:
@@ -250,7 +217,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 if gh_id is not None:
                                     entry_data["gh_id"] = gh_id
 
-                            # --- TRIVIA (non-PORTS / non-CONTRIBUTE) -------------------
+                            # --- TRIVIA (non-PORTS / non-CONTRIBUTE) with suppressions
                             raw_sections: dict[str, str] = {}
                             blocks_by_section: dict[str, list] = {}
 
@@ -258,21 +225,21 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 if sec_name in ("PORTS", "CONTRIBUTE"):
                                     continue
 
-                                # Tag: OPENING → overview; others lower-case
                                 tag = "overview" if sec_name == "OPENING" else sec_name.lower()
-
-                                # Ensure list of lines
                                 lines = sec_lines if isinstance(sec_lines, list) else str(sec_lines).splitlines()
 
-                                # Raw text (preserve as string)
-                                raw_sections[tag] = "\n".join(lines)
+                                # Apply suppressions per section/tag
+                                lines_filtered = apply_suppressions(tag, lines, primary, parsing_state)
 
-                                # Structured blocks (for later transformer use)
+                                # Raw strings for continuity
+                                raw_sections[tag] = "\n".join(lines_filtered)
+
+                                # Structured blocks based on filtered lines
                                 try:
-                                    blocks = classify_section_blocks(sec_name, lines, parsing_state)
+                                    blocks = classify_section_blocks(sec_name, lines_filtered, parsing_state)
                                 except Exception as e:
                                     debug_log(f"[history_parser::blocks] {primary}:{sec_name} classification error: {e}")
-                                    blocks = [{"type": "paragraph", "text": "\n".join(lines)}] if lines else []
+                                    blocks = [{"type": "paragraph", "text": "\n".join(lines_filtered)}] if lines_filtered else []
                                 blocks_by_section[tag] = blocks
 
                             if raw_sections or blocks_by_section:
@@ -285,7 +252,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                     trivia_entry["sections_blocks"] = blocks_by_section
                                 gh_trivia[primary] = trivia_entry
 
-                            # --- PORTS -------------------------------------------------
+                            # --- PORTS (unchanged)
                             if "PORTS" in sectioned:
                                 overview, platform_counts, platform_ports, port_lines = extract_ports_section(
                                     sectioned["PORTS"], primary, parsing_state
@@ -321,19 +288,16 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
     log.info(f"  - {port_overview_count} entries contained a port overview")
 
-    # Write parsed per-system PORTS output (sorted)
     systems_sorted = build_history_systems_sorted(gh_systems)
     if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {gh_system_ports_path()} ({len(systems_sorted)} systems)")
 
-    # Write TRIVIA output (sorted by system name)
     trivia_sorted = dict(sorted(gh_trivia.items(), key=lambda kv: kv[0].lower()))
     if not write_json(gh_system_trivia_path(), trivia_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {gh_system_trivia_path()} ({len(trivia_sorted)} systems)")
 
-    # Summary
     summary = build_history_summary(
         history_version=history_version,
         history_date=history_date,
@@ -351,7 +315,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
-    # Cache tallies for checker
     parsing_state["total_port_lines_all"] = total_port_lines_all
     parsing_state["systems_with_ports_count"] = systems_with_ports
     parsing_state["port_overview_count"] = port_overview_count
@@ -366,7 +329,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         KNOWN_PLATFORMS=KNOWN_PLATFORMS,
     )
 
-    # Decide success by outputs on disk
     hs = history_summary_path()
     gh = gh_system_ports_path()
     tr = gh_system_trivia_path()
@@ -375,12 +337,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         log.error("History outputs not found. Stamp not saved.")
         return False
 
-    # --- Enriched stamp (ZIP + encoding inputs, outputs, stats) --------------
     stamp_doc = dict(current_stamp)
 
-    enc_path = encodings_cache_path(ver)
     enc_cache = load_encodings_cache(enc_path)
-
     inputs_detail = [_xml_input_from_cache(enc_cache, "history.xml", kind="history_xml")]
 
     outputs = []
