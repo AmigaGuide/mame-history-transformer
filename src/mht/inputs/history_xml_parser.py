@@ -175,6 +175,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         "null_platform_ports_by_system": Counter(),
         "null_platform_examples": defaultdict(list),
         "disk_size_quotes": defaultdict(list),
+        # Heading normalisation / anomalies (populated by history_text.extract_text_sections)
+        "non_standard_sections": {},   # {normalised_heading: {"count": int, "systems": set(), "mapped_to": str|None, "via": str|None}}        
     }
 
     total_entries = 0
@@ -233,7 +235,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
                         entry_data = build_history_system_record(aliases=aliases)
 
-                        sectioned = extract_text_sections(elem, parsing_state)
+                        #sectioned = extract_text_sections(elem, parsing_state)
+                        sectioned = extract_text_sections(elem, parsing_state, primary=primary)
                         if sectioned:
                             if "CONTRIBUTE" in sectioned:
                                 gh_id = parse_gh_id_from_contribute(sectioned["CONTRIBUTE"])
@@ -258,13 +261,17 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 )
 
                             # >>> NEW (TRIVIA scaffold): everything except PORTS/CONTRIBUTE
-                            if sectioned:
+                            if sectioned:                                                                        
                                 raw_sections: dict[str, str] = {}
-                                for sec_name, sec_text in sectioned.items():
+                                for sec_name, sec_lines in sectioned.items():
                                     if sec_name in ("PORTS", "CONTRIBUTE"):
                                         continue
                                     tag = "overview" if sec_name == "OPENING" else sec_name.lower()
-                                    raw_sections[tag] = sec_text
+                                    # join lists to a single string for the trivia scaffold
+                                    if isinstance(sec_lines, list):
+                                        raw_sections[tag] = "\n".join(sec_lines)
+                                    else:
+                                        raw_sections[tag] = str(sec_lines)                                                                                                                                                
                                 gh_trivia_systems[primary] = {
                                     # Future: replace sections_raw with structured blocks (paragraphs/bullets/numbered/pairs/subheadings)
                                     "sections_raw": raw_sections
@@ -300,6 +307,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     if not write_json(trivia_out, trivia_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {trivia_out} ({len(trivia_sorted)} systems)")
+
+    ns = parsing_state.get("non_standard_sections") or {}
+    log.info(f"Non-standard section headings observed: {len(ns)} distinct; total offences={sum(r['count'] for r in ns.values())}")
 
     summary = build_history_summary(
         history_version=history_version,

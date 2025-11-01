@@ -7,6 +7,32 @@ from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 
 __all__ = ["build_history_summary"]
 
+def _build_section_anomalies(parsing_state: dict) -> dict:
+    src = parsing_state.get("non_standard_sections") or {}
+    out = {
+        "non_standard_headings": {},
+        "mapped_headings": {},     # subset of the above where we applied alias/fuzzy mapping
+        "unmapped_headings": {}    # subset where we kept as-is (rare/special sections)
+    }
+    for normalised, rec in sorted(src.items()):
+        systems = sorted(rec.get("systems") or [])
+        item = {
+            "count": rec.get("count", 0),
+            "systems": systems
+        }
+        out["non_standard_headings"][normalised] = item
+        mapped_to = rec.get("mapped_to")
+        if mapped_to:
+            out["mapped_headings"][normalised] = {
+                "mapped_to": mapped_to,
+                "via": rec.get("via"),
+                "systems": systems,
+                "count": rec.get("count", 0)
+            }
+        else:
+            out["unmapped_headings"][normalised] = item
+    return out
+
 def build_history_summary(
     *,
     history_version: str | None,
@@ -35,6 +61,8 @@ def build_history_summary(
         "unique": len(_section_heads),
         "distribution": dict(sorted(_section_heads.items(), key=lambda kv: kv[0].upper())),
     }
+
+    section_anomalies_block = _build_section_anomalies(parsing_state)
 
     # platform categories (top-level PORTS headings)
     _cats = dict(parsing_state["platform_categories_found"])
@@ -167,6 +195,12 @@ def build_history_summary(
         },
     )
 
+    _banner_anoms = parsing_state.get("banner_spacing_anomalies") or {}
+    banner_spacing_block = {
+        "systems_affected": len(_banner_anoms),
+        "by_system": dict(sorted(_banner_anoms.items(), key=lambda kv: kv[0].lower())),
+    }
+
     summary = {
         "header": header,
         "totals": {
@@ -223,6 +257,9 @@ def build_history_summary(
                 ),
                 "by_system_lines": {k: v for k, v in parsing_state["null_platform_examples"].items()},
             },
+            # >>> NEW: record all near-misses/aliases/non-standard headings with every affected system
+            "section_headings": section_anomalies_block,                         
+            "banner_spacing": banner_spacing_block,
         },
         "residue_flags": {
             "unparsable_dates": unparsable_dates_block,
