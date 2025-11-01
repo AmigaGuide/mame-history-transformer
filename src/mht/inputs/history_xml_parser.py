@@ -14,7 +14,7 @@ Inputs (ZIP-only)
 Outputs
 -------
 - data/releases/<ver>/outputs/gh_system_ports.json
-- data/releases/<ver>/outputs/gh_system_trivia.json            # >>> NEW (TRIVIA scaffold)
+- data/releases/<ver>/outputs/gh_system_trivia.json
 - data/releases/<ver>/summaries/history_parsing_summary.json
 - data/releases/<ver>/.stamps/history.json
 
@@ -53,6 +53,7 @@ from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
+from mht.inputs.history_blocks import classify_section_blocks
 
 __all__ = ["parse_history_entries"]
 
@@ -177,6 +178,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         "disk_size_quotes": defaultdict(list),
         # Heading normalisation / anomalies (populated by history_text.extract_text_sections)
         "non_standard_sections": {},   # {normalised_heading: {"count": int, "systems": set(), "mapped_to": str|None, "via": str|None}}        
+        # Block classification metrics (populated by history_blocks.classify_section_blocks)
+        "block_type_counts": Counter(),
+        "unknown_blocks": {},        
     }
 
     total_entries = 0
@@ -234,9 +238,20 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                             continue
 
                         entry_data = build_history_system_record(aliases=aliases)
-
-                        #sectioned = extract_text_sections(elem, parsing_state)
+                        
                         sectioned = extract_text_sections(elem, parsing_state, primary=primary)
+
+                        # NEW: classify blocks inside each non-PORTS/non-CONTRIBUTE section for metrics
+                        if sectioned:
+                            for sec_name, sec_lines in sectioned.items():
+                                if sec_name in ("PORTS", "CONTRIBUTE"):
+                                    continue
+                                try:
+                                    lines = sec_lines if isinstance(sec_lines, list) else str(sec_lines).splitlines()
+                                    classify_section_blocks(sec_name, lines, parsing_state)
+                                except Exception as e:
+                                    debug_log(f"[history_xml_parser::blocks] {primary}:{sec_name} classification error: {e}")
+                                                                        
                         if sectioned:
                             if "CONTRIBUTE" in sectioned:
                                 gh_id = parse_gh_id_from_contribute(sectioned["CONTRIBUTE"])

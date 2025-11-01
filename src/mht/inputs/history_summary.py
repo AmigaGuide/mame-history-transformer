@@ -201,6 +201,15 @@ def build_history_summary(
         "by_system": dict(sorted(_banner_anoms.items(), key=lambda kv: kv[0].lower())),
     }
 
+    # Block classification metrics (from history_blocks.classify_section_blocks)
+    block_type_counts_block = dict(parsing_state.get("block_type_counts", {}))
+
+    _ub_map = parsing_state.get("unknown_blocks", {}) or {}
+    unknown_blocks_block = {
+        "sections_affected": len(_ub_map),
+        "by_section": dict(sorted(_ub_map.items(), key=lambda kv: kv[0])),
+    }
+
     summary = {
         "header": header,
         "totals": {
@@ -232,6 +241,9 @@ def build_history_summary(
             "additional_tags_found": additional_tags_block,
             "disk_size_quotes": disk_size_quotes_block,
             "port_overview_texts": port_overview_block,
+            "block_types": {
+                "counts": block_type_counts_block
+            },            
         },
         "anomalies": {
             "unexpected_platform_categories": unexpected_platform_categories_block,
@@ -260,6 +272,7 @@ def build_history_summary(
             # >>> NEW: record all near-misses/aliases/non-standard headings with every affected system
             "section_headings": section_anomalies_block,                         
             "banner_spacing": banner_spacing_block,
+            "unknown_blocks": unknown_blocks_block,            
         },
         "residue_flags": {
             "unparsable_dates": unparsable_dates_block,
