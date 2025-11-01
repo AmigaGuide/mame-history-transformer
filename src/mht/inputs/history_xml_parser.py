@@ -14,6 +14,7 @@ Inputs (ZIP-only)
 Outputs
 -------
 - data/releases/<ver>/outputs/gh_system_ports.json
+- data/releases/<ver>/outputs/gh_system_trivia.json            # >>> NEW (TRIVIA scaffold)
 - data/releases/<ver>/summaries/history_parsing_summary.json
 - data/releases/<ver>/.stamps/history.json
 
@@ -185,6 +186,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     total_port_lines_all = 0
 
     gh_systems: dict[str, dict] = {}
+    # >>> NEW (TRIVIA scaffold): capture non-PORTS/non-CONTRIBUTE section text per system
+    gh_trivia_systems: dict[str, dict] = {}
 
     # --- Stream XML from the ZIP ---------------------------------------------
     try:
@@ -254,6 +257,19 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                     total_port_lines_all=total_port_lines_all,
                                 )
 
+                            # >>> NEW (TRIVIA scaffold): everything except PORTS/CONTRIBUTE
+                            if sectioned:
+                                raw_sections: dict[str, str] = {}
+                                for sec_name, sec_text in sectioned.items():
+                                    if sec_name in ("PORTS", "CONTRIBUTE"):
+                                        continue
+                                    tag = "overview" if sec_name == "OPENING" else sec_name.lower()
+                                    raw_sections[tag] = sec_text
+                                gh_trivia_systems[primary] = {
+                                    # Future: replace sections_raw with structured blocks (paragraphs/bullets/numbered/pairs/subheadings)
+                                    "sections_raw": raw_sections
+                                }
+
                         gh_systems[primary] = entry_data
                         elem.clear()
 
@@ -277,6 +293,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {gh_system_ports_path()} ({len(systems_sorted)} systems)")
+
+    # >>> NEW (TRIVIA scaffold): write parallel trivia artefact next to gh_system_ports.json
+    trivia_out = gh_system_ports_path().with_name("gh_system_trivia.json")
+    trivia_sorted = build_history_systems_sorted(gh_trivia_systems)
+    if not write_json(trivia_out, trivia_sorted, sort_keys=False):
+        return False
+    log.info(f"Wrote {trivia_out} ({len(trivia_sorted)} systems)")
 
     summary = build_history_summary(
         history_version=history_version,
@@ -313,7 +336,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     # Decide success by outputs on disk
     hs = history_summary_path()
     gh = gh_system_ports_path()
-    success = hs.exists() and gh.exists()
+    success = hs.exists() and gh.exists() and trivia_out.exists()   # >>> NEW (TRIVIA scaffold)
     if not success:
         log.error("History outputs not found. Stamp not saved.")
         return False
@@ -321,7 +344,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     # --- Enriched stamp (ZIP + encoding inputs, outputs, stats) --------------
     stamp_doc = dict(current_stamp)
 
-    #ver = active_version()
     enc_path = encodings_cache_path(ver)
     enc_cache = load_encodings_cache(enc_path)
 
@@ -340,6 +362,17 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             gmeta["records"] = None
         outputs.append(gmeta)
 
+    # >>> NEW (TRIVIA scaffold): include trivia artefact in stamp outputs
+    tr_meta = file_meta(trivia_out) if trivia_out.exists() else None
+    if tr_meta:
+        try:
+            with open(trivia_out, "r", encoding="utf-8") as f:
+                tr_map = json.load(f)
+            tr_meta["records"] = len(tr_map) if isinstance(tr_map, dict) else None
+        except Exception:
+            tr_meta["records"] = None
+        outputs.append(tr_meta)
+
     stats = {}
     try:
         with open(hs, "r", encoding="utf-8") as f:
@@ -356,6 +389,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             "systems_with_aliases": totals.get("systems_with_aliases"),
             "port_lines_parsed":    totals.get("port_lines_parsed"),
             "ports_with_comments":  totals.get("ports_with_comments"),
+            # >>> NEW (TRIVIA scaffold): surface basic coverage if present in summary
+            "systems_with_text":    (s.get("sections", {}) or {}).get("systems_with_text"),
         }
     except Exception:
         pass
