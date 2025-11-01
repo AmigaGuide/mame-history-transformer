@@ -5,6 +5,7 @@ Streams `history.xml` from the release ZIP and delegates work to focused helpers
 - Section segmentation, PORTS parsing (with banners/inheritance)
 - Per-system record assembly
 - Totals/distributions summary and invariants
+- NEW: emits gh_system_trivia.json with sections_raw and sections_blocks
 
 Inputs (ZIP-only)
 -----------------
@@ -42,6 +43,7 @@ from mht.utils.paths import (
     gh_system_ports_path, history_summary_path,
     archives_dir, active_version,
     encodings_cache_path,
+    gh_system_trivia_path,
 )
 from mht.utils.io import write_json, file_meta
 from mht.inputs.history_constants import KNOWN_PLATFORMS
@@ -53,7 +55,7 @@ from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
-from mht.inputs.history_blocks import classify_section_blocks
+from mht.inputs.history_blocks import classify_section_blocks   # NEW
 
 __all__ = ["parse_history_entries"]
 
@@ -110,7 +112,7 @@ def _xml_input_from_cache(cache: dict, leaf: str, *, kind: str) -> dict:
 
 def parse_history_entries(file_path: Path, encoding: str) -> bool:
     """
-    ZIP-only streaming of `history.xml` and emit per-system PORTS JSON plus a summary.
+    ZIP-only streaming of `history.xml` and emit per-system PORTS JSON, TRIVIA JSON, plus a summary.
 
     Parameters
     ----------
@@ -175,12 +177,14 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         "null_platform_ports_total": 0,
         "null_platform_ports_by_system": Counter(),
         "null_platform_examples": defaultdict(list),
-        "disk_size_quotes": defaultdict(list),
-        # Heading normalisation / anomalies (populated by history_text.extract_text_sections)
-        "non_standard_sections": {},   # {normalised_heading: {"count": int, "systems": set(), "mapped_to": str|None, "via": str|None}}        
-        # Block classification metrics (populated by history_blocks.classify_section_blocks)
+
+        # Heading canonicalisation / anomalies
+        "non_standard_sections": {},   # {norm: {"count": int, "systems": set(), "mapped_to": str|None, "via": str|None}}
+        "banner_spacing_anomalies": {},
+
+        # Block classification metrics
         "block_type_counts": Counter(),
-        "unknown_blocks": {},        
+        "unknown_blocks": {},
     }
 
     total_entries = 0
@@ -192,8 +196,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     total_port_lines_all = 0
 
     gh_systems: dict[str, dict] = {}
-    # >>> NEW (TRIVIA scaffold): capture non-PORTS/non-CONTRIBUTE section text per system
-    gh_trivia_systems: dict[str, dict] = {}
+    gh_trivia: dict[str, dict] = {}          # NEW
 
     # --- Stream XML from the ZIP ---------------------------------------------
     try:
@@ -238,26 +241,51 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                             continue
 
                         entry_data = build_history_system_record(aliases=aliases)
-                        
-                        sectioned = extract_text_sections(elem, parsing_state, primary=primary)
 
-                        # NEW: classify blocks inside each non-PORTS/non-CONTRIBUTE section for metrics
+                        sectioned = extract_text_sections(elem, parsing_state, primary=primary)
                         if sectioned:
-                            for sec_name, sec_lines in sectioned.items():
-                                if sec_name in ("PORTS", "CONTRIBUTE"):
-                                    continue
-                                try:
-                                    lines = sec_lines if isinstance(sec_lines, list) else str(sec_lines).splitlines()
-                                    classify_section_blocks(sec_name, lines, parsing_state)
-                                except Exception as e:
-                                    debug_log(f"[history_xml_parser::blocks] {primary}:{sec_name} classification error: {e}")
-                                                                        
-                        if sectioned:
+                            # GH ID (from CONTRIBUTE)
                             if "CONTRIBUTE" in sectioned:
                                 gh_id = parse_gh_id_from_contribute(sectioned["CONTRIBUTE"])
                                 if gh_id is not None:
                                     entry_data["gh_id"] = gh_id
 
+                            # --- TRIVIA (non-PORTS / non-CONTRIBUTE) -------------------
+                            raw_sections: dict[str, str] = {}
+                            blocks_by_section: dict[str, list] = {}
+
+                            for sec_name, sec_lines in sectioned.items():
+                                if sec_name in ("PORTS", "CONTRIBUTE"):
+                                    continue
+
+                                # Tag: OPENING → overview; others lower-case
+                                tag = "overview" if sec_name == "OPENING" else sec_name.lower()
+
+                                # Ensure list of lines
+                                lines = sec_lines if isinstance(sec_lines, list) else str(sec_lines).splitlines()
+
+                                # Raw text (preserve as string)
+                                raw_sections[tag] = "\n".join(lines)
+
+                                # Structured blocks (for later transformer use)
+                                try:
+                                    blocks = classify_section_blocks(sec_name, lines, parsing_state)
+                                except Exception as e:
+                                    debug_log(f"[history_parser::blocks] {primary}:{sec_name} classification error: {e}")
+                                    blocks = [{"type": "paragraph", "text": "\n".join(lines)}] if lines else []
+                                blocks_by_section[tag] = blocks
+
+                            if raw_sections or blocks_by_section:
+                                trivia_entry = {}
+                                if "gh_id" in entry_data:
+                                    trivia_entry["gh_id"] = entry_data["gh_id"]
+                                if raw_sections:
+                                    trivia_entry["sections_raw"] = raw_sections
+                                if blocks_by_section:
+                                    trivia_entry["sections_blocks"] = blocks_by_section
+                                gh_trivia[primary] = trivia_entry
+
+                            # --- PORTS -------------------------------------------------
                             if "PORTS" in sectioned:
                                 overview, platform_counts, platform_ports, port_lines = extract_ports_section(
                                     sectioned["PORTS"], primary, parsing_state
@@ -274,23 +302,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                     port_overview_count=port_overview_count,
                                     total_port_lines_all=total_port_lines_all,
                                 )
-
-                            # >>> NEW (TRIVIA scaffold): everything except PORTS/CONTRIBUTE
-                            if sectioned:                                                                        
-                                raw_sections: dict[str, str] = {}
-                                for sec_name, sec_lines in sectioned.items():
-                                    if sec_name in ("PORTS", "CONTRIBUTE"):
-                                        continue
-                                    tag = "overview" if sec_name == "OPENING" else sec_name.lower()
-                                    # join lists to a single string for the trivia scaffold
-                                    if isinstance(sec_lines, list):
-                                        raw_sections[tag] = "\n".join(sec_lines)
-                                    else:
-                                        raw_sections[tag] = str(sec_lines)                                                                                                                                                
-                                gh_trivia_systems[primary] = {
-                                    # Future: replace sections_raw with structured blocks (paragraphs/bullets/numbered/pairs/subheadings)
-                                    "sections_raw": raw_sections
-                                }
 
                         gh_systems[primary] = entry_data
                         elem.clear()
@@ -310,22 +321,19 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
     log.info(f"  - {port_overview_count} entries contained a port overview")
 
-    # Write parsed per-system output (sorted)
+    # Write parsed per-system PORTS output (sorted)
     systems_sorted = build_history_systems_sorted(gh_systems)
     if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {gh_system_ports_path()} ({len(systems_sorted)} systems)")
 
-    # >>> NEW (TRIVIA scaffold): write parallel trivia artefact next to gh_system_ports.json
-    trivia_out = gh_system_ports_path().with_name("gh_system_trivia.json")
-    trivia_sorted = build_history_systems_sorted(gh_trivia_systems)
-    if not write_json(trivia_out, trivia_sorted, sort_keys=False):
+    # Write TRIVIA output (sorted by system name)
+    trivia_sorted = dict(sorted(gh_trivia.items(), key=lambda kv: kv[0].lower()))
+    if not write_json(gh_system_trivia_path(), trivia_sorted, sort_keys=False):
         return False
-    log.info(f"Wrote {trivia_out} ({len(trivia_sorted)} systems)")
+    log.info(f"Wrote {gh_system_trivia_path()} ({len(trivia_sorted)} systems)")
 
-    ns = parsing_state.get("non_standard_sections") or {}
-    log.info(f"Non-standard section headings observed: {len(ns)} distinct; total offences={sum(r['count'] for r in ns.values())}")
-
+    # Summary
     summary = build_history_summary(
         history_version=history_version,
         history_date=history_date,
@@ -361,7 +369,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     # Decide success by outputs on disk
     hs = history_summary_path()
     gh = gh_system_ports_path()
-    success = hs.exists() and gh.exists() and trivia_out.exists()   # >>> NEW (TRIVIA scaffold)
+    tr = gh_system_trivia_path()
+    success = hs.exists() and gh.exists() and tr.exists()
     if not success:
         log.error("History outputs not found. Stamp not saved.")
         return False
@@ -386,17 +395,15 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         except Exception:
             gmeta["records"] = None
         outputs.append(gmeta)
-
-    # >>> NEW (TRIVIA scaffold): include trivia artefact in stamp outputs
-    tr_meta = file_meta(trivia_out) if trivia_out.exists() else None
-    if tr_meta:
+    if tr.exists():
+        tmeta = file_meta(tr)
         try:
-            with open(trivia_out, "r", encoding="utf-8") as f:
+            with open(tr, "r", encoding="utf-8") as f:
                 tr_map = json.load(f)
-            tr_meta["records"] = len(tr_map) if isinstance(tr_map, dict) else None
+            tmeta["records"] = len(tr_map) if isinstance(tr_map, dict) else None
         except Exception:
-            tr_meta["records"] = None
-        outputs.append(tr_meta)
+            tmeta["records"] = None
+        outputs.append(tmeta)
 
     stats = {}
     try:
@@ -414,8 +421,6 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
             "systems_with_aliases": totals.get("systems_with_aliases"),
             "port_lines_parsed":    totals.get("port_lines_parsed"),
             "ports_with_comments":  totals.get("ports_with_comments"),
-            # >>> NEW (TRIVIA scaffold): surface basic coverage if present in summary
-            "systems_with_text":    (s.get("sections", {}) or {}).get("systems_with_text"),
         }
     except Exception:
         pass

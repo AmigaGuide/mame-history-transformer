@@ -158,6 +158,9 @@ def gh_system_ports_path(version: Optional[str] = None) -> Path:
 def ini_classifications_path(version: Optional[str] = None) -> Path:
     return outputs_dir(version) / "gh_ini_classifications.json"
 
+def gh_system_trivia_path(version: Optional[str] = None) -> Path:
+    return outputs_dir(version) / "gh_system_trivia.json"
+
 # ---------------------------------------------------------------------
 # Final deliverables
 # ---------------------------------------------------------------------
@@ -234,6 +237,7 @@ MAME_MACHINES_PATH = mame_machines_path()
 PARENT_INDEX_PATH = parent_index_path()
 GH_SYSTEM_PORTS_PATH = gh_system_ports_path()
 INI_CLASS_PATH = ini_classifications_path()
+GH_SYSTEM_TRIVIA_PATH = gh_system_trivia_path()
 
 MAME_SUMMARY = mame_summary_path()
 HISTORY_SUMMARY = history_summary_path()
