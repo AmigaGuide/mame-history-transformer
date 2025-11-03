@@ -181,8 +181,12 @@ def build_history_summary(
         },
     }
 
-    # Block classifier metrics
-    block_type_counts_block = dict(parsing_state.get("block_type_counts", {}))
+    # ---- Block classifier metrics (always include 'unknown': 0) ----
+    counts_in = dict(parsing_state.get("block_type_counts", {}))
+    # normalise keys and ensure stable presence
+    all_types = ("paragraph", "bullet_list", "numbered_list", "pair", "subheading", "unknown")
+    block_type_counts_block = {t: int(counts_in.get(t, 0)) for t in all_types}
+
     _ub_map = parsing_state.get("unknown_blocks", {}) or {}
     unknown_blocks_block = {
         "sections_affected": len(_ub_map),
@@ -196,6 +200,20 @@ def build_history_summary(
     suppressions_block = {
         "counts": _sup_counts,
         "by_system": _sup_by_system
+    }
+
+    # Fully suppressed sections (post-suppression became empty)
+    _fss = parsing_state.get("fully_suppressed_sections", {}) or {}
+    _fss_counts = {sec: len(systems) for sec, systems in _fss.items()}
+    fully_suppressed_sections_block = {
+        "counts": _fss_counts,
+        "by_section": {
+            sec: {
+                "count": len(systems),
+                "systems": sorted(set(systems))
+            }
+            for sec, systems in sorted(_fss.items(), key=lambda kv: kv[0])
+        }
     }
 
     header = build_summary_header(
@@ -243,6 +261,7 @@ def build_history_summary(
                 "counts": block_type_counts_block
             },
             "suppressions": suppressions_block,
+            "fully_suppressed_sections": fully_suppressed_sections_block,
         },
         "anomalies": {
             "unexpected_platform_categories": unexpected_platform_categories_block,

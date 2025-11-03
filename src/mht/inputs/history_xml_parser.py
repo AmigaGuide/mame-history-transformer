@@ -5,7 +5,8 @@ Streams `history.xml` from the release ZIP and delegates work to focused helpers
 - Section segmentation, PORTS parsing (with banners/inheritance)
 - Per-system record assembly
 - Totals/distributions summary and invariants
-- TRIVIA: emits gh_system_trivia.json with sections_raw and sections_blocks (now with suppressions applied)
+- TRIVIA: emits gh_system_trivia.json with sections_raw and sections_blocks (with suppressions applied)
+- Skips sections fully removed by suppression and records them for auditing
 
 Inputs (ZIP-only)
 -----------------
@@ -50,7 +51,7 @@ from mht.utils.records import build_history_system_record, build_history_systems
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
 from mht.inputs.history_blocks import classify_section_blocks
-from mht.inputs.history_suppress import apply_suppressions   # NEW
+from mht.inputs.history_suppress import apply_suppressions
 
 __all__ = ["parse_history_entries"]
 
@@ -155,6 +156,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
         # Suppressions summary
         "suppressions": {"counts": {}, "by_system": {}},
+
+        # Sections removed entirely by suppression
+        "fully_suppressed_sections": defaultdict(list),
     }
 
     total_entries = 0
@@ -230,6 +234,11 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
                                 # Apply suppressions per section/tag
                                 lines_filtered = apply_suppressions(tag, lines, primary, parsing_state)
+
+                                # If everything was removed (blank or whitespace-only), record and skip
+                                if not any((ln or "").strip() for ln in lines_filtered):
+                                    parsing_state["fully_suppressed_sections"][tag].append(primary)
+                                    continue
 
                                 # Raw strings for continuity
                                 raw_sections[tag] = "\n".join(lines_filtered)
