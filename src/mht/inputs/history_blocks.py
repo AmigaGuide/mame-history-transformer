@@ -1,70 +1,177 @@
 from __future__ import annotations
 
 import re
-from collections import Counter
-from typing import Dict, List, Optional
+from typing import Dict, List, Tuple, Optional
 
-__all__ = ["classify_section_blocks"]
+__all__ = ["process_section_blocks", "classify_section_blocks"]
 
-# --- Line-shape detectors -----------------------------------------------------
+# --- Line classifiers ---------------------------------------------------------
 
-# Subheading: leading asterisk, ends with a colon
-_SUBHEADING_RE = re.compile(r"^\*\s+(.+?):\s*$")
-
-# Bullets: leading '* ' or '- ' (but not subheading)
-_BULLET_RE = re.compile(r"^(?:\*|-)\s+.+?$")
-
-# Numbered: 1) text   or   [1] text   or   1. text
-_NUMBERED_RE = re.compile(r"^(?:\d+\)|\[\d+\]|\d+\.)\s+.+?$")
-
-# Pair with colon: Key: Value   — avoid trivial or trailing-colon only
-# Heuristic: short-ish key on the left, at least 2 chars on right
-_PAIR_COLON_RE = re.compile(r"^(.{1,48}?)\s*:\s*(.{2,})$")
-
-# Pair with dash:  Left - Right     — allow quotes and brackets on either side
-# Used for lines like 'Speedy - "Pinky" (pink ghost)'
-_PAIR_DASH_RE = re.compile(r"^(.{1,48}?)\s-\s(.{2,})$")
-
-# Non-content separators or noise to ignore when grouping paragraphs
-_EMPTY_RE = re.compile(r"^\s*$")
+_BULLET_RE        = re.compile(r"^\s*[\*\-]\s+\S")  # "* Item" or "- Item"
+_NUMBERED_RE      = re.compile(r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+\S")  # "1) x", "1. x", "[1] x", "(1) x"
+# Pairs: "Label : value" or "Label - value"
+_PAIR_RE          = re.compile(r"^\s*([^:\-][^:]{0,100}?)\s*(?::|-)\s*(\S.*\S|\S)\s*$")
+# Subheading line used within GH text: "* Something :" (ends with a colon)
+_SUBHEADING_RE    = re.compile(r"^\s*\*\s+.+:\s*$")
+# Blank line
+_BLANK_RE         = re.compile(r"^\s*$")
+# Lines made only of hyphens → treat as a separator (no block emitted)
+_ALL_HYPHENS_RE = re.compile(r"^\s*-+\s*$")
+# Near-miss banners like "- Option Menu -" → we treat as subheadings
+_NEAR_MISS_BANNER_RE = re.compile(r"^\s*-\s*([^-].*[^-])\s*-\s*$")
+# Pairs strictly with spaced separators:
+#   "Label : value"  or  "Label - value"
+_PAIR_COLON_RE = re.compile(r"^\s*([^:]{1,100}?)\s*:\s+(\S.*\S|\S)\s*$")
+_PAIR_DASH_RE  = re.compile(r"^\s*([^-]{1,100}?)\s+-\s+(\S.*\S|\S)\s*$")
 
 
-# --- Helpers ------------------------------------------------------------------
+def _inc_count(ps: Dict, kind: str) -> None:
+    c = ps.setdefault("block_type_counts", {})
+    c[kind] = int(c.get(kind, 0)) + 1
 
-def _is_subheading(line: str) -> Optional[str]:
-    m = _SUBHEADING_RE.match(line)
-    return m.group(1).strip() if m else None
+def _flush_paragraph(acc: List[str], out: List[dict], ps: Dict) -> None:
+    if not acc:
+        return
+    text = " ".join(line.strip() for line in acc if line is not None).strip()
+    if text:
+        out.append({"type": "paragraph", "text": text})
+        _inc_count(ps, "paragraph")
+    acc.clear()
 
-def _is_bullet(line: str) -> bool:
-    # Note: subheadings also begin with '* ', so check subheading first in the caller
-    return bool(_BULLET_RE.match(line))
-
-def _is_numbered(line: str) -> bool:
-    return bool(_NUMBERED_RE.match(line))
-
-def _is_pair(line: str) -> Optional[dict]:
+def process_section_blocks(
+    *,
+    primary: Optional[str],
+    section_tag: str,
+    lines: List[str],
+    parsing_state: Dict
+) -> List[dict]:
     """
-    Return a pair dict if line looks like a key:value or key - value,
-    else None. Keys are trimmed of trailing punctuation.
+    Convert raw section lines to structured blocks.
+
+    For sections like 'overview' where GH commonly writes one paragraph per line
+    (single newline between paragraphs, no blank separators), we force a
+    'paragraph per line' policy to avoid coalescing unrelated paragraphs.
+
+    Block types:
+      - paragraph:     { "type": "paragraph", "text": "..." }
+      - bullet_list:   { "type": "bullet_list", "items": [...] }
+      - numbered_list: { "type": "numbered_list", "items": [...] }
+      - pair:          { "type": "pair", "label": "...", "value": "..." }
+      - subheading:    { "type": "subheading", "text": "..." }
+      - unknown:       { "type": "unknown", "text": "..." }
     """
-    m = _PAIR_COLON_RE.match(line)
-    if m:
-        key = m.group(1).strip().rstrip("：:")  # handle normal and full-width just in case
-        val = m.group(2).strip()
-        if key and val:
-            return {"sep": ":", "key": key, "value": val}
+    blocks: List[dict] = []
 
-    m = _PAIR_DASH_RE.match(line)
-    if m:
-        key = m.group(1).strip()
-        val = m.group(2).strip()
-        if key and val:
-            return {"sep": "-", "key": key, "value": val}
+    # --- policy: sections that should treat each non-blank line as its own paragraph
+    FORCE_PARAGRAPH_PER_LINE = {"overview"}  # extend later if needed
+    per_line = (section_tag or "").strip().lower() in FORCE_PARAGRAPH_PER_LINE
 
-    return None
+    # state for accumulating current multi-line paragraph or current list
+    para_acc: List[str] = []
+    list_acc: List[str] = []
+    list_kind: Optional[str] = None  # "bullet_list" | "numbered_list" | None
 
+    def flush_list():
+        nonlocal list_acc, list_kind
+        if list_kind and list_acc:
+            blocks.append({"type": list_kind, "items": list_acc[:]})
+            _inc_count(parsing_state, list_kind)
+        list_acc = []
+        list_kind = None
 
-# --- Core classifier ----------------------------------------------------------
+    for raw in lines:
+        line = raw if raw is not None else ""
+
+        # Blank line → ends paragraph and any open list
+        if _BLANK_RE.match(line):
+            _flush_paragraph(para_acc, blocks, parsing_state)
+            flush_list()
+            continue
+
+        # Pure hyphen rules (if present in your file)
+        if _ALL_HYPHENS_RE.match(line):
+            _flush_paragraph(para_acc, blocks, parsing_state)
+            flush_list()
+            continue
+
+        # Bullet list item
+        if _BULLET_RE.match(line):
+            _flush_paragraph(para_acc, blocks, parsing_state)
+            if list_kind not in (None, "bullet_list"):
+                flush_list()
+            list_kind = "bullet_list"
+            item = re.sub(r"^\s*[\*\-]\s+", "", line, count=1).strip()
+            list_acc.append(item)
+            continue
+
+        # Numbered list item
+        if _NUMBERED_RE.match(line):
+            _flush_paragraph(para_acc, blocks, parsing_state)
+            if list_kind not in (None, "numbered_list"):
+                flush_list()
+            list_kind = "numbered_list"
+            item = re.sub(r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+", "", line, count=1).strip()
+            list_acc.append(item)
+            continue
+
+        # Subheading lines (asterisk form)
+        if _SUBHEADING_RE.match(line):
+            _flush_paragraph(para_acc, blocks, parsing_state)
+            flush_list()
+            text = line.strip()
+            text = re.sub(r"^\s*\*\s+", "", text, count=1)
+            text = re.sub(r":\s*$", "", text, count=1)
+            blocks.append({"type": "subheading", "text": text})
+            _inc_count(parsing_state, "subheading")
+            continue
+
+        # Near-miss banner (e.g. "- Option Menu -") → treat as subheading (if you kept this regex)
+        m_nm = _NEAR_MISS_BANNER_RE.match(line)
+        if m_nm:
+            content = m_nm.group(1).strip()
+            if content and not re.fullmatch(r"-+", content):
+                _flush_paragraph(para_acc, blocks, parsing_state)
+                flush_list()
+                blocks.append({"type": "subheading", "text": content})
+                _inc_count(parsing_state, "subheading")
+                continue
+   
+        # Pair detection: disable in per-line sections (e.g., overview) to avoid false positives,
+        # and only accept spaced separators to avoid hyphenated words like "free-wheeling".
+        if not per_line:
+            m_pair = _PAIR_COLON_RE.match(line) or _PAIR_DASH_RE.match(line)
+            if m_pair:
+                _flush_paragraph(para_acc, blocks, parsing_state)
+                flush_list()
+                label = m_pair.group(1).strip()
+                value = m_pair.group(2).strip()
+                blocks.append({"type": "pair", "label": label, "value": value})
+                _inc_count(parsing_state, "pair")
+                continue
+
+        # Otherwise, paragraph content
+        flush_list()
+        if per_line:
+            # One paragraph per non-blank line
+            blocks.append({"type": "paragraph", "text": line.strip()})
+            _inc_count(parsing_state, "paragraph")
+        else:
+            # Accumulate until a delimiter (blank line, rule, or structural break)
+            para_acc.append(line)
+
+    # flush trailing accumulators
+    _flush_paragraph(para_acc, blocks, parsing_state)
+    if list_kind and list_acc:
+        blocks.append({"type": list_kind, "items": list_acc[:]})
+        _inc_count(parsing_state, list_kind)
+
+    if not blocks and lines:
+        blocks.append({"type": "unknown", "text": " ".join(l.strip() for l in lines).strip()})
+        _inc_count(parsing_state, "unknown")
+
+    return blocks
+
+# --- Back-compat wrapper ------------------------------------------------------
 
 def classify_section_blocks(
     section_name: str,
@@ -74,149 +181,11 @@ def classify_section_blocks(
     prefer_pairs: bool | None = None,
 ) -> List[Dict]:
     """
-    Classify a list of text lines for a single GH section into structured blocks.
+    Backwards-compatible wrapper for legacy callers.
 
-    Parameters
-    ----------
-    section_name : str
-        Canonical section name, e.g. 'TRIVIA', 'STAFF', 'TECHNICAL', 'SCORING'.
-    lines : List[str]
-        Section content as individual lines (not a single joined string).
-    parsing_state : Dict
-        Mutable shared dict; this function increments:
-          - parsing_state['block_type_counts'] : Counter
-          - parsing_state['unknown_blocks']    : {section: [lines]}
-    prefer_pairs : Optional[bool]
-        If True, slightly biases ambiguous lines towards 'pair' classification.
-        Default:
-            - STAFF, SCORING: True
-            - otherwise: False
-
-    Returns
-    -------
-    List[Dict]
-        Each block is a dict with at least:
-            {
-              "type": "subheading"|"bullet_list"|"numbered_list"|"pair"|"paragraph"|"unknown",
-              "text": "..."                          # for paragraph, subheading, unknown
-              "items": ["...", "..."]                # for bullet_list, numbered_list
-              "pairs": [{"key": "...", "value": "..."}]  # for pair (possibly aggregated)
-            }
-        Blocks preserve input order, and consecutive lines of the same kind are grouped.
+    - 'section_name' is treated as the canonical section tag.
+    - 'prefer_pairs' is ignored (the new engine auto-detects pairs vs paragraphs).
     """
-    # Policy: which sections are pair-heavy by default
-    if prefer_pairs is None:
-        prefer_pairs = section_name in {"STAFF", "SCORING"}
-
-    blocks: List[Dict] = []
-    add_count = parsing_state.setdefault("block_type_counts", Counter()).update
-    unknown_map = parsing_state.setdefault("unknown_blocks", {})
-
-    # Groupers for bullets, numbers, and pairs
-    current_bullets: Optional[List[str]] = None
-    current_numbers: Optional[List[str]] = None
-    current_pairs: Optional[List[dict]] = None
-
-    def flush_lists():
-        nonlocal current_bullets, current_numbers, current_pairs
-        if current_bullets:
-            blocks.append({"type": "bullet_list", "items": current_bullets})
-            add_count(["bullet_list"])
-            current_bullets = None
-        if current_numbers:
-            blocks.append({"type": "numbered_list", "items": current_numbers})
-            add_count(["numbered_list"])
-            current_numbers = None
-        if current_pairs:
-            blocks.append({"type": "pair", "pairs": current_pairs})
-            add_count(["pair"])
-            current_pairs = None
-
-    def append_paragraph(text: str):
-        # Merge with previous paragraph if adjacent
-        if blocks and blocks[-1]["type"] == "paragraph":
-            prev = blocks[-1]
-            prev["text"] = prev["text"] + "\n" + text
-        else:
-            blocks.append({"type": "paragraph", "text": text})
-            add_count(["paragraph"])
-
-    for raw in lines:
-        line = (raw or "").rstrip()
-
-        # Section-specific: allow empty lines to terminate current grouped blocks
-        if _EMPTY_RE.match(line):
-            flush_lists()
-            # Paragraphs are allowed to span across blank lines? No — keep it simple for now.
-            continue
-
-        # Subheading
-        sub = _is_subheading(line)
-        if sub is not None:
-            flush_lists()
-            blocks.append({"type": "subheading", "text": sub})
-            add_count(["subheading"])
-            continue
-
-        # Bullets and numbered lists
-        if _is_bullet(line):
-            # Safety: ignore if it was a subheading (already handled)
-            if current_numbers:
-                # switching list types
-                flush_lists()
-            if current_bullets is None:
-                current_bullets = []
-            # strip marker
-            current_bullets.append(line[2:].strip())
-            continue
-
-        if _is_numbered(line):
-            if current_bullets:
-                flush_lists()
-            if current_numbers is None:
-                current_numbers = []
-            # normalise: keep the whole text after the marker
-            txt = line
-            # strip common patterns
-            if ")" in txt.split(" ", 1)[0]:
-                txt = txt.split(")", 1)[1].lstrip()
-            elif "." in txt.split(" ", 1)[0]:
-                txt = txt.split(".", 1)[1].lstrip()
-            elif txt.startswith("[") and "]" in txt:
-                txt = txt.split("]", 1)[1].lstrip()
-            current_numbers.append(txt)
-            continue
-
-        # Pair detection. If prefer_pairs, try this before paragraph fallback.
-        pair = _is_pair(line) if prefer_pairs else None
-        if pair:
-            if current_pairs is None:
-                current_pairs = []
-            current_pairs.append({"key": pair["key"], "value": pair["value"]})
-            continue
-
-        # If not pair first, we can still treat obvious pairs even when prefer_pairs is False
-        if not prefer_pairs:
-            pair = _is_pair(line)
-            if pair:
-                if current_pairs is None:
-                    current_pairs = []
-                current_pairs.append({"key": pair["key"], "value": pair["value"]})
-                continue
-
-        # Anything else: paragraph by default
-        flush_lists()
-        # Light normalisation: avoid lone trailing colons being treated as paragraphs-with-intent
-        append_paragraph(line)
-
-    # Flush any trailing grouped content
-    flush_lists()
-
-    # Record unknowns for QA - in this first pass we only treat lines as unknown
-    # if they resulted in no blocks at all. Later we can add finer-grained unknowns.
-    if not blocks:
-        unknown_map.setdefault(section_name, []).extend(lines)
-        add_count(["unknown"])
-        blocks.append({"type": "unknown", "text": "\n".join(lines)})
-
-    return blocks
+    section_tag = (section_name or "").strip() or "unknown"
+    # primary is unknown at this call site; it isn't required by the engine
+    return process_section_blocks(primary=None, section_tag=section_tag, lines=lines, parsing_state=parsing_state)

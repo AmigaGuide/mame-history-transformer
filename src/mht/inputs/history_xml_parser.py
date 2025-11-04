@@ -50,7 +50,7 @@ from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
-from mht.inputs.history_blocks import classify_section_blocks
+from mht.inputs.history_blocks import classify_section_blocks, process_section_blocks
 from mht.inputs.history_suppress import apply_suppressions
 
 __all__ = ["parse_history_entries"]
@@ -94,6 +94,39 @@ def _xml_input_from_cache(cache: dict, leaf: str, *, kind: str) -> dict:
         "zip_size_bytes": rec.get("zip_size_bytes"),
         "version_hint": rec.get("xml_header") or {},
     }
+
+def _attach_trivia_section_blocks(
+    *,
+    entry_data: dict,
+    primary: str,
+    section_tag: str,          # e.g. "TRIVIA", "TECHNICAL", "UPDATES", etc. (canonical)
+    raw_text: str,
+    parsing_state: dict
+) -> None:
+    """
+    Split `raw_text` into lines, apply suppressions, classify into blocks,
+    and attach to entry_data['trivia']['sections'][section_tag] WITHOUT
+    merging adjacent paragraphs. One paragraph == one block.
+    """
+    # 1) split to lines
+    lines = (raw_text or "").splitlines()
+
+    # 2) apply suppressions (section-aware)
+    #    We use lower-case tag inside the suppressor ('technical', 'trivia', etc.)
+    suppressed = apply_suppressions(section_tag.lower(), lines, primary, parsing_state)
+
+    # 3) classify into blocks (one paragraph per block)
+    blocks = process_section_blocks(
+        primary=primary,
+        section_tag=section_tag.lower(),
+        lines=suppressed,
+        parsing_state=parsing_state,
+    )
+
+    # 4) attach (no coalescing!)
+    trivia = entry_data.setdefault("trivia", {})
+    sections = trivia.setdefault("sections", {})
+    sections[section_tag] = {"blocks": blocks}
 
 # --- Main ---------------------------------------------------------------------
 
@@ -221,45 +254,48 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 if gh_id is not None:
                                     entry_data["gh_id"] = gh_id
 
-                            # --- TRIVIA (non-PORTS / non-CONTRIBUTE) with suppressions
+                            # --- TRIVIA (non-PORTS / non-CONTRIBUTE) with suppressions (one paragraph per block)
                             raw_sections: dict[str, str] = {}
-                            blocks_by_section: dict[str, list] = {}
+                            sections_blocks: dict[str, dict] = {}
 
-                            for sec_name, sec_lines in sectioned.items():
+                            for sec_name, sec_payload in sectioned.items():
                                 if sec_name in ("PORTS", "CONTRIBUTE"):
                                     continue
 
                                 tag = "overview" if sec_name == "OPENING" else sec_name.lower()
-                                lines = sec_lines if isinstance(sec_lines, list) else str(sec_lines).splitlines()
+                                lines = sec_payload if isinstance(sec_payload, list) else str(sec_payload).splitlines()
 
-                                # Apply suppressions per section/tag
+                                # 1) Section-aware suppression
                                 lines_filtered = apply_suppressions(tag, lines, primary, parsing_state)
 
-                                # If everything was removed (blank or whitespace-only), record and skip
+                                # 2) If everything was removed, record and skip
                                 if not any((ln or "").strip() for ln in lines_filtered):
                                     parsing_state["fully_suppressed_sections"][tag].append(primary)
                                     continue
 
-                                # Raw strings for continuity
+                                # 3) Keep a raw copy for continuity/auditing
                                 raw_sections[tag] = "\n".join(lines_filtered)
 
-                                # Structured blocks based on filtered lines
-                                try:
-                                    blocks = classify_section_blocks(sec_name, lines_filtered, parsing_state)
-                                except Exception as e:
-                                    debug_log(f"[history_parser::blocks] {primary}:{sec_name} classification error: {e}")
-                                    blocks = [{"type": "paragraph", "text": "\n".join(lines_filtered)}] if lines_filtered else []
-                                blocks_by_section[tag] = blocks
+                                # 4) Classify into blocks (NO coalescing; one paragraph == one block)
+                                blocks = process_section_blocks(
+                                    primary=primary,
+                                    section_tag=tag,
+                                    lines=lines_filtered,
+                                    parsing_state=parsing_state,
+                                )
 
-                            if raw_sections or blocks_by_section:
+                                # Shape is {"blocks": [...]}, where blocks is a list of dicts
+                                sections_blocks[tag] = {"blocks": blocks}
+
+                            if raw_sections or sections_blocks:
                                 trivia_entry = {}
                                 if "gh_id" in entry_data:
                                     trivia_entry["gh_id"] = entry_data["gh_id"]
                                 if raw_sections:
                                     trivia_entry["sections_raw"] = raw_sections
-                                if blocks_by_section:
-                                    trivia_entry["sections_blocks"] = blocks_by_section
-                                gh_trivia[primary] = trivia_entry
+                                if sections_blocks:
+                                    trivia_entry["sections"] = sections_blocks
+                                gh_trivia[primary] = trivia_entry   
 
                             # --- PORTS (unchanged)
                             if "PORTS" in sectioned:

@@ -71,18 +71,29 @@ def _record(parsing_state: Dict, system: str, section: str, rule: str, line: str
 def _apply_overview(lines: List[str], system: str, parsing_state: Dict) -> List[str]:
     out: List[str] = []
     for ln in lines:
+        # Preserve paragraph separators
+        if not (ln or "").strip():
+            out.append("")       # keep blank line to delimit paragraphs
+            continue
+
         if _OVERVIEW_TYPE_RE.match(ln):
             _record(parsing_state, system, "overview", "overview_type_line", ln)
             continue
         if _OVERVIEW_TITLE_RE1.match(ln) or _OVERVIEW_TITLE_RE2.match(ln):
             _record(parsing_state, system, "overview", "overview_title_line", ln)
             continue
+
         out.append(ln)
     return out
 
 def _apply_technical(lines: List[str], system: str, parsing_state: Dict) -> List[str]:
     out: List[str] = []
     for ln in lines:
+        # Preserve paragraph separators
+        if not (ln or "").strip():
+            out.append("")       # keep blank line to delimit paragraphs
+            continue
+
         # Label-led fields (colon)
         if _TECH_CPU_RE.match(ln):
             _record(parsing_state, system, "technical", "technical_cpu_line", ln);               continue
@@ -105,7 +116,7 @@ def _apply_technical(lines: List[str], system: str, parsing_state: Dict) -> List
         if _TECH_PALETTE_COLOURS_RE.match(ln):
             _record(parsing_state, system, "technical", "technical_palette_colours_line", ln);     continue
 
-        # Pair-led fields (colon OR hyphen separators)
+        # Pair-led fields (':' or '-')
         if _TECH_BUTTONS_PAIR_RE.match(ln):
             _record(parsing_state, system, "technical", "technical_buttons_pair_line", ln);        continue
         if _TECH_CONTROL_PER_PLAYER.match(ln):
@@ -113,22 +124,20 @@ def _apply_technical(lines: List[str], system: str, parsing_state: Dict) -> List
         if _TECH_GAME_SIZE_RE.match(ln):
             _record(parsing_state, system, "technical", "technical_game_size_line", ln);           continue
         if _TECH_DISPLAY_PAIR_RE.match(ln):
-            # Be explicit about which aspects we saw for audit
             if _RESOLUTION_INLINE_RE.search(ln):
                 _record(parsing_state, system, "technical", "technical_display_resolution_line", ln)
                 continue
             if _COLOURS_INLINE_RE.search(ln):
                 _record(parsing_state, system, "technical", "technical_display_colours_line", ln)
                 continue
-            # If neither keyword found, still treat generic Display pair as technical display
             _record(parsing_state, system, "technical", "technical_display_line", ln)
             continue
 
-        # Free-form control mappings, e.g. "=> [A] FIRE, [B] SPECIAL"
+        # Free-form control mappings
         if _TECH_CONTROL_MAP_RE.match(ln):
             _record(parsing_state, system, "technical", "technical_control_mapping_line", ln);     continue
 
-        # Narrative/spec style lines (heuristics)
+        # Narrative/spec heuristics
         if _HW_PROCESSOR_RE.search(ln):
             _record(parsing_state, system, "technical", "technical_processor_line", ln);           continue
         if _HW_CHIPSET_RE.search(ln):
@@ -138,12 +147,12 @@ def _apply_technical(lines: List[str], system: str, parsing_state: Dict) -> List
         if _HW_MEMORY_RE.search(ln):
             _record(parsing_state, system, "technical", "technical_memory_line", ln);              continue
 
-        # Joystick n-way heuristics (e.g. "4-way joystick")
         if _N_WAY_JOYSTICK_RE.search(ln):
             _record(parsing_state, system, "technical", "technical_joystick_n_way_line", ln);      continue
 
         out.append(ln)
     return out
+
 
 def apply_suppressions(section_tag: str, lines: List[str], system: str, parsing_state: Dict) -> List[str]:
     """
