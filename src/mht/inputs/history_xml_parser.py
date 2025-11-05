@@ -254,48 +254,71 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 if gh_id is not None:
                                     entry_data["gh_id"] = gh_id
 
-                            # --- TRIVIA (non-PORTS / non-CONTRIBUTE) with suppressions (one paragraph per block)
+                            # --- TRIVIA (non-PORTS / non-CONTRIBUTE) with suppressions and provenance
                             raw_sections: dict[str, str] = {}
-                            sections_blocks: dict[str, dict] = {}
+                            blocks_by_section: dict[str, list] = {}
 
-                            for sec_name, sec_payload in sectioned.items():
+                            for sec_name, sec_lines in sectioned.items():
                                 if sec_name in ("PORTS", "CONTRIBUTE"):
                                     continue
 
                                 tag = "overview" if sec_name == "OPENING" else sec_name.lower()
-                                lines = sec_payload if isinstance(sec_payload, list) else str(sec_payload).splitlines()
+                                lines = sec_lines if isinstance(sec_lines, list) else str(sec_lines).splitlines()
 
-                                # 1) Section-aware suppression
-                                lines_filtered = apply_suppressions(tag, lines, primary, parsing_state)
+                                # Apply suppressions AND capture line-level provenance
+                                try:
+                                    lines_filtered, prov = apply_suppressions(tag, lines, primary, parsing_state)
+                                except Exception as e:
+                                    debug_log(f"[history_parser::suppress] {primary}:{sec_name} suppression error: {e}")
+                                    lines_filtered, prov = (lines, {"raw_line_indices": list(range(1, len(lines) + 1)), "line_suppressions": {}})
 
-                                # 2) If everything was removed, record and skip
+                                # If everything was removed → record full suppression and skip
                                 if not any((ln or "").strip() for ln in lines_filtered):
                                     parsing_state["fully_suppressed_sections"][tag].append(primary)
                                     continue
 
-                                # 3) Keep a raw copy for continuity/auditing
+                                # Raw strings for continuity
                                 raw_sections[tag] = "\n".join(lines_filtered)
 
-                                # 4) Classify into blocks (NO coalescing; one paragraph == one block)
-                                blocks = process_section_blocks(
-                                    primary=primary,
-                                    section_tag=tag,
-                                    lines=lines_filtered,
-                                    parsing_state=parsing_state,
-                                )
+                                # Structured blocks with provenance injected
+                                try:
+                                    blocks = process_section_blocks(
+                                        primary=primary,
+                                        section_tag=tag,
+                                        lines=lines_filtered,
+                                        parsing_state=parsing_state,
+                                        filtered_to_raw=prov.get("raw_line_indices"),
+                                        per_line_suppressions=prov.get("line_suppressions"),
+                                    )
+                                except Exception as e:
+                                    debug_log(f"[history_parser::blocks] {primary}:{sec_name} classification error: {e}")
+                                    blocks = [{"type": "paragraph", "text": "\n".join(lines_filtered), "meta": {
+                                        "system": primary, "section_tag": tag, "block_index": None,
+                                        "raw_line_start": prov.get("raw_line_indices", [None])[0] if prov.get("raw_line_indices") else None,
+                                        "raw_line_end": prov.get("raw_line_indices", [None])[-1] if prov.get("raw_line_indices") else None,
+                                        "filtered_line_start": 0, "filtered_line_end": len(lines_filtered) - 1,
+                                        "policy": {"per_line": False, "heuristic_per_line": False},
+                                        "detectors": ["paragraph_fallback"], "suppressions": [], "text_hash": ""
+                                    }}] if lines_filtered else []
 
-                                # Shape is {"blocks": [...]}, where blocks is a list of dicts
-                                sections_blocks[tag] = {"blocks": blocks}
+                                # Finalise per-block meta: index/system/section_tag
+                                for idx, b in enumerate(blocks):
+                                    m = b.setdefault("meta", {})
+                                    m["block_index"] = idx
+                                    m["system"] = primary
+                                    m["section_tag"] = tag
 
-                            if raw_sections or sections_blocks:
+                                blocks_by_section[tag] = blocks
+
+                            if raw_sections or blocks_by_section:
                                 trivia_entry = {}
                                 if "gh_id" in entry_data:
                                     trivia_entry["gh_id"] = entry_data["gh_id"]
                                 if raw_sections:
                                     trivia_entry["sections_raw"] = raw_sections
-                                if sections_blocks:
-                                    trivia_entry["sections"] = sections_blocks
-                                gh_trivia[primary] = trivia_entry   
+                                if blocks_by_section:
+                                    trivia_entry["sections"] = {k: {"blocks": v} for k, v in blocks_by_section.items()}
+                                gh_trivia[primary] = trivia_entry
 
                             # --- PORTS (unchanged)
                             if "PORTS" in sectioned:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Dict, List, Tuple, Optional
+import hashlib
 
 __all__ = ["process_section_blocks", "classify_section_blocks"]
 
@@ -39,6 +40,8 @@ SECTION_POLICIES = {
     "scoring":   {"per_line": False},
 }
 
+def _short_hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:8]
 
 def _policy_for(section_tag: str) -> dict:
     tag = (section_tag or "").strip().lower()
@@ -79,143 +82,212 @@ def process_section_blocks(
     primary: Optional[str],
     section_tag: str,
     lines: List[str],
-    parsing_state: Dict
+    parsing_state: Dict[str, Any],
+    # NEW: provenance from suppressor (optional but recommended)
+    filtered_to_raw: Optional[List[int]] = None,          # 1-based raw line number for each filtered line
+    per_line_suppressions: Optional[Dict[int, List[str]]] = None,  # filtered idx -> suppression keys
 ) -> List[dict]:
     """
-    Convert raw section lines to structured blocks.
+    Convert filtered section lines to structured blocks with provenance meta.
 
-    Behaviour:
-      - Honour SECTION_POLICIES first (explicit per_line or heuristic_per_line).
-      - If per-line mode is active: each non-blank line => one paragraph block,
-        and pair detection is disabled (avoids false positives on hyphenated words).
-      - Otherwise: normal mode — paragraphs delimited by blank lines (and hyphen rules),
-        plus detection of bullets, numbered lists, pairs and subheadings.
-
-    Block types:
-      - paragraph:     { "type": "paragraph", "text": "..." }
-      - bullet_list:   { "type": "bullet_list", "items": [...] }
-      - numbered_list: { "type": "numbered_list", "items": [...] }
-      - pair:          { "type": "pair", "label": "...", "value": "..." }
-      - subheading:    { "type": "subheading", "text": "..." }
-      - unknown:       { "type": "unknown", "text": "..." }
+    Meta attached to each block:
+      - system, section_tag, block_index (set later by caller)
+      - raw_line_start/end (1-based), filtered_line_start/end (0-based indices)
+      - policy (per_line / heuristic flags)
+      - detectors (which rule produced this block)
+      - suppressions (union of suppression keys seen in lines forming this block)
+      - text_hash (short hash of emitted block text)
     """
     blocks: List[dict] = []
     tag = (section_tag or "").strip().lower()
 
-    # --- Decide paragraph mode from policy + heuristic
-    policy = _policy_for(tag)
-    forced_per_line = bool(policy.get("per_line"))
-    allow_heuristic = bool(policy.get("heuristic_per_line"))
+    # --- Decide policy
+    policy_cfg = SECTION_POLICIES.get(tag, {})
+    forced_per_line = bool(policy_cfg.get("per_line"))
+    allow_heuristic = bool(policy_cfg.get("heuristic_per_line"))
 
     non_blank = [ln for ln in lines if (ln or "").strip()]
     has_structural = any(_is_structural_line(ln) for ln in non_blank)
     dynamic_per_line = allow_heuristic and (not has_structural) and (len(non_blank) > 1)
-
     per_line = forced_per_line or dynamic_per_line
 
-    # --- State
-    para_acc: List[str] = []
+    # cursors for provenance across filtered lines
+    # filtered_idx will be advanced as we consume lines into blocks
+    filtered_idx = 0
+
+    def _make_meta(detectors: List[str], f_start: int, f_end: int, text: str) -> dict:
+        # f_start/f_end are filtered line indices (inclusive), 0-based
+        # map to raw line numbers if available
+        if filtered_to_raw and 0 <= f_start < len(filtered_to_raw) and 0 <= f_end < len(filtered_to_raw):
+            r_start = filtered_to_raw[f_start]
+            r_end   = filtered_to_raw[f_end]
+        else:
+            r_start = r_end = None
+
+        # collect suppression keys seen in these filtered lines
+        supp: List[str] = []
+        if per_line_suppressions:
+            for fi in range(f_start, f_end + 1):
+                supp.extend(per_line_suppressions.get(fi, []))
+        # dedupe and keep stable order
+        seen = set()
+        supp_unique = [s for s in supp if not (s in seen or seen.add(s))]
+
+        return {
+            "system": primary,
+            "section_tag": tag,
+            "block_index": None,   # filled by caller after block list is final
+            "raw_line_start": r_start,
+            "raw_line_end": r_end,
+            "filtered_line_start": f_start,
+            "filtered_line_end": f_end,
+            "policy": {
+                "per_line": per_line,
+                "heuristic_per_line": bool(dynamic_per_line),
+            },
+            "detectors": detectors,
+            "suppressions": supp_unique,
+            "text_hash": _short_hash(text or ""),
+        }
+
+    # list accumulation state
     list_acc: List[str] = []
-    list_kind: Optional[str] = None  # "bullet_list" | "numbered_list" | None
+    list_kind: Optional[str] = None
 
     def flush_list():
-        nonlocal list_acc, list_kind
+        nonlocal list_acc, list_kind, filtered_idx
         if list_kind and list_acc:
-            blocks.append({"type": list_kind, "items": list_acc[:]})
+            start = filtered_idx - len(list_acc)
+            end   = filtered_idx - 1
+            meta = _make_meta(
+                detectors=[ "bullet_asterisk" if list_kind == "bullet_list" else "numbered_1)" ],
+                f_start=start, f_end=end,
+                text="\n".join(list_acc)
+            )
+            blocks.append({ "type": list_kind, "items": list_acc[:], "meta": meta })
             _inc_count(parsing_state, list_kind)
         list_acc = []
         list_kind = None
 
-    # --- Main loop
-    for raw in lines:
-        line = raw if raw is not None else ""
+    # paragraph accumulator for normal mode
+    para_acc: List[str] = []
+    para_start_idx: Optional[int] = None
 
-        # Blank → break paragraph/list
-        if _BLANK_RE.match(line):
-            _flush_paragraph(para_acc, blocks, parsing_state)
+    def flush_para(detector_label: str):
+        nonlocal para_acc, para_start_idx, filtered_idx
+        if para_acc:
+            start = para_start_idx if para_start_idx is not None else filtered_idx - len(para_acc)
+            end   = filtered_idx - 1
+            text  = "\n".join(para_acc).strip()
+            if text:
+                meta = _make_meta(detectors=[detector_label], f_start=start, f_end=end, text=text)
+                blocks.append({ "type": "paragraph", "text": text, "meta": meta })
+                _inc_count(parsing_state, "paragraph")
+        para_acc = []
+        para_start_idx = None
+
+    # --- main loop over filtered lines
+    for line in lines:
+        ln = (line or "")
+
+        # blank line → block separators
+        if _BLANK_RE.match(ln):
+            flush_para("paragraph_default")
             flush_list()
+            filtered_idx += 1
             continue
 
-        # Rule of hyphens → break
-        if _ALL_HYPHENS_RE.match(line):
-            _flush_paragraph(para_acc, blocks, parsing_state)
+        # pure hyphen rule → also a separator
+        if _ALL_HYPHENS_RE.match(ln):
+            flush_para("paragraph_default")
             flush_list()
+            filtered_idx += 1
             continue
 
-        # Bullets
-        if _BULLET_RE.match(line):
-            _flush_paragraph(para_acc, blocks, parsing_state)
+        # bullets
+        if _BULLET_RE.match(ln):
+            flush_para("paragraph_default")
             if list_kind not in (None, "bullet_list"):
                 flush_list()
             list_kind = "bullet_list"
-            item = re.sub(r"^\s*[\*\-]\s+", "", line, count=1).strip()
+            item = re.sub(r"^\s*[\*\-]\s+", "", ln, count=1).strip()
             list_acc.append(item)
+            filtered_idx += 1
             continue
 
-        # Numbered
-        if _NUMBERED_RE.match(line):
-            _flush_paragraph(para_acc, blocks, parsing_state)
+        # numbered
+        if _NUMBERED_RE.match(ln):
+            flush_para("paragraph_default")
             if list_kind not in (None, "numbered_list"):
                 flush_list()
             list_kind = "numbered_list"
-            item = re.sub(r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+", "", line, count=1).strip()
+            item = re.sub(r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+", "", ln, count=1).strip()
             list_acc.append(item)
+            filtered_idx += 1
             continue
 
-        # Subheading (asterisk form)
-        if _SUBHEADING_RE.match(line):
-            _flush_paragraph(para_acc, blocks, parsing_state)
+        # subheading
+        if _SUBHEADING_RE.match(ln):
+            flush_para("paragraph_default")
             flush_list()
-            text = line.strip()
+            text = ln.strip()
             text = re.sub(r"^\s*\*\s+", "", text, count=1)
             text = re.sub(r":\s*$", "", text, count=1)
-            blocks.append({"type": "subheading", "text": text})
+            meta = _make_meta(detectors=["subheading_star_colon"], f_start=filtered_idx, f_end=filtered_idx, text=text)
+            blocks.append({ "type": "subheading", "text": text, "meta": meta })
             _inc_count(parsing_state, "subheading")
+            filtered_idx += 1
             continue
 
-        # Near-miss banner → subheading
-        m_nm = _NEAR_MISS_BANNER_RE.match(line)
+        # near-miss banner -> treat as subheading
+        m_nm = _NEAR_MISS_BANNER_RE.match(ln)
         if m_nm:
+            flush_para("paragraph_default")
+            flush_list()
             content = m_nm.group(1).strip()
             if content and not re.fullmatch(r"-+", content):
-                _flush_paragraph(para_acc, blocks, parsing_state)
-                flush_list()
-                blocks.append({"type": "subheading", "text": content})
+                meta = _make_meta(detectors=["near_miss_banner"], f_start=filtered_idx, f_end=filtered_idx, text=content)
+                blocks.append({ "type": "subheading", "text": content, "meta": meta })
                 _inc_count(parsing_state, "subheading")
+                filtered_idx += 1
                 continue
 
-        # Pairs (strict spaced separators) — disabled in per-line mode
+        # pairs: only in normal mode (not per-line)
         if not per_line:
-            m_pair = _PAIR_COLON_RE.match(line) or _PAIR_DASH_RE.match(line)
+            m_pair = _PAIR_COLON_RE.match(ln) or _PAIR_DASH_RE.match(ln)
             if m_pair:
-                _flush_paragraph(para_acc, blocks, parsing_state)
+                flush_para("paragraph_default")
                 flush_list()
                 label = m_pair.group(1).strip()
                 value = m_pair.group(2).strip()
-                blocks.append({"type": "pair", "label": label, "value": value})
+                text = f"{label}: {value}"
+                meta = _make_meta(detectors=["pair_colon" if ":" in ln else "pair_dash"],
+                                  f_start=filtered_idx, f_end=filtered_idx, text=text)
+                blocks.append({ "type": "pair", "label": label, "value": value, "meta": meta })
                 _inc_count(parsing_state, "pair")
+                filtered_idx += 1
                 continue
 
-        # Narrative
-        flush_list()
+        # narrative text
         if per_line:
-            text = line.strip()
-            if text:  # ignore pure whitespace
-                blocks.append({"type": "paragraph", "text": text})
+            flush_list()
+            text = ln.strip()
+            if text:
+                meta = _make_meta(detectors=["paragraph_per_line"], f_start=filtered_idx, f_end=filtered_idx, text=text)
+                blocks.append({ "type": "paragraph", "text": text, "meta": meta })
                 _inc_count(parsing_state, "paragraph")
+            filtered_idx += 1
         else:
-            para_acc.append(line)
+            if para_start_idx is None:
+                para_start_idx = filtered_idx
+            para_acc.append(ln)
+            filtered_idx += 1
 
-    # Flush tail
-    _flush_paragraph(para_acc, blocks, parsing_state)
-    if list_kind and list_acc:
-        blocks.append({"type": list_kind, "items": list_acc[:]})
-        _inc_count(parsing_state, list_kind)
+    # tail flush
+    flush_para("paragraph_default")
+    flush_list()
 
-    if not blocks and lines:
-        blocks.append({"type": "unknown", "text": " ".join(l.strip() for l in lines).strip()})
-        _inc_count(parsing_state, "unknown")
-
+    # note: block_index/system/section_tag finalisation is done by the caller
     return blocks
 
 # --- Back-compat wrapper ------------------------------------------------------

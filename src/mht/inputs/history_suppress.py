@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List
+from typing import List, Tuple, Dict, Any
 
 __all__ = ["apply_suppressions"]
 
@@ -153,35 +153,151 @@ def _apply_technical(lines: List[str], system: str, parsing_state: Dict) -> List
         out.append(ln)
     return out
 
-
-def apply_suppressions(section_tag: str, lines: List[str], system: str, parsing_state: Dict) -> List[str]:
+def apply_suppressions(
+    section_tag: str,
+    raw_lines: List[str],
+    primary: str,
+    parsing_state: Dict[str, Any]
+) -> Tuple[List[str], Dict[str, Any]]:
     """
-    Apply section-specific suppression rules and record every suppression into parsing_state['suppressions'].
+    Filter lines for a given section and record per-line provenance.
 
-    Parameters
-    ----------
-    section_tag : str
-        Lower-case tag used by the parser (e.g., 'overview', 'technical', 'trivia', 'updates', etc.)
-    lines : List[str]
-        Section lines (unjoined).
-    system : str
-        Primary MAME/GH system name (for audit).
-    parsing_state : Dict
-        Mutable state for accumulating suppression counts and examples.
-
-    Returns
-    -------
-    List[str]
-        Lines with suppressed content removed.
+    Returns:
+        filtered_lines: list[str]  (lines that survived)
+        prov: {
+            "raw_line_indices": List[int],        # 1-based raw line number for each filtered line
+            "line_suppressions": Dict[int, List[str]]  # filtered idx -> suppression keys applied on that line
+        }
     """
-    if not lines:
-        return lines
+    filtered: List[str] = []
+    raw_to_filtered_idx: List[int] = []   # 1-based raw line numbers per kept line
+    line_suppressions: Dict[int, List[str]] = {}
 
-    if section_tag == "overview":
-        return _apply_overview(lines, system, parsing_state)
+    # internal helper to register a kept line
+    def keep(raw_idx: int, text: str, suppress_keys: List[str]) -> None:
+        filtered.append(text)
+        raw_to_filtered_idx.append(raw_idx)
+        if suppress_keys:
+            line_suppressions[len(filtered) - 1] = list(suppress_keys)
 
-    if section_tag == "technical":
-        return _apply_technical(lines, system, parsing_state)
+    # --- walk raw lines; use your existing suppression logic per section
+    # we assume you increment global counters in parsing_state["suppressions"]["counts"]
+    # and optionally record parsing_state["fully_suppressed_sections"][tag] elsewhere.
+    counters = parsing_state.setdefault("suppressions", {}).setdefault("counts", {})
 
-    # No active rules for other sections yet.
-    return lines
+    tag = (section_tag or "").strip().lower()
+    for i, raw in enumerate(raw_lines, start=1):
+        line = (raw or "")
+        suppress_keys: List[str] = []
+
+        # ---- Overview suppressions (examples; reuse your existing tests) ----
+        if tag == "overview":
+            # type line
+            if line.strip().lower().startswith("arcade video game"):
+                counters["overview_type_line"] = counters.get("overview_type_line", 0) + 1
+                suppress_keys.append("overview_type_line")
+                # skip: do not keep this line
+                continue
+            # title/year/publisher line e.g. 'Puckman (c) 1980 Namco.'
+            if ("(c)" in line) or ("©" in line):
+                counters["overview_title_line"] = counters.get("overview_title_line", 0) + 1
+                suppress_keys.append("overview_title_line")
+                continue
+
+        # ---- Technical suppressions (examples; reuse your existing tests) ----
+        if tag == "technical":
+            lower = line.lower()
+            # players
+            if lower.startswith("players"):
+                counters["technical_players_line"] = counters.get("technical_players_line", 0) + 1
+                suppress_keys.append("technical_players_line")
+                continue
+            # control / joystick / n-way
+            if any(k in lower for k in ("control", "joystick")):
+                # buttons handled separately below
+                counters["technical_control_line"] = counters.get("technical_control_line", 0) + 1
+                suppress_keys.append("technical_control_line")
+                # if this is *only* controls metadata, skip the line
+                continue
+            # buttons (also catch pair-ish like 'Buttons per player - 1 (FIRE)')
+            if "button" in lower or "buttons" in lower:
+                counters["technical_buttons_line"] = counters.get("technical_buttons_line", 0) + 1
+                suppress_keys.append("technical_buttons_line")
+                continue
+            # CPU / sound
+            if "cpu" in lower:
+                if "sound" in lower:
+                    counters["technical_sound_cpu_line"] = counters.get("technical_sound_cpu_line", 0) + 1
+                    suppress_keys.append("technical_sound_cpu_line")
+                else:
+                    counters["technical_cpu_line"] = counters.get("technical_cpu_line", 0) + 1
+                    suppress_keys.append("technical_cpu_line")
+                continue
+            if "sound chip" in lower or "sound chips" in lower:
+                counters["technical_sound_chips_line"] = counters.get("technical_sound_chips_line", 0) + 1
+                suppress_keys.append("technical_sound_chips_line")
+                continue
+            # screen & video characteristics
+            if "screen orientation" in lower:
+                counters["technical_screen_orientation_line"] = counters.get("technical_screen_orientation_line", 0) + 1
+                suppress_keys.append("technical_screen_orientation_line")
+                continue
+            if "screen resolution" in lower or "video resolution" in lower or "display resolution" in lower:
+                counters["technical_screen_resolution_line"] = counters.get("technical_screen_resolution_line", 0) + 1
+                suppress_keys.append("technical_screen_resolution_line")
+                continue
+            if "refresh rate" in lower or "screen refresh" in lower:
+                counters["technical_refresh_rate_line"] = counters.get("technical_refresh_rate_line", 0) + 1
+                suppress_keys.append("technical_refresh_rate_line")
+                continue
+            if "palette colour" in lower or "palette color" in lower or "on-screen color" in lower or "on-screen colour" in lower:
+                counters["technical_palette_colours_line"] = counters.get("technical_palette_colours_line", 0) + 1
+                suppress_keys.append("technical_palette_colours_line")
+                continue
+            # processor/chipset/frequency/memory families
+            if any(k in lower for k in ("processor", "chipset")):
+                counters["technical_processor_line"] = counters.get("technical_processor_line", 0) + 1
+                suppress_keys.append("technical_processor_line")
+                continue
+            if "mhz" in lower or "khz" in lower or "ghz" in lower:
+                counters["technical_frequency_line"] = counters.get("technical_frequency_line", 0) + 1
+                suppress_keys.append("technical_frequency_line")
+                continue
+            if any(k in lower for k in ("memory", "sram", "dram", "vram")):
+                counters["technical_memory_line"] = counters.get("technical_memory_line", 0) + 1
+                suppress_keys.append("technical_memory_line")
+                continue
+            # specific phrases you logged earlier
+            if "=> [" in line:
+                counters["technical_control_mapping_line"] = counters.get("technical_control_mapping_line", 0) + 1
+                suppress_keys.append("technical_control_mapping_line")
+                continue
+            if "buttons per player" in lower:
+                counters["technical_buttons_pair_line"] = counters.get("technical_buttons_pair_line", 0) + 1
+                suppress_keys.append("technical_buttons_pair_line")
+                continue
+            if "game size" in lower:
+                counters["technical_game_size_line"] = counters.get("technical_game_size_line", 0) + 1
+                suppress_keys.append("technical_game_size_line")
+                continue
+            if "control per player" in lower:
+                counters["technical_control_per_player_line"] = counters.get("technical_control_per_player_line", 0) + 1
+                suppress_keys.append("technical_control_per_player_line")
+                continue
+            if " joystick" in lower and "-way" in lower:
+                counters["technical_joystick_n_way_line"] = counters.get("technical_joystick_n_way_line", 0) + 1
+                suppress_keys.append("technical_joystick_n_way_line")
+                continue
+            if line.lower().startswith("display"):
+                counters["technical_display_line"] = counters.get("technical_display_line", 0) + 1
+                suppress_keys.append("technical_display_line")
+                continue
+
+        # keep the line (no suppressions fired)
+        keep(i, line, suppress_keys)
+
+    prov = {
+        "raw_line_indices": raw_to_filtered_idx,       # aligns with filtered list
+        "line_suppressions": line_suppressions         # filtered_idx -> [keys]
+    }
+    return filtered, prov
