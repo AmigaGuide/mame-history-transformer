@@ -16,9 +16,10 @@ TITLE_OVERRIDES = LOOKUPS_DIR / "title_overrides.json"
 CONTRACTS_DIR = REPO_ROOT / "src" / "mht" / "contracts"
 
 # Specific schema files used by the CLI validator (unchanged)
-EXOTICA_RAW_SCHEMA   = CONTRACTS_DIR / "exotica_lit_raw_data.schema.json"
-EXOTICA_WIKI_SCHEMA  = CONTRACTS_DIR / "exotica_lit_wiki.schema.json"
-EXOTICA_PAGES_SCHEMA = CONTRACTS_DIR / "exotica_wiki_pages_and_redirects.schema.json"
+EXOTICA_RAW_SCHEMA      = CONTRACTS_DIR / "exotica_lit_raw_data.schema.json"
+EXOTICA_WIKI_SCHEMA     = CONTRACTS_DIR / "exotica_lit_wiki.schema.json"
+EXOTICA_PAGES_SCHEMA    = CONTRACTS_DIR / "exotica_wiki_pages_and_redirects.schema.json"
+GH_SYSTEM_TRIVIA_SCHEMA = CONTRACTS_DIR / "gh_system_trivia.schema.json"
 # Optional extras (kept as comments)
 # GH_SYSTEM_PORTS_SCHEMA   = CONTRACTS_DIR / "gh_system_ports.schema.json"
 # GH_INI_CLASS_SCHEMA      = CONTRACTS_DIR / "gh_ini_classifications.schema.json"

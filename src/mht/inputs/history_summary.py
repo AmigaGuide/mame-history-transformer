@@ -1,7 +1,5 @@
 from __future__ import annotations
-
 from typing import Dict
-
 from mht.utils.headers import build_summary_header
 from mht.utils.versions import SCHEMA_IDS, schema_version, tool_version
 
@@ -44,7 +42,7 @@ def build_history_summary(
     systems_with_aliases: int,
     total_port_lines_all: int,
 ) -> Dict:
-    # platforms_found → collapse to unique systems per platform
+    # ---------- existing PLATFORM/PUBLISHER blocks (unchanged) ----------
     platforms_found_summary = {}
     for platform, data in parsing_state["platforms_found"].items():
         systems_unique = sorted(set(data["systems"]))
@@ -53,14 +51,12 @@ def build_history_summary(
             "systems": systems_unique,
         }
 
-    # section headings
     _section_heads = dict(parsing_state["section_headings_found"])
     section_headings_block = {
         "unique": len(_section_heads),
         "distribution": dict(sorted(_section_heads.items(), key=lambda kv: kv[0].upper())),
     }
 
-    # platform categories (top-level PORTS headings)
     _cats = dict(parsing_state["platform_categories_found"])
     platform_categories_block = {
         "unique": len(_cats),
@@ -72,7 +68,6 @@ def build_history_summary(
         "by_platform": dict(sorted(platforms_found_summary.items(), key=lambda kv: kv[0].lower())),
     }
 
-    # publishers
     _publishers_map = parsing_state["publishers_found"]
     _by_publisher = {}
     for name, data in _publishers_map.items():
@@ -181,39 +176,27 @@ def build_history_summary(
         },
     }
 
-    # ---- Block classifier metrics (always include 'unknown': 0) ----
-    counts_in = dict(parsing_state.get("block_type_counts", {}))
-    # normalise keys and ensure stable presence
-    all_types = ("paragraph", "bullet_list", "numbered_list", "pair", "subheading", "unknown")
-    block_type_counts_block = {t: int(counts_in.get(t, 0)) for t in all_types}
+    # ---------- NEW: blocks/provenance/headings_qc ----------
+    _btc = dict(parsing_state.get("block_type_counts", {}))
+    total_blocks = sum(_btc.values())
 
-    _ub_map = parsing_state.get("unknown_blocks", {}) or {}
-    unknown_blocks_block = {
-        "sections_affected": len(_ub_map),
-        "by_section": dict(sorted(_ub_map.items(), key=lambda kv: kv[0])),
-    }
-
-    # Suppressions
-    _sup = parsing_state.get("suppressions", {}) or {}
-    _sup_counts = dict(_sup.get("counts", {}))
-    _sup_by_system = {k: v for k, v in sorted((_sup.get("by_system") or {}).items(), key=lambda kv: kv[0].lower())}
-    suppressions_block = {
-        "counts": _sup_counts,
-        "by_system": _sup_by_system
-    }
-
-    # Fully suppressed sections (post-suppression became empty)
-    _fss = parsing_state.get("fully_suppressed_sections", {}) or {}
-    _fss_counts = {sec: len(systems) for sec, systems in _fss.items()}
-    fully_suppressed_sections_block = {
-        "counts": _fss_counts,
-        "by_section": {
-            sec: {
-                "count": len(systems),
-                "systems": sorted(set(systems))
-            }
-            for sec, systems in sorted(_fss.items(), key=lambda kv: kv[0])
+    # section-level policy counts (set in process_section_blocks)
+    _ppc = parsing_state.get("provenance_policy_counts", {})
+    provenance_policy_counts = {
+        sec: {
+            "per_line": vals.get("per_line", 0),
+            "heuristic_per_line": vals.get("heuristic_per_line", 0)
         }
+        for sec, vals in sorted(_ppc.items(), key=lambda kv: kv[0])
+    }
+
+    blocks_with_suppressions = int(parsing_state.get("provenance_blocks_with_suppressions", 0))
+
+    # near-miss banners seen (by system)
+    _nmb = parsing_state.get("banner_spacing_anomalies", {})
+    near_miss_banners = {
+        "systems_affected": len(_nmb),
+        "by_system": dict(sorted(_nmb.items(), key=lambda kv: kv[0].lower()))
     }
 
     header = build_summary_header(
@@ -241,7 +224,7 @@ def build_history_summary(
             "publisher_count_unique": len(parsing_state["publishers_found"]),
             "platform_count_unique": len(platforms_found_summary),
             "model_count_unique": len(parsing_state["models_found"].keys()),
-            "additional_tag_count_unique": len(parsing_state["additional_tags_found"]),
+            "additional_tag_count_unique": len(_tags_map),
             "ports_with_comments": parsing_state["ports_with_comments"],
             "systems_with_port_overview": len(overviews_map),
         },
@@ -257,11 +240,19 @@ def build_history_summary(
             "additional_tags_found": additional_tags_block,
             "disk_size_quotes": disk_size_quotes_block,
             "port_overview_texts": port_overview_block,
-            "block_types": {
-                "counts": block_type_counts_block
-            },
-            "suppressions": suppressions_block,
-            "fully_suppressed_sections": fully_suppressed_sections_block,
+            # NEW: blocks overview
+            "blocks": {
+                "total_blocks": total_blocks,
+                "by_type": dict(sorted(_btc.items(), key=lambda kv: kv[0]))
+            }
+        },
+        "provenance": {
+            "policy_counts": provenance_policy_counts,
+            "blocks_with_suppressions": blocks_with_suppressions
+        },
+        "headings_qc": {
+            **_build_section_anomalies(parsing_state),
+            "near_miss_banners": near_miss_banners
         },
         "anomalies": {
             "unexpected_platform_categories": unexpected_platform_categories_block,
@@ -287,7 +278,6 @@ def build_history_summary(
                 ),
                 "by_system_lines": {k: v for k, v in parsing_state["null_platform_examples"].items()},
             },
-            "unknown_blocks": unknown_blocks_block,
         },
         "residue_flags": {
             "unparsable_dates": unparsable_dates_block,

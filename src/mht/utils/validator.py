@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable, Tuple, Dict, Any, Set
+from typing import Iterable, Tuple, Dict, Any, Set, Optional
 from jsonschema import Draft202012Validator
 from collections import Counter
 
@@ -26,6 +26,10 @@ from mht.utils.paths import (
     EXOTICA_WIKI_SCHEMA,
     EXOTICA_PAGES_SCHEMA,
 )
+from mht.utils.logger import setup_logger
+from mht.utils.paths import GH_SYSTEM_TRIVIA_SCHEMA
+
+_log = setup_logger()
 
 # Registry mapping names to (schema_path, document_path_getter)
 # Document paths are resolved at call time to the ACTIVE release.
@@ -345,3 +349,44 @@ def validate_ini_parsed_bundle(parsed: Dict[str, dict], log) -> int:
         )
 
     return issues
+
+def _load_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+def validate_json_with_schema(doc: Any, schema_path: Path, *, warn_only: bool = True) -> bool:
+    """
+    Validate a JSON document against a JSON Schema if 'jsonschema' is available.
+    Returns True if valid or schema check is skipped; False if invalid and warn_only=False.
+    """
+    try:
+        import jsonschema  # type: ignore
+    except ImportError:
+        _log.warning("jsonschema not installed — schema validation skipped for %s", schema_path.name)
+        return True
+
+    try:
+        schema = _load_json(schema_path)
+        jsonschema.validate(instance=doc, schema=schema)
+        return True
+    except Exception as e:
+        msg = f"Schema validation failed for {schema_path.name}: {e}"
+        if warn_only:
+            _log.warning(msg)
+            return False
+        raise
+
+def validate_trivia_file_against_schema(trivia_path: Path, *, warn_only: bool = True) -> bool:
+    """
+    Load gh_system_trivia.json and validate against the shipped schema.
+    """
+    try:
+        doc = _load_json(trivia_path)
+    except FileNotFoundError:
+        _log.warning("Trivia file missing: %s", trivia_path.as_posix())
+        return False
+    except Exception as e:
+        _log.warning("Trivia file unreadable (%s): %s", trivia_path.name, e)
+        return False
+
+    return validate_json_with_schema(doc, GH_SYSTEM_TRIVIA_SCHEMA, warn_only=warn_only)

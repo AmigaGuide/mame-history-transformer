@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mht/gh_system_trivia.schema.json",
+  "title": "MHT GH System Trivia",
+  "type": "object",
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "gh_id": { "type": "integer", "minimum": 1 },
+      "sections_raw": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Raw, line-joined text per section tag after suppression."
+      },
+      "sections": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": ["blocks"],
+          "additionalProperties": false,
+          "properties": {
+		  
+
+			"blocks": {
+			  "type": "array",
+			  "items": {
+				"oneOf": [
+				  {
+					"title": "Paragraph block",
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "text", "meta"],
+					"properties": {
+					  "type": { "const": "paragraph" },
+					  "text": { "type": "string", "minLength": 1 },
+					  "meta": { "$ref": "#/$defs/meta" }
+					}
+				  },
+				  {
+					"title": "Bullet list block",
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "items", "meta"],
+					"properties": {
+					  "type": { "const": "bullet_list" },
+					  "items": {
+						"type": "array",
+						"items": { "type": "string", "minLength": 1 },
+						"minItems": 1
+					  },
+					  "meta": { "$ref": "#/$defs/meta" }
+					}
+				  },
+				  {
+					"title": "Numbered list block",
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "items", "meta"],
+					"properties": {
+					  "type": { "const": "numbered_list" },
+					  "items": {
+						"type": "array",
+						"items": { "type": "string", "minLength": 1 },
+						"minItems": 1
+					  },
+					  "meta": { "$ref": "#/$defs/meta" }
+					}
+				  },
+				  {
+					"title": "Pair block",
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "label", "value", "meta"],
+					"properties": {
+					  "type": { "const": "pair" },
+					  "label": { "type": "string", "minLength": 1 },
+					  "value": { "type": "string", "minLength": 1 },
+					  "meta": { "$ref": "#/$defs/meta" }
+					}
+				  },
+				  {
+					"title": "Subheading block",
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["type", "text", "meta"],
+					"properties": {
+					  "type": { "const": "subheading" },
+					  "text": { "type": "string", "minLength": 1 },
+					  "meta": { "$ref": "#/$defs/meta" }
+					}
+				  }
+				]
+			  }
+			}
+          }
+        }
+      }
+    }
+  },
+  "additionalPropertiesMessage": "Top-level keys must be MAME/GH machine names mapping to per-system trivia objects.",
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "required": [
+        "system",
+        "section_tag",
+        "block_index",
+        "filtered_line_start",
+        "filtered_line_end",
+        "policy",
+        "detectors",
+        "suppressions",
+        "text_hash"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "system": { "type": "string", "minLength": 1 },
+        "section_tag": { "type": "string", "minLength": 1 },
+        "block_index": { "type": "integer", "minimum": 0 },
+        "raw_line_start": { "type": ["integer", "null"], "minimum": 1 },
+        "raw_line_end": { "type": ["integer", "null"], "minimum": 1 },
+        "filtered_line_start": { "type": "integer", "minimum": 0 },
+        "filtered_line_end": { "type": "integer", "minimum": 0 },
+        "policy": {
+          "type": "object",
+          "required": ["per_line", "heuristic_per_line"],
+          "additionalProperties": false,
+          "properties": {
+            "per_line": { "type": "boolean" },
+            "heuristic_per_line": { "type": "boolean" }
+          }
+        },
+        "detectors": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "suppressions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "text_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}$",
+          "description": "Short content hash (e.g. SHA-1 first 8 hex chars)."
+        }
+      }
+    }
+  }
+}

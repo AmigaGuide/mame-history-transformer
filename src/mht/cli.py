@@ -24,6 +24,7 @@ from mht.utils.paths import (
     mame_machines_path,
     parent_index_path,
     gh_system_ports_path,
+    gh_system_trivia_path,
     ini_classifications_path,
     mame_summary_path,
     history_summary_path,
@@ -38,7 +39,7 @@ from mht.utils.paths import (
     # add new helpers:
     incoming_dir, set_active_version, active_version, list_release_versions, encodings_cache_path,
 )
-from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY
+from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDATION_REGISTRY, validate_trivia_file_against_schema
 from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
@@ -387,6 +388,8 @@ def cmd_clean(args: argparse.Namespace) -> int:
 def cmd_validate(args: argparse.Namespace) -> int:
     ver = args.version or active_version()
     print(f"[validate] release = {ver}")
+
+    # Existing invariant/schema checks for other artefacts
     names = args.only or None
     errors = validate_outputs(names)
     if errors:
@@ -394,6 +397,14 @@ def cmd_validate(args: argparse.Namespace) -> int:
         for e in errors:
             print(e)
         return 1
+
+    # NEW: warn-only JSON Schema validation for gh_system_trivia.json
+    # (will print a warning if jsonschema is missing or the file is invalid)
+    trivia_path = gh_system_trivia_path(ver)
+    ok_trivia = validate_trivia_file_against_schema(trivia_path, warn_only=True)
+    if not ok_trivia:
+        print("[validate] trivia schema: warnings emitted (non-strict)")
+
     print("Validation OK")
     return 0
 

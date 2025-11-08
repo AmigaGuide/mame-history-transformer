@@ -46,7 +46,7 @@ from mht.inputs.history_ports import extract_ports_section
 from mht.inputs.history_text import parse_gh_id_from_contribute, extract_text_sections
 from mht.inputs.history_summary import build_history_summary
 from mht.utils.history_xml import capture_history_root_attrs, classify_entry
-from mht.utils.validator import check_history_parse_invariants
+from mht.utils.validator import check_history_parse_invariants, validate_trivia_file_against_schema
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
@@ -365,6 +365,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     if not write_json(gh_system_trivia_path(), trivia_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {gh_system_trivia_path()} ({len(trivia_sorted)} systems)")
+
+    validate_trivia_file_against_schema(gh_system_trivia_path(), warn_only=True)
 
     summary = build_history_summary(
         history_version=history_version,
