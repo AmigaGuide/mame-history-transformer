@@ -1,0 +1,17 @@
+{
+  "notes": [
+    "005: overview has eight paragraphs after suppressing the first two boilerplate lines.",
+    "We assert that at least three specific paragraphs survived and appeared as distinct blocks."
+  ],
+  "expectations": {
+    "sections": {
+      "overview": {
+        "blocks": [
+          { "type": "paragraph", "text_contains": "Agent 005 brings new cash collections to you." },
+          { "type": "paragraph", "text_contains": "And 005 is a RasterScan Convert" },
+          { "type": "paragraph", "text_contains": "Put Agent 005 on your side and win the chase" }
+        ]
+      }
+    }
+  }
+}

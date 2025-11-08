@@ -1,0 +1,26 @@
+{
+  "notes": [
+    "Street Fighter II - The World Warrior: overview contains only paragraphs after suppression of the boilerplate lines.",
+    "We assert that the section is split into distinct paragraph blocks reflecting the original prose."
+  ],
+  "expectations": {
+    "sections": {
+      "overview": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "Street Fighter II - The World Warrior is the legendary fighting game that defined the fighting game genre"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Each fighter is as distinctive in feel and fighting style as they are in physical appearance"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Street Fighter II is a fighting game in the truest sense of the word"
+          }
+        ]
+      }
+    }
+  }
+}

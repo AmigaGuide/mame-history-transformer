@@ -1,0 +1,37 @@
+{
+  "notes": [
+    "Puckman: overview has six paragraphs after suppression of the boilerplate lines, plus a numbered list describing three intermissions.",
+    "We assert presence of representative paragraph text and at least one numbered list block."
+  ],
+  "expectations": {
+    "sections": {
+      "overview": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "Puckman is the seminal and hugely influential arcade game"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Power pills are situated in each corner"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Each maze contains 240 dots and 4 power pills"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Twice in every level, a bonus fruit or prize item"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Between certain rounds, funny intermissions will be played"
+          },
+          {
+            "type": "numbered_list"
+          }
+        ]
+      }
+    }
+  }
+}

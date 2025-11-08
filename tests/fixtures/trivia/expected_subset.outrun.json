@@ -1,0 +1,30 @@
+{
+  "notes": [
+    "Out Run: overview contains only paragraphs after suppression of the boilerplate lines.",
+    "We assert the presence of several representative paragraphs as distinct blocks."
+  ],
+  "expectations": {
+    "sections": {
+      "overview": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "Out Run is a ground-breaking racing game in which the player drives a red Ferrari Testarossa"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Each of the game's stages is packed with civilian traffic"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "At the end of every stage players are presented with a fork in the road"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "As well as being able to choose routes, players could also - via the game's \"in-car radio\" - choose one of three different catchy tunes"
+          }
+        ]
+      }
+    }
+  }
+}
