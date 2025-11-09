@@ -15,10 +15,10 @@ def test_trivia_schema_validates():
     assert ok
 
 @pytest.mark.parametrize("system, fixture_name", [
-    ("puckman",   "expected_subset.puckman.json"),
-    ("outrun",    "expected_subset.outrun.json"),
-    ("005",       "expected_subset.005.json"),
-    ("zzyzzyxx",  "expected_subset.zzyzzyxx.json"),
+    ("puckman", "expected_subset.puckman.json"),
+    ("outrun",  "expected_subset.outrun.json"),
+    ("005",     "expected_subset.005.json"),
+    ("sf2j",    "expected_subset.sf2j.json"),
 ])
 def test_trivia_blocks_match_goldens(system, fixture_name):
     trivia = json.loads(gh_system_trivia_path().read_text(encoding="utf-8"))
