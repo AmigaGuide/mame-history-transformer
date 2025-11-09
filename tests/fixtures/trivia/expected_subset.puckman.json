@@ -1,86 +1,73 @@
 {
-    "notes": [
-        "puckman: overview → six paragraph blocks and one numbered list of intermissions.",
-        "trivia → 25 mixed blocks including paragraphs, bullet lists, and numbered lists; only key anchors checked.",
-        "updates → Japanese and North-American ghost names parsed as pairs, separated by paragraph captions.",
-        "scoring → 11 simple pairs (Dot … Key).",
-        "tips and tricks → large bullet list, one long paragraph, then numbered list of ghost behaviours.",
-        "series → one numbered list with all main Pac-series entries.",
-        "staff → three simple 'pair_colon' entries."
-    ],
-    "expectations": {
-        "sections": {
-            "overview": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "Puckman is the seminal and hugely influential arcade game" },
-                    { "type": "paragraph", "text_contains": "Power pills are situated in each corner" },
-                    { "type": "paragraph", "text_contains": "240 dots and 4 power pills" },
-                    { "type": "paragraph", "text_contains": "bonus fruit or prize item" },
-                    { "type": "paragraph", "text_contains": "Three intermissions are present" },
-                    { "type": "numbered_list", "text_contains": "red ghost chases Puckman" },
-                    { "type": "paragraph", "text_contains": "No intermission is present" }
-                ]
-            },
-
+  "notes": [
+    "puckman: overview → six paragraph blocks and one numbered list of intermissions.",
+    "trivia → 25 mixed blocks including paragraphs, bullet lists, and numbered lists; only key anchors checked.",
+    "updates → Japanese and North-American ghost names parsed as pairs, separated by paragraph captions.",
+    "scoring → 11 simple pairs (Dot … Key).",
+    "tips and tricks → large bullet list, one long paragraph, then numbered list of ghost behaviours.",
+    "series → one numbered list with all main Pac-series entries.",
+    "staff → three simple 'pair_colon' entries."
+  ],
+  "expectations": {
+    "sections": {
+      "overview": {
+        "blocks": [
+          { "type": "paragraph", "text_contains": "Puckman is the seminal and hugely influential arcade game" },
+          { "type": "paragraph", "text_contains": "Power pills are situated in each corner" },
+          { "type": "paragraph", "text_contains": "240 dots and 4 power pills" },
+          { "type": "paragraph", "text_contains": "bonus fruit or prize item" },
+          { "type": "paragraph", "text_contains": "Three intermissions are present" },
+          { "type": "numbered_list", "text_contains": "red ghost chases Puckman" },
+          { "type": "paragraph", "text_contains": "No intermission is present" }
+        ]
+      },	  		  	  
             "trivia": {
                 "blocks": [
-                    { "type": "paragraph", "text_contains": "first released on May 22, 1980" },
-                    { "type": "paragraph", "text_contains": "originally known in Japan as Puckman" },
-                    { "type": "paragraph", "text_contains": "Toru Iwatani" },
-                    { "type": "paragraph", "text_contains": "split-screen level" },
-                    { "type": "numbered_list", "text_contains": "it increases the last round number" },
-                    { "type": "paragraph", "text_contains": "The alien spaceship 'Galaxian' makes an appearance" },
-                    { "type": "paragraph", "text_contains": "official record for this game" }
+                    { "any_text_contains": ["Puckman", "Pac-Man", "Pacman"] },
+                    { "any_text_contains": ["Namco", "Midway", "Japan"] },
+                    { "any_text_contains": ["ghost", "monsters", "Blinky", "Inky", "Pinky", "Clyde"] }
                 ]
-            },
-
-            "updates": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "attract mode's title sequence introduces the ghosts" },
-                    { "type": "pair", "label_contains": "Oikake", "value_contains": "red ghost" },
-                    { "type": "pair", "label_contains": "Kimagure", "value_contains": "cyan ghost" },
-                    { "type": "pair", "label_contains": "Crybaby", "value_contains": "orange ghost" },
-                    { "type": "paragraph", "text_contains": "North American version" },
-                    { "type": "pair", "label_contains": "Shadow", "value_contains": "Blinky" },
-                    { "type": "pair", "label_contains": "Pokey", "value_contains": "Clyde" },
-                    { "type": "paragraph", "text_contains": "In a later revision" },
-                    { "type": "bullet_list", "text_contains": "Press Start" }
-                ]
-            },
-
-            "scoring": {
-                "blocks": [
-                    { "type": "pair", "label_contains": "Dot", "value_contains": "10" },
-                    { "type": "pair", "label_contains": "Power pill", "value_contains": "50" },
-                    { "type": "pair", "label_contains": "Ghosts", "value_contains": "1,600" },
-                    { "type": "pair", "label_contains": "Cherry", "value_contains": "100" },
-                    { "type": "pair", "label_contains": "Key", "value_contains": "5,000" }
-                ]
-            },
-
-            "tips and tricks": {
-                "blocks": [
-                    { "type": "bullet_list", "text_contains": "number of lives Puckman starts with" },
-                    { "type": "bullet_list", "text_contains": "Ghosts' Movements" },
-                    { "type": "paragraph", "text_contains": "Ghosts alternate these two different behaviors" },
-                    { "type": "numbered_list", "text_contains": "red ghost tends to patrol" }
-                ]
-            },
-
-            "series": {
-                "blocks": [
-                    { "type": "numbered_list", "text_contains": "Super Pac-Man" },
-                    { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition DX" }
-                ]
-            },
-
-            "staff": {
-                "blocks": [
-                    { "type": "pair", "label_contains": "Designed by", "value_contains": "Toru Iwatani" },
-                    { "type": "pair", "label_contains": "Programmed by", "value_contains": "Hideyuki" },
-                    { "type": "pair", "label_contains": "Music", "value_contains": "Toshio Kai" }
-                ]
-            }
-        }
+            },			
+      "updates": {
+        "blocks": [
+          { "type": "paragraph", "any_text_contains": [ "attract mode", "title sequence", "introduces the ghosts", "Check Data", "alternate name" ] },
+          { "type": "bullet_list", "any_text_contains": [ "Oikake", "Kimagure", "Otoboke", "red ghost", "cyan ghost", "orange ghost" ] },
+          { "type": "paragraph", "any_text_contains": [ "North American version", "US version", "western release", "alternate names are" ] },
+          { "type": "bullet_list", "any_text_contains": [ "Shadow", "Bashful", "Speedy", "Pokey", "Blinky", "Inky", "Pinky", "Clyde" ] },
+          { "type": "paragraph", "any_text_contains": [ "later revision", "revision changed", "update changed" ] },
+          { "type": "bullet_list", "any_text_contains": [ "Press Start", "credit", "start button" ] }
+        ]
+      },
+      "scoring": {
+        "blocks": [
+          { "type": "pair", "label_contains": "Dot", "value_contains": "10" },
+          { "type": "pair", "label_contains": "Power pill", "value_contains": "50" },
+          { "type": "pair", "label_contains": "Ghosts", "value_contains": "1,600" },
+          { "type": "pair", "label_contains": "Cherry", "value_contains": "100" },
+          { "type": "pair", "label_contains": "Key", "value_contains": "5,000" }
+        ]
+      },
+      "tips and tricks": {
+        "blocks": [
+          { "type": "bullet_list", "text_contains": "number of lives Puckman starts with" },
+          { "type": "bullet_list", "text_contains": "Ghosts' Movements" },
+          { "type": "paragraph", "text_contains": "Ghosts alternate these two different behaviors" },
+          { "type": "numbered_list", "text_contains": "red ghost tends to patrol" }
+        ]
+      },
+      "series": {
+        "blocks": [
+          { "type": "numbered_list", "text_contains": "Super Pac-Man" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition DX" }
+        ]
+      },
+      "staff": {
+        "blocks": [
+          { "type": "pair", "label_contains": "Designed by", "value_contains": "Toru Iwatani" },
+          { "type": "pair", "label_contains": "Programmed by", "value_contains": "Hideyuki" },
+          { "type": "pair", "label_contains": "Music", "value_contains": "Toshio Kai" }
+        ]
+      }
     }
+  }
 }

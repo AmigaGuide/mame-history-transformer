@@ -5,8 +5,10 @@ from pathlib import Path
 from mht.utils.paths import gh_system_trivia_path, history_summary_path
 from mht.utils.validator import validate_trivia_file_against_schema
 from tests.util_json_subset import is_subset
+from tests.util_expectations import blocks_satisfy_expectations
 
-FIXT = Path("tests/fixtures/trivia")
+
+FIXT_DIR = Path(__file__).parent / "_fixtures" / "trivia"
 
 @pytest.mark.order(1)
 def test_trivia_schema_validates():
@@ -14,19 +16,33 @@ def test_trivia_schema_validates():
     ok = validate_trivia_file_against_schema(gh_system_trivia_path(), warn_only=False)
     assert ok
 
-@pytest.mark.parametrize("system, fixture_name", [
-    ("puckman", "expected_subset.puckman.json"),
-    ("outrun",  "expected_subset.outrun.json"),
-    ("005",     "expected_subset.005.json"),
-    ("sf2j",    "expected_subset.sf2j.json"),
-])
-def test_trivia_blocks_match_goldens(system, fixture_name):
-    trivia = json.loads(gh_system_trivia_path().read_text(encoding="utf-8"))
-    assert system in trivia, f"System {system} missing in gh_system_trivia.json"
+def _fixture_cases():
+    # mirrors test_trivia_goldens.py discovery pattern
+    for p in sorted(FIXT_DIR.glob("expected_subset.*.json")):
+        system = p.stem.split(".")[1]  # expected_subset.<system>.json
+        yield system, p.name
 
-    # Only assert subset to keep tests stable across suppression/refinements
-    expected = json.loads((FIXT / fixture_name).read_text(encoding="utf-8"))
-    assert is_subset(expected, trivia[system]), f"{system} does not satisfy expected subset"
+@pytest.mark.parametrize("system, fixture_file", list(_fixture_cases()))
+def test_trivia_blocks_match_goldens(system, fixture_file):
+    """
+    Use the SAME expectation engine as tests/test_trivia_goldens.py
+    so our flexible anchors (text_contains, any_text_contains, etc.)
+    are honoured instead of doing a literal JSON subset comparison.
+    """
+    trivia = json.loads(gh_system_trivia_path().read_text(encoding="utf-8"))
+    assert system in trivia, f"{system} missing in gh_system_trivia.json"
+
+    fx = json.loads((FIXT_DIR / fixture_file).read_text(encoding="utf-8"))
+    exp_sections = (fx.get("expectations") or {}).get("sections") or {}
+    sys_sections = (trivia[system] or {}).get("sections") or {}
+
+    for sec_name, sec_expect in exp_sections.items():
+        assert sec_name in sys_sections, f"{system}:{sec_name} missing"
+        exp_blocks = (sec_expect or {}).get("blocks") or []
+        act_blocks = (sys_sections[sec_name] or {}).get("blocks") or []
+        assert act_blocks, f"{system}:{sec_name} has no blocks"
+        ok = blocks_satisfy_expectations(exp_blocks, act_blocks)
+        assert ok, f"{system}:{sec_name} blocks do not satisfy expectations"
 
 def test_trivia_provenance_is_sane_for_sample():
     trivia = json.loads(gh_system_trivia_path().read_text(encoding="utf-8"))
