@@ -11,6 +11,56 @@ All notable changes to this project will be documented here.
 
 ---
 
+## [1.2.0] – 2025-11-09
+
+### Added
+
+* **Fixture-based golden testing**
+
+  * Introduced new *subset-expectation framework* to verify parsed **Gaming-History trivia output** without requiring full schema equivalence.
+  * Added reusable helpers:
+
+    * `tests/util_json_subset.py` — flexible JSON subset matcher (`is_subset`, `_block_matches`) supporting partial text, label, and value checks.
+    * `tests/util_expectations.py` — assertion helpers for validating parsed trivia sections and expected block types.
+  * Created dedicated golden tests:
+
+    * `tests/test_trivia_goldens.py` — verifies per-system subset expectations against `gh_system_trivia.json`.
+    * `tests/test_trivia_schema_and_goldens.py` — integrates schema and subset validation, automatically discovering fixture cases.
+  * Introduced example fixture set under `tests/fixtures/trivia_goldens/`:
+
+    * `expected_subset.005.json`
+    * `expected_subset.outrun.json`
+    * `expected_subset.puckman.json`
+    * `expected_subset.sf2j.json`
+  * Fixture discovery now runs automatically and skips gracefully when empty; now all four systems pass under `pytest`.
+
+* **Test reliability**
+
+  * New low-level test file `tests/test_json_subset.py` to self-validate the subset utilities (7 green tests).
+  * Parametrisation and discovery fixes eliminate previous “empty parameter set” warnings.
+  * All trivia-related tests now execute cleanly with zero warnings or skips.
+
+### Changed
+
+* `test_trivia_schema_and_goldens.py` fixture discovery unified with `test_trivia_goldens.py` for consistency.
+* JSON comparison logic improved to tolerate ordering differences, partial matches, and structured type checks (paragraph, pair, bullet list, numbered list).
+* Improved indentation and consistency in golden fixtures for easier editing in Notepad++.
+* Long-running trivia tests optimised for readability and selective runs using `-k trivia_goldens`.
+
+### Fixed
+
+* Removed redundant alias checks that broke working systems (e.g. “005” subset).
+* Eliminated `PytestUnknownMarkWarning` caused by unregistered `@pytest.mark.order`.
+* Resolved fixture path mismatches that previously caused `FileNotFoundError` or `JSONDecodeError`.
+
+### Notes
+
+* This release finalises the **testing infrastructure phase** for MAME-History-Transformer v2.
+* The new subset-testing framework will safeguard future parsing logic changes by verifying that high-level section structures remain stable.
+* All current tests (`pytest`) pass cleanly — **no warnings, no skips, 100 % success** — providing a verified baseline for the next parser iteration.
+
+---
+
 ## [1.1.0] – 2025-10-28
 
 ### Added
