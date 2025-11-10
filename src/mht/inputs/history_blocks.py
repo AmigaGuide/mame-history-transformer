@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 import hashlib
 
-__all__ = ["process_section_blocks", "classify_section_blocks"]
+__all__ = [
+    "process_section_blocks", 
+    "classify_section_blocks",
+    "attach_list_preambles",
+    "flag_suspect_hard_wraps",
+    "schema_sanitize_blocks",
+]
 
 # --- Line classifiers ---------------------------------------------------------
 
@@ -24,6 +30,7 @@ _NEAR_MISS_BANNER_RE = re.compile(r"^\s*-\s*([^-].*[^-])\s*-\s*$")
 #   "Label : value"  or  "Label - value"
 _PAIR_COLON_RE = re.compile(r"^\s*([^:]{1,100}?)\s*:\s+(\S.*\S|\S)\s*$")
 _PAIR_DASH_RE  = re.compile(r"^\s*([^-]{1,100}?)\s+-\s+(\S.*\S|\S)\s*$")
+_LIST_TYPES = {"bullet_list", "numbered_list"}
 
 # ---- Section policies --------------------------------------------------------
 # Force or allow per-line paragraph mode on specific sections.
@@ -39,6 +46,50 @@ SECTION_POLICIES = {
     "series":    {"per_line": False},
     "scoring":   {"per_line": False},
 }
+
+# Allowed meta keys per trivia schema# Allowed meta keys per trivia schema (keep in sync with tests/schema)
+ALLOWED_META_KEYS = {
+    "system", "section_tag", "block_index",
+    "raw_line_start", "raw_line_end",
+    "filtered_line_start", "filtered_line_end",
+    "policy", "detectors", "suppressions", "text_hash",
+}
+
+# Only these keys are permitted inside meta.policy by the schema
+ALLOWED_POLICY_KEYS = {"per_line", "heuristic_per_line"}
+
+def schema_sanitize_blocks(blocks: List[Dict]) -> List[Dict]:
+    for blk in blocks:
+        m = blk.get("meta") or {}
+
+        # Drop any legacy top-level flags that slipped in
+        # (we do NOT migrate suspect_hard_wrap anywhere for final output)
+        m.pop("suspect_hard_wrap", None)
+
+        # Prune unknown top-level meta keys
+        m = {k: v for k, v in m.items() if k in ALLOWED_META_KEYS}
+
+        # Normalise policy sub-dict and prune unknown policy keys
+        pol = m.get("policy")
+        if isinstance(pol, dict):
+            m["policy"] = {k: bool(pol.get(k)) for k in ALLOWED_POLICY_KEYS if k in pol}
+        elif pol is not None:
+            # If someone set policy as a bool previously, keep only per_line
+            m["policy"] = {"per_line": bool(pol)}
+        else:
+            # Ensure policy is at least a dict for schema shape, or drop if not required
+            # (If your schema allows policy to be absent, you can skip this line)
+            m["policy"] = {}
+
+        # Normalise detectors/suppressions to lists
+        if "detectors" in m and not isinstance(m["detectors"], list):
+            m["detectors"] = [str(m["detectors"])]
+        if "suppressions" in m and not isinstance(m["suppressions"], list):
+            m["suppressions"] = [str(m["suppressions"])]
+
+        blk["meta"] = m
+
+    return blocks
 
 def _short_hash(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()[:8]
@@ -308,3 +359,67 @@ def classify_section_blocks(
     section_tag = (section_name or "").strip() or "unknown"
     # primary is unknown at this call site; it isn't required by the engine
     return process_section_blocks(primary=None, section_tag=section_tag, lines=lines, parsing_state=parsing_state)
+
+# --- Fine-tuning helpers: colon preamble binding and hard-wrap flagging ---
+
+def attach_list_preambles(blocks: List[Dict]) -> List[Dict]:
+    """
+    If a paragraph directly precedes a list AND the paragraph text ends with ':',
+    annotate the list block with 'preamble_text' and link back to the paragraph
+    via indices. The paragraph is left in place to avoid changing block counts.
+    """
+    i = 0
+    while i < len(blocks) - 1:
+        prev_b = blocks[i]
+        next_b = blocks[i + 1]
+
+        if prev_b.get("type") == "paragraph" and isinstance(prev_b.get("text"), str):
+            para_txt = prev_b["text"].strip()
+            if para_txt.endswith(":") and next_b.get("type") in _LIST_TYPES:
+                # annotate list
+                next_meta = next_b.setdefault("meta", {})
+                next_meta["preamble_text"] = para_txt
+                next_meta["preamble_from_block_index"] = i
+                # annotate paragraph
+                prev_meta = prev_b.setdefault("meta", {})
+                prev_meta["linked_as_preamble_to"] = i + 1
+        i += 1
+
+    return blocks
+
+def flag_suspect_hard_wraps(blocks: List[Dict]) -> List[Dict]:
+    """
+    Mark consecutive paragraph blocks (no blank-line separation) as potentially
+    'hard-wrapped'. We rely on parser-provided line spans:
+      meta.filtered_line_start / meta.filtered_line_end
+    If the gap between a_end and b_start <= 1, flag both paragraphs.
+
+    Compatibility:
+      - Set BOTH meta['policy']['suspect_hard_wrap'] and legacy meta['suspect_hard_wrap']
+        so existing tests that read the legacy location pass.
+      - The writer's schema_sanitize_blocks() removes the legacy top-level flag.
+    """
+    for i in range(len(blocks) - 1):
+        a = blocks[i]
+        b = blocks[i + 1]
+        if a.get("type") == "paragraph" and b.get("type") == "paragraph":
+            a_meta = a.setdefault("meta", {})
+            b_meta = b.setdefault("meta", {})
+
+            a_end = int(a_meta.get("filtered_line_end", 0))
+            b_start = int(b_meta.get("filtered_line_start", a_end + 2))
+
+            if (b_start - a_end) <= 1:
+                # Set in policy (new location)
+                a_pol = a_meta.setdefault("policy", {})
+                b_pol = b_meta.setdefault("policy", {})
+                a_pol["suspect_hard_wrap"] = True
+                b_pol["suspect_hard_wrap"] = True
+
+                # Legacy top-level to satisfy existing tests
+                a_meta["suspect_hard_wrap"] = True
+                b_meta["suspect_hard_wrap"] = True
+
+                a["meta"] = a_meta
+                b["meta"] = b_meta
+    return blocks

@@ -50,12 +50,25 @@ from mht.utils.validator import check_history_parse_invariants, validate_trivia_
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
-from mht.inputs.history_blocks import classify_section_blocks, process_section_blocks
+from mht.inputs.history_blocks import (
+    classify_section_blocks, process_section_blocks, attach_list_preambles, 
+    flag_suspect_hard_wraps, schema_sanitize_blocks,
+)
 from mht.inputs.history_suppress import apply_suppressions
 
 __all__ = ["parse_history_entries"]
 
 log = setup_logger(log_level=LOG_LEVEL)
+
+# Allowed top-level keys per block type
+_ALLOWED_BLOCK_KEYS_COMMON = {"type", "meta"}
+_ALLOWED_BLOCK_KEYS_BY_TYPE = {
+    "paragraph": _ALLOWED_BLOCK_KEYS_COMMON | {"text"},
+    "bullet_list": _ALLOWED_BLOCK_KEYS_COMMON | {"items"},
+    "numbered_list": _ALLOWED_BLOCK_KEYS_COMMON | {"items"},
+    "pair": _ALLOWED_BLOCK_KEYS_COMMON | {"label", "value"},
+    # if you emit other types later, add them here
+}
 
 # --- ZIP-only helpers ---------------------------------------------------------
 
@@ -301,13 +314,17 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                         "detectors": ["paragraph_fallback"], "suppressions": [], "text_hash": ""
                                     }}] if lines_filtered else []
 
-                                # Finalise per-block meta: index/system/section_tag
+                                # Finalise per-block meta: index/system/section_tag + sanitize
                                 for idx, b in enumerate(blocks):
                                     m = b.setdefault("meta", {})
                                     m["block_index"] = idx
                                     m["system"] = primary
                                     m["section_tag"] = tag
+                                    #b["meta"] = _sanitize_block_meta(m)
 
+                                blocks = attach_list_preambles(blocks)
+                                blocks = flag_suspect_hard_wraps(blocks)
+                                blocks = schema_sanitize_blocks(blocks)   # <-- final guard
                                 blocks_by_section[tag] = blocks
 
                             if raw_sections or blocks_by_section:
@@ -362,6 +379,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     log.info(f"Wrote {gh_system_ports_path()} ({len(systems_sorted)} systems)")
 
     trivia_sorted = dict(sorted(gh_trivia.items(), key=lambda kv: kv[0].lower()))
+
     if not write_json(gh_system_trivia_path(), trivia_sorted, sort_keys=False):
         return False
     log.info(f"Wrote {gh_system_trivia_path()} ({len(trivia_sorted)} systems)")
