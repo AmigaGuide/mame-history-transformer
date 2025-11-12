@@ -54,6 +54,9 @@ _COLOURS_INLINE_RE    = re.compile(r"\bcolou?rs?\b", re.IGNORECASE)
 # _HW_CHIPSET_RE     = re.compile(r"\bchipset\b|\b(?:gpu|ppu|vdp|mcu)\b|\bdac\b|\bdma\b", re.IGNORECASE)
 # _HW_MEMORY_RE      = re.compile(r"\b(?:memory|ram|sram|dram|vram)\b", re.IGNORECASE)
 
+def _is_nonblank(s: str) -> bool:
+    return bool((s or "").strip())
+
 def _record(parsing_state: Dict, system: str, section: str, rule: str, line: str) -> None:
     s = parsing_state.setdefault("suppressions", {})
     counts = s.setdefault("counts", {})
@@ -174,10 +177,10 @@ def apply_suppressions(
     Filter lines for a given section and record per-line provenance.
 
     Returns:
-        filtered_lines: list[str]  (lines that survived)
+        filtered_lines: list[str]  (lines that survived, blanks preserved)
         prov: {
-            "raw_line_indices": List[int],        # 1-based raw line number for each filtered line
-            "line_suppressions": Dict[int, List[str]]  # filtered idx -> suppression keys applied on that kept line
+            "raw_line_indices": List[int],               # 1-based raw line number for each kept line
+            "line_suppressions": Dict[int, List[str]]    # filtered idx -> suppression keys applied on that kept line
         }
     """
     filtered: List[str] = []
@@ -192,50 +195,61 @@ def apply_suppressions(
 
     tag = (section_tag or "").strip().lower()
 
+    # --- OVERVIEW: anchored rules + fail-open + gap insertion
     if tag == "overview":
         kept = _apply_overview(raw_lines, primary, parsing_state)
 
-        # Fail-open: if original had content but everything got stripped, restore the first content-looking paragraph.
-        non_empty_original = any((ln or "").strip() for ln in raw_lines)
-        non_empty_kept     = any((ln or "").strip() for ln in kept)
+        non_empty_original = any(_is_nonblank(ln) for ln in raw_lines)
+        non_empty_kept     = any(_is_nonblank(ln) for ln in kept)
         if non_empty_original and not non_empty_kept:
             first_para = _first_content_paragraph(raw_lines)
             if first_para:
                 kept = [first_para]
 
-        # Rebuild provenance using a two-pointer walk (preserves order after drops).
         ki = 0
+        gap_pending = False
         for i, ln in enumerate(raw_lines, start=1):
             if ki < len(kept) and (ln or "") == (kept[ki] or ""):
+                if gap_pending and _is_nonblank(ln):
+                    keep(i, "", [])  # paragraph break
                 keep(i, ln, [])
+                gap_pending = False
                 ki += 1
+            else:
+                if _is_nonblank(ln):
+                    gap_pending = True
 
         prov = {"raw_line_indices": raw_to_filtered_idx, "line_suppressions": line_suppressions}
         return filtered, prov
 
+    # --- TECHNICAL: anchored rules + fail-open + gap insertion
     if tag == "technical":
         kept = _apply_technical(raw_lines, primary, parsing_state)
 
-        # Fail-open: if everything got stripped but we can see a content-looking paragraph, restore it.
-        non_empty_original = any((ln or "").strip() for ln in raw_lines)
-        non_empty_kept     = any((ln or "").strip() for ln in kept)
+        non_empty_original = any(_is_nonblank(ln) for ln in raw_lines)
+        non_empty_kept     = any(_is_nonblank(ln) for ln in kept)
         if non_empty_original and not non_empty_kept:
             first_para = _first_content_paragraph(raw_lines)
             if first_para:
-                kept = [first_para]  # restore just the strong first paragraph; rest remain suppressed
+                kept = [first_para]
 
-        # Rebuild provenance against raw_lines
-        # Strategy: line-by-line positional comparison (helpers never reorder, only drop).
         ki = 0
+        gap_pending = False
         for i, ln in enumerate(raw_lines, start=1):
             if ki < len(kept) and (ln or "") == (kept[ki] or ""):
+                if gap_pending and _is_nonblank(ln):
+                    keep(i, "", [])
                 keep(i, ln, [])
+                gap_pending = False
                 ki += 1
+            else:
+                if _is_nonblank(ln):
+                    gap_pending = True
 
         prov = {"raw_line_indices": raw_to_filtered_idx, "line_suppressions": line_suppressions}
         return filtered, prov
 
-    # --- Default: keep lines as-is (preserve blanks), no suppressions
+    # --- DEFAULT: keep-as-is (preserve blanks), no suppression rules
     for i, raw in enumerate(raw_lines, start=1):
         keep(i, (raw or ""), [])
     prov = {"raw_line_indices": raw_to_filtered_idx, "line_suppressions": line_suppressions}

@@ -17,7 +17,7 @@
           { "type": "paragraph", "text_contains": "Power pills are situated in each corner" },
           { "type": "paragraph", "text_contains": "240 dots and 4 power pills" },
           { "type": "paragraph", "text_contains": "bonus fruit or prize item" },
-          { "type": "paragraph", "text_contains": "Three intermissions are present" },
+		  { "type": "paragraph", "text_contains": "Three intermissions are present", "meta": { "preamble_for_list": true } },
           { "type": "numbered_list", "text_contains": "red ghost chases Puckman" },
           { "type": "paragraph", "text_contains": "No intermission is present" }
         ]

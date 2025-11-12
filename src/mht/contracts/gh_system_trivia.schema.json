@@ -20,79 +20,77 @@
           "required": ["blocks"],
           "additionalProperties": false,
           "properties": {
-		  
-
-			"blocks": {
-			  "type": "array",
-			  "items": {
-				"oneOf": [
-				  {
-					"title": "Paragraph block",
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["type", "text", "meta"],
-					"properties": {
-					  "type": { "const": "paragraph" },
-					  "text": { "type": "string", "minLength": 1 },
-					  "meta": { "$ref": "#/$defs/meta" }
-					}
-				  },
-				  {
-					"title": "Bullet list block",
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["type", "items", "meta"],
-					"properties": {
-					  "type": { "const": "bullet_list" },
-					  "items": {
-						"type": "array",
-						"items": { "type": "string", "minLength": 1 },
-						"minItems": 1
-					  },
-					  "meta": { "$ref": "#/$defs/meta" }
-					}
-				  },
-				  {
-					"title": "Numbered list block",
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["type", "items", "meta"],
-					"properties": {
-					  "type": { "const": "numbered_list" },
-					  "items": {
-						"type": "array",
-						"items": { "type": "string", "minLength": 1 },
-						"minItems": 1
-					  },
-					  "meta": { "$ref": "#/$defs/meta" }
-					}
-				  },
-				  {
-					"title": "Pair block",
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["type", "label", "value", "meta"],
-					"properties": {
-					  "type": { "const": "pair" },
-					  "label": { "type": "string", "minLength": 1 },
-					  "value": { "type": "string", "minLength": 1 },
-					  "meta": { "$ref": "#/$defs/meta" }
-					}
-				  },
-				  {
-					"title": "Subheading block",
-					"type": "object",
-					"additionalProperties": false,
-					"required": ["type", "text", "meta"],
-					"properties": {
-					  "type": { "const": "subheading" },
-					  "text": { "type": "string", "minLength": 1 },
-					  "meta": { "$ref": "#/$defs/meta" }
-					}
-				  }
-				]
-			  }
-			}
+            "blocks": {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "title": "Paragraph block",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "text", "meta"],
+                    "properties": {
+                      "type": { "const": "paragraph" },
+                      "text": { "type": "string", "minLength": 1 },
+                      "meta": { "$ref": "#/$defs/meta" }
+                    }
+                  },
+                  {
+                    "title": "Bullet list block",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "items", "meta"],
+                    "properties": {
+                      "type": { "const": "bullet_list" },
+                      "items": {
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1 },
+                        "minItems": 1
+                      },
+                      "meta": { "$ref": "#/$defs/meta" }
+                    }
+                  },
+                  {
+                    "title": "Numbered list block",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "items", "meta"],
+                    "properties": {
+                      "type": { "const": "numbered_list" },
+                      "items": {
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1 },
+                        "minItems": 1
+                      },
+                      "meta": { "$ref": "#/$defs/meta" }
+                    }
+                  },
+                  {
+                    "title": "Pair block",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "label", "value", "meta"],
+                    "properties": {
+                      "type": { "const": "pair" },
+                      "label": { "type": "string", "minLength": 1 },
+                      "value": { "type": "string", "minLength": 1 },
+                      "meta": { "$ref": "#/$defs/meta" }
+                    }
+                  },
+                  {
+                    "title": "Subheading block",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "text", "meta"],
+                    "properties": {
+                      "type": { "const": "subheading" },
+                      "text": { "type": "string", "minLength": 1 },
+                      "meta": { "$ref": "#/$defs/meta" }
+                    }
+                  }
+                ]
+              }
+            }
           }
         }
       }
@@ -144,7 +142,10 @@
           "type": "string",
           "pattern": "^[0-9a-f]{8}$",
           "description": "Short content hash (e.g. SHA-1 first 8 hex chars)."
-        }
+        },
+        "preamble_for_list": { "type": "boolean" },
+        "preamble_target_index": { "type": "integer", "minimum": 0 },
+        "preamble_text": { "type": "string", "minLength": 1 }
       }
     }
   }
