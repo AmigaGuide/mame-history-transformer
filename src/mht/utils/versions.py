@@ -12,6 +12,7 @@ SCHEMA_INFO = {
     SCHEMA_IDS["history"]:   "1.0.1",
     SCHEMA_IDS["ini"]:       "1.0.1",
     SCHEMA_IDS["transform"]: "1.0.1",
+    SCHEMA_IDS["gh_trivia"]: "1.0.2",
 }
 
 # Tool/module versions (your code)
