@@ -397,6 +397,67 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         total_port_lines_all=total_port_lines_all,
     )
 
+    # --- Augment summary: full suppression audit (alphabetised) + sections_found.technical
+    try:
+        # 1) Suppressions (full detail) with by_system keys alphabetised (case-insensitive)
+        sup = parsing_state.get("suppressions", {}) or {}
+        by_system = sup.get("by_system", {}) or {}
+        by_system_sorted = {k: by_system[k] for k in sorted(by_system.keys(), key=lambda s: s.lower())}
+        summary["suppressions"] = {
+            "counts": sup.get("counts", {}) or {},
+            "by_system": by_system_sorted,
+        }
+
+        # 2) Sections fully removed by suppression — sort tags and system lists for readability
+        fully = parsing_state.get("fully_suppressed_sections", {}) or {}
+        fully_sorted = {}
+        for tag in sorted(fully.keys(), key=lambda s: s.lower()):
+            vals = fully[tag]
+            # convert to list and sort case-insensitively
+            vals_list = list(vals) if not isinstance(vals, list) else vals
+            fully_sorted[tag] = sorted(vals_list, key=lambda s: s.lower())
+        summary["fully_suppressed_sections"] = fully_sorted
+
+        # 3) sections_found.technical — simple visibility and blocks count
+        systems_with_technical = 0
+        technical_blocks_total = 0
+        for sys_name, entry in gh_trivia.items():
+            secmap = entry.get("sections") or {}
+            tech = secmap.get("technical")
+            if isinstance(tech, dict):
+                blocks = tech.get("blocks") or []
+                if blocks:
+                    systems_with_technical += 1
+                    technical_blocks_total += len(blocks)
+
+        sections_found = summary.get("sections_found", {}) or {}
+        sections_found["technical"] = {
+            "systems_count": systems_with_technical,
+            "blocks_count": technical_blocks_total,
+        }
+        summary["sections_found"] = sections_found
+
+        # 4) sections_found.overview — visibility and blocks count
+        systems_with_overview = 0
+        overview_blocks_total = 0
+        for sys_name, entry in gh_trivia.items():
+            secmap = entry.get("sections") or {}
+            ov = secmap.get("overview")
+            if isinstance(ov, dict):
+                blocks = ov.get("blocks") or []
+                if blocks:
+                    systems_with_overview += 1
+                    overview_blocks_total += len(blocks)
+
+        sections_found["overview"] = {
+            "systems_count": systems_with_overview,
+            "blocks_count": overview_blocks_total,
+        }
+        summary["sections_found"] = sections_found
+
+    except Exception as e:
+        debug_log(f"[history_parser::summary] Failed to augment suppression/technical stats: {e}")
+
     if not write_json(history_summary_path(), summary, sort_keys=False):
         return False
     debug_log(f"Wrote parsing summary to {history_summary_path()}")

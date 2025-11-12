@@ -1,6 +1,7 @@
 {
   "notes": [
     "puckman: overview → six paragraph blocks and one numbered list of intermissions.",
+    "technical → one large narrative paragraph preserved; label/pair lines (CPU, sound chips, players, control) suppressed.",
     "trivia → 25 mixed blocks including paragraphs, bullet lists, and numbered lists; only key anchors checked.",
     "updates → Japanese and North-American ghost names parsed as pairs, separated by paragraph captions.",
     "scoring → 11 simple pairs (Dot … Key).",
@@ -20,14 +21,32 @@
           { "type": "numbered_list", "text_contains": "red ghost chases Puckman" },
           { "type": "paragraph", "text_contains": "No intermission is present" }
         ]
-      },	  		  	  
-            "trivia": {
-                "blocks": [
-                    { "any_text_contains": ["Puckman", "Pac-Man", "Pacman"] },
-                    { "any_text_contains": ["Namco", "Midway", "Japan"] },
-                    { "any_text_contains": ["ghost", "monsters", "Blinky", "Inky", "Pinky", "Clyde"] }
-                ]
-            },			
+      },
+      "technical": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "any_text_contains": [
+              "white cabinet",
+              "swoopy",
+              "coin door",
+              "monitor bezel",
+              "control panel",
+              "yellow ball-top",
+              "4-Way joystick",
+              "sideart",
+              "t-molding"
+            ]
+          }
+        ]
+      },
+      "trivia": {
+        "blocks": [
+          { "any_text_contains": ["Puckman", "Pac-Man", "Pacman"] },
+          { "any_text_contains": ["Namco", "Midway", "Japan"] },
+          { "any_text_contains": ["ghost", "monsters", "Blinky", "Inky", "Pinky", "Clyde"] }
+        ]
+      },
       "updates": {
         "blocks": [
           { "type": "paragraph", "any_text_contains": [ "attract mode", "title sequence", "introduces the ghosts", "Check Data", "alternate name" ] },
