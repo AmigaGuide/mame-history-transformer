@@ -4,6 +4,7 @@ SCHEMA_IDS = {
     "history":   "mht.history.summary",
     "ini":       "mht.ini.summary",
     "transform": "mht.transform.summary",
+    "gh_trivia": "mht.gh_system_trivia",
 }
 
 # Schema versions (JSON contract versions)

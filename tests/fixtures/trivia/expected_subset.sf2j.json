@@ -1,105 +1,371 @@
 {
-    "notes": [
-        "sf2j: overview → three paragraphs describing gameplay, characters, and strategy depth.",
-        "technical → one multiline paragraph showing CPS hardware and button layout.",
-        "trivia → wide mix of paragraphs, bullet lists, and numbered lists covering development, rumours, regional naming, and background color data.",
-        "updates → sequential version codes and bullet list comparing WORLD / US / JAPAN releases.",
-        "tips and tricks → large block of hidden mechanics, glitch exploits, and move combinations.",
-        "series → paragraphs marking ORIGINAL / ZERO / EX categories and one long numbered list of mainline Street Fighter releases.",
-        "staff → five labelled pairs listing planners, designers, programmers, sound, and special thanks."
-    ],
-    "expectations": {
-        "sections": {
-            "overview": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "Street Fighter II - The World Warrior is the legendary fighting game" },
-                    { "type": "paragraph", "text_contains": "Each fighter is as distinctive in feel and fighting style" },
-                    { "type": "paragraph", "text_contains": "fighting game in the truest sense of the word" }
-                ]
-            },
+  "notes": [
+    "sf2j: overview → three paragraphs describing gameplay, characters, and strategy depth.",
+    "technical → two short paragraphs kept (CP System hardware and B-Board number); five control/button lines suppressed (players/controls/buttons and the two '= > [...]' mapping lines).",
+    "trivia → paragraphs, preambles, bullet lists and a numbered list for stage colour schemes, plus name/rumour trivia and background colour data.",
+    "updates → version-code lines with associated WORLD/US/JAPAN release bullets, plus region-name notes and ending-translation notes.",
+    "tips and tricks → Konami code stats display, 0001–0012 internal counters as pairs, and a long set of glitch/exploit bullets with a couple of labelled pairs.",
+    "series → ORIGINAL / ZERO / EX headings with numbered list entries for each family.",
+    "staff → five labelled pairs listing planners, character designers, programmers, sound, and special thanks."
+  ],
+  "expectations": {
+    "sections": {
+      "overview": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "Street Fighter II - The World Warrior is the legendary fighting game"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Each fighter is as distinctive in feel and fighting style"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "fighting game in the truest sense of the word"
+          }
+        ],
+        "forbid_section_text": [
+          "Arcade Video game published 34 years ago:",
+          "Street Fighter II - The World Warrior (c) 1991 Capcom."
+        ]
+      },
 
-            "technical": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "Runs on the \"CP System\" hardware" },
-                    { "type": "paragraph", "text_contains": "LP (Jab)" },
-                    { "type": "paragraph", "text_contains": "HK (Roundhouse)" }
-                ]
-            },
+      "technical": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "Runs on the \"CP System\" hardware"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "B-Board # 90629B"
+          }
+        ],
+        "forbid_section_text": [
+          "Players: Up to 2.",
+          "Control: 8-way joystick  per player.",
+          "Buttons: 6 per player.",
+          "= > [1] LP (Jab), [2] MP (Strong), [3] HP (Fierce)",
+          "= > [4] LK (Short), [5] MK (Forward), [6] HK (Roundhouse)"
+        ]
+      },
 
-            "trivia": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "released in February 1991" },
-                    { "type": "paragraph", "text_contains": "Known re-releases" },
-                    { "type": "paragraph", "text_contains": "B-Board 90629B-2" },
-                    { "type": "paragraph", "text_contains": "B-Board 90629B-3" },
-                    { "type": "paragraph", "text_contains": "fighting game that changed the face of video-games forever" },
-                    { "type": "paragraph", "text_contains": "very first free-hand drawing" },
-                    { "type": "bullet_list", "text_contains": "Mattel" },
-                    { "type": "bullet_list", "text_contains": "Sheng Long" },
-                    { "type": "bullet_list", "text_contains": "THREE official Capcom versions" },
-                    { "type": "paragraph", "text_contains": "Ken music theme" },
-                    { "type": "bullet_list", "text_contains": "background colors that would change" },
-                    { "type": "numbered_list", "text_contains": "Ryu stage" },
-                    { "type": "numbered_list", "text_contains": "E. Honda stage" },
-                    { "type": "numbered_list", "text_contains": "M. Bison ([JP] Vega) stage" },
-                    { "type": "bullet_list", "text_contains": "Mike the Bison" },
-                    { "type": "paragraph", "text_contains": "E in E. Honda's name stands for" },
-                    { "type": "bullet_list", "text_contains": "About Chun Li" },
-                    { "type": "bullet_list", "text_contains": "About M. Bison" },
-                    { "type": "paragraph", "text_contains": "Wreck-It Ralph" }
-                ]
-            },
+      "trivia": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "released in February 1991"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "14th video game made for the CP System"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Known re-releases:",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Street Fighter II - The World Warrior [B-Board 90629B-2]"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Street Fighter II - The World Warrior [B-Board 90629B-3]"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "fighting game that changed the face of video-games forever"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "very first free-hand drawing"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Mattel"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Sheng Long"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "THREE official Capcom versions"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Ken music theme was certainly inspired by Cheap Trick"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "background colors that would change",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Ryu stage : The stage has red-orange sky and a yellow moon."
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "E. Honda stage : The walls are dark blue"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "M. Bison ([JP] Vega) stage : the sky is daylight"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Mike the Bison"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "The E in E. Honda's name stands for"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "About Chun Li"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "About M. Bison"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Wreck-It Ralph"
+          }
+        ]
+      },
 
-            "updates": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "Here is the list of all versions" },
-                    { "type": "paragraph", "text_contains": "910129" },
-                    { "type": "paragraph", "text_contains": "911101" },
-                    { "type": "paragraph", "text_contains": "920312" },
-                    { "type": "paragraph", "text_contains": "ADDITIONAL NOTES" },
-                    { "type": "paragraph", "text_contains": "None of the endings are translated 100%" },
-                    { "type": "paragraph", "text_contains": "organization of evil" },
-                    { "type": "bullet_list", "text_contains": "WORLD release" },
-                    { "type": "bullet_list", "text_contains": "Balrog is named 'M. Bison'" },
-                    { "type": "bullet_list", "text_contains": "Guile's deceased friend Charlie" }
-                ]
-            },
+      "updates": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "Here is the list of all versions"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "910129"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "WORLD release"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "911101"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "920312"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "ADDITIONAL NOTES"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Winners Don't Use Drugs"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "In the Japanese versions",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Balrog is named 'M. Bison'"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Vega is named 'Balrog'"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Guile's deceased friend Charlie is named 'Nash'"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "None of the endings are translated 100% accurately",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Blanka's ending"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Chun Li's ending"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Dhalsim's ending"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Guile's ending"
+          }
+        ]
+      },
 
-            "tips and tricks": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "0001 = No idea" },
-                    { "type": "bullet_list", "text_contains": "Characters stats" },
-                    { "type": "bullet_list", "text_contains": "Special Ending" },
-                    { "type": "pair", "label_contains": "Un-freeze", "value_contains": "Flash Kick" },
-                    { "type": "bullet_list", "text_contains": "Guile's Handcuffs" },
-                    { "type": "pair", "label_contains": "Un-handcuff", "value_contains": "Shadow Throw" },
-                    { "type": "bullet_list", "text_contains": "Guile Invisible Throw" },
-                    { "type": "bullet_list", "text_contains": "Dhalsim Invisible glitch" },
-                    { "type": "bullet_list", "text_contains": "Ken or Ryu Endless Hurricane Kick" },
-                    { "type": "bullet_list", "text_contains": "Zangief Turbo Short" }
-                ]
-            },
+      "tips and tricks": {
+        "blocks": [
+          {
+            "type": "bullet_list",
+            "text_contains": "Characters stats"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "0001 = No idea"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "0005 = No. of times Ryu has been used"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "0012 = No. of times Dhalsim has been used"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Special Ending"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "To get Ryu vs. Ryu"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Guile Freeze Himself"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Un-freeze",
+            "value_contains": "Flash Kick"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Guile's Handcuffs"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Un-handcuff",
+            "value_contains": "Shadow Throw"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Guile Invisible Throw"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Guile Reset the Machine"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Dhalsim Invisible glitch"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Blanka Double Roll Bite"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Ken or Ryu Get Stuck on the car"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Ken or Ryu Endless Hurricane Kick"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Zangief Turbo Short"
+          }
+        ]
+      },
 
-            "series": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "ORIGINAL" },
-                    { "type": "paragraph", "text_contains": "ZERO" },
-                    { "type": "paragraph", "text_contains": "EX" },
-                    { "type": "numbered_list", "text_contains": "Street Fighter (1987)" },
-                    { "type": "numbered_list", "text_contains": "Street Fighter III - 3rd Strike" },
-                    { "type": "numbered_list", "text_contains": "Street Fighter VI - Type Arcade" }
-                ]
-            },
+      "series": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "ORIGINAL"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter (1987)"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter II' - Champion Edition"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Super Street Fighter II X - Grand Master Challenge"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Hyper Street Fighter II - The Anniversary Edition"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter VI - Type Arcade"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "ZERO"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter Zero [Green Board]"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter Zero 3 Upper"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "EX"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter EX (1996, ARC)"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter EX2 Plus"
+          }
+        ]
+      },
 
-            "staff": {
-                "blocks": [
-                    { "type": "pair", "label_contains": "Planners", "value_contains": "Akira Nishitani" },
-                    { "type": "pair", "label_contains": "Character designers", "value_contains": "Akiman" },
-                    { "type": "pair", "label_contains": "Programmers", "value_contains": "Shin" },
-                    { "type": "pair", "label_contains": "Sound", "value_contains": "Yoko Shimomura" },
-                    { "type": "pair", "label_contains": "Special Thanks", "value_contains": "Noritaka Funamizu" }
-                ]
-            }
-        }
+      "staff": {
+        "blocks": [
+          {
+            "type": "pair",
+            "label_contains": "Planners",
+            "value_contains": "Akira Nishitani"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Character designers",
+            "value_contains": "Akiman"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Programmers",
+            "value_contains": "Shin"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Sound",
+            "value_contains": "Yoko Shimomura"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Special Thanks",
+            "value_contains": "Noritaka Funamizu"
+          }
+        ]
+      }
     }
+  }
 }

@@ -1,90 +1,370 @@
 {
   "notes": [
-    "puckman: overview → six paragraph blocks and one numbered list of intermissions.",
-    "technical → one large narrative paragraph preserved; label/pair lines (CPU, sound chips, players, control) suppressed.",
-    "trivia → 25 mixed blocks including paragraphs, bullet lists, and numbered lists; only key anchors checked.",
-    "updates → Japanese and North-American ghost names parsed as pairs, separated by paragraph captions.",
+    "puckman: overview → six paragraph blocks and one numbered list of intermissions; the 'Three intermissions are present:' paragraph is a preamble for the list.",
+    "technical → one large cabinet-description paragraph kept; four label-style lines (CPU/sound/players/control) suppressed.",
+    "trivia → large mixed section: release history, naming, export releases list, Toru Iwatani quote, pizza/character lore, two subheadings with quotes, split-screen bug explanation with numbered list, Galaxian prize, ghost name count note, Galaxian board compatibility, and multiple 'official record' paragraphs.",
+    "updates → attract-mode paragraph, three sets of ghost name lists (JP default, JP alternate, NA), an 'ADDITIONAL NOTES' preamble, and a Japan Set 2 revision list.",
     "scoring → 11 simple pairs (Dot … Key).",
-    "tips and tricks → large bullet list, one long paragraph, then numbered list of ghost behaviours.",
-    "series → one numbered list with all main Pac-series entries.",
+    "tips and tricks → long bullet list of strategy hints plus a 'Ghosts' Movements' subheading followed by numbered AI breakdown and two trailing paragraphs.",
+    "series → full numbered list of 23 Pac-series entries.",
     "staff → three simple 'pair_colon' entries."
   ],
   "expectations": {
     "sections": {
       "overview": {
         "blocks": [
-          { "type": "paragraph", "text_contains": "Puckman is the seminal and hugely influential arcade game" },
-          { "type": "paragraph", "text_contains": "Power pills are situated in each corner" },
-          { "type": "paragraph", "text_contains": "240 dots and 4 power pills" },
-          { "type": "paragraph", "text_contains": "bonus fruit or prize item" },
-		  { "type": "paragraph", "text_contains": "Three intermissions are present", "meta": { "preamble_for_list": true } },
-          { "type": "numbered_list", "text_contains": "red ghost chases Puckman" },
-          { "type": "paragraph", "text_contains": "No intermission is present" }
+          {
+            "type": "paragraph",
+            "text_contains": "Puckman is the seminal and hugely influential arcade game"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Power pills are situated in each corner"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "240 dots and 4 power pills"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "bonus fruit or prize item"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Three intermissions are present",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "red ghost chases Puckman across the screen and off the side"
+          },		  
+          {
+            "type": "numbered_list",
+            "text_contains": "red ghost is again chasing Puckman"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "red ghost chases Puckman across the screen once more"
+          },		  
+          {
+            "type": "paragraph",
+            "text_contains": "No intermission is present"
+          }
+        ],
+        "forbid_section_text": [
+          "Arcade Video game published 45 years ago:",
+          "Puckman (c) 1980 Namco."
         ]
       },
+
       "technical": {
         "blocks": [
           {
             "type": "paragraph",
-            "any_text_contains": [
-              "white cabinet",
-              "swoopy",
-              "coin door",
-              "monitor bezel",
-              "control panel",
-              "yellow ball-top",
-              "4-Way joystick",
-              "sideart",
-              "t-molding"
-            ]
+            "text_contains": "The original Namco Puckman Upright model came in a white cabinet"
+          }
+        ],
+        "forbid_section_text": [
+          "Main CPU : Zilog Z80 (@ 3.072 Mhz)",
+          "Sound Chips : Namco 3-channel WSG",
+          "Players : 2",
+          "Control : 4-way joystick"
+        ]
+      },
+
+      "trivia": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "first released on May 22, 1980 in the Japanese arcade market"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "originally known in Japan as Puckman"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Export releases:",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Pac-Man [Model 932]"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Toru Iwatani, author and designer of Puckman",
+            "value_contains": "Puckman's character is difficult to explain even to the Japanese"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Puckman was, quite literally, conceived at lunchtime"
+          },
+          {
+            "type": "subheading",
+            "text_contains": "A place in video game history"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Pac-Man is the most universally known arcade game"
+          },
+          {
+            "type": "subheading",
+            "text_contains": "The great 25-cent escape"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "People expect to see Pac-Man when they come into the museum"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "After all these years, the challenge of Pac-Man still remains"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "You can also get into some really fun jams"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "After the 255th level, Puckman/Pac-Man presents the player with the infamous 'split-screen' level",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "it increases the last round number by one"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "In particular, if the round number is smaller than 8"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "256 = 255+1 becomes 00 for the CPU"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "game thinks to be in one of the first 7 levels"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Fixing the original code (either through a cheat in emulation"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "The alien spaceship 'Galaxian' makes an appearance as the prize"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Note :",
+            "value_contains": "there are 23 different name/nickname combinations for the ghosts in Puckman/Pac-Man"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "'Galaxian' boards will run in Pac-Man machines"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Billy Mitchell, Rick Fothergill, Chris Ayra, Tim Balderramos and Donald Hayes all hold the official record"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Chris Ayra holds the official record for the fastest time to get a perfect game"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Ron Corcoran holds the official record for this game on 'Speedup' settings"
           }
         ]
       },
-      "trivia": {
-        "blocks": [
-          { "any_text_contains": ["Puckman", "Pac-Man", "Pacman"] },
-          { "any_text_contains": ["Namco", "Midway", "Japan"] },
-          { "any_text_contains": ["ghost", "monsters", "Blinky", "Inky", "Pinky", "Clyde"] }
-        ]
-      },
+
       "updates": {
         "blocks": [
-          { "type": "paragraph", "any_text_contains": [ "attract mode", "title sequence", "introduces the ghosts", "Check Data", "alternate name" ] },
-          { "type": "bullet_list", "any_text_contains": [ "Oikake", "Kimagure", "Otoboke", "red ghost", "cyan ghost", "orange ghost" ] },
-          { "type": "paragraph", "any_text_contains": [ "North American version", "US version", "western release", "alternate names are" ] },
-          { "type": "bullet_list", "any_text_contains": [ "Shadow", "Bashful", "Speedy", "Pokey", "Blinky", "Inky", "Pinky", "Clyde" ] },
-          { "type": "paragraph", "any_text_contains": [ "later revision", "revision changed", "update changed" ] },
-          { "type": "bullet_list", "any_text_contains": [ "Press Start", "credit", "start button" ] }
+          {
+            "type": "paragraph",
+            "text_contains": "The attract mode's title sequence introduces the ghosts with name/nickname combinations"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "The default name/nickname combinations for the ghosts in the original Japanese version are",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Oikake - \"Akabei\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Machibuse - \"Pinky\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Kimagure - \"Aosuke\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Otoboke - \"Guzuta\""
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "The Japanese version also has a DIP switch for alternate name/nickname combinations for the ghosts",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Urchin - \"Macky\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Romp - \"Micky\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Stylist - \"Mucky\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Crybaby - \"Mocky\""
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "The name/nickname combinations for the ghosts in the North American version are",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Shadow - \"Blinky\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Speedy - \"Pinky\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Bashful - \"Inky\""
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Pokey - \"Clyde\""
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Unlike the Japanese version, the American version has no DIP switch for alternate ghost names"
+          },
+          {
+            "type": "subheading",
+            "text_contains": "ADDITIONAL NOTES"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "In a later revision (\"Japan Set 2\" in Mame)",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "instead of 'Nickname', it says 'Ghost'"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Press Start screen displays 1981 as the year of release"
+          }
         ]
       },
+
       "scoring": {
         "blocks": [
           { "type": "pair", "label_contains": "Dot", "value_contains": "10" },
           { "type": "pair", "label_contains": "Power pill", "value_contains": "50" },
           { "type": "pair", "label_contains": "Ghosts", "value_contains": "1,600" },
           { "type": "pair", "label_contains": "Cherry", "value_contains": "100" },
+          { "type": "pair", "label_contains": "Strawberry", "value_contains": "300" },
+          { "type": "pair", "label_contains": "Peach", "value_contains": "500" },
+          { "type": "pair", "label_contains": "Apple", "value_contains": "700" },
+          { "type": "pair", "label_contains": "Pineapple", "value_contains": "1,000" },
+          { "type": "pair", "label_contains": "Galaxian", "value_contains": "2,000" },
+          { "type": "pair", "label_contains": "Bell", "value_contains": "3,000" },
           { "type": "pair", "label_contains": "Key", "value_contains": "5,000" }
         ]
       },
+
       "tips and tricks": {
         "blocks": [
-          { "type": "bullet_list", "text_contains": "number of lives Puckman starts with" },
-          { "type": "bullet_list", "text_contains": "Ghosts' Movements" },
-          { "type": "paragraph", "text_contains": "Ghosts alternate these two different behaviors" },
-          { "type": "numbered_list", "text_contains": "red ghost tends to patrol" }
+          { "type": "bullet_list", "text_contains": "number of lives Puckman starts with depends on the 'Lives' dip switch setting" },
+          { "type": "bullet_list", "text_contains": "An extra life is awarded based on the 'Extra Lives' dip switch" },
+          { "type": "bullet_list", "text_contains": "Fruits appear twice on each board" },
+          { "type": "bullet_list", "text_contains": "At the beginning of a round, the ghosts won't immediately pursue Puckman" },
+          { "type": "bullet_list", "text_contains": "Puckman can turn corners faster than the ghosts" },
+          { "type": "bullet_list", "text_contains": "tunnel allows Puckman and the ghosts to instantly travel from one side of the maze" },
+          { "type": "bullet_list", "text_contains": "Stall Puckman from entering the tunnel" },
+          { "type": "bullet_list", "text_contains": "If you hold the joystick in a direction that is blocked by a wall" },
+          { "type": "bullet_list", "text_contains": "eating dots will slow Puckman down a little bit" },
+          { "type": "bullet_list", "text_contains": "Try not to eat power pills until the ghosts are near" },
+          { "type": "bullet_list", "text_contains": "as the levels increases, the ghost speed increases as well" },
+          { "type": "bullet_list", "text_contains": "you're not going to be able to eat ghosts after eating a power pill" },
+          { "type": "bullet_list", "text_contains": "Right above the ghost pen, there are two paths leading upward" },
+          {
+            "type": "subheading",
+            "text_contains": "Ghosts' Movements"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "red ghost tends to patrol the top-right corner of the maze"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Ghosts alternate these two different behaviors (hiding and hunting)"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "as soon as a certain number of dots has been cleared from the maze"
+          }
         ]
       },
+
       "series": {
         "blocks": [
-          { "type": "numbered_list", "text_contains": "Super Pac-Man" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition DX" }
+          { "type": "numbered_list", "text_contains": "Puckman (1980, ARC)" },
+          { "type": "numbered_list", "text_contains": "Super Pac-Man (1982, ARC)" },
+          { "type": "numbered_list", "text_contains": "Pac & Pal (1983, ARC)" },
+          { "type": "numbered_list", "text_contains": "Pac-Land (1984, ARC)" },
+          { "type": "numbered_list", "text_contains": "Pac-Mania (1987, ARC)" },
+          { "type": "numbered_list", "text_contains": "Hello! Pac-Man [Model SHVC-PN-JPN] (1994, Super Famicom, Mega Drive)" },
+          { "type": "numbered_list", "text_contains": "Pac-In-Time [Model SHVC-APTJ-JPN] (1994, Super Famicom; 1995, Game Boy)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Arrangement (1996, ARC)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man World [Model SLPS-02345] (1999, PS)" },
+          { "type": "numbered_list", "text_contains": "Ms. Pac-Man Maze Madness [Model SLPS-03000] (2000, PS)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man World 2 [Model SLPS-25141] (2002, PS2, PC)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Arrangement (2005, PSP)" },
+          { "type": "numbered_list", "text_contains": "Pac 'n Roll [Model NTR-APNJ-JPN] (2005, DS)" },
+          { "type": "numbered_list", "text_contains": "Pac-Pix [Model NTR-APCJ-JPN] (2005, DS)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Arrangement Plus (2006, PSP)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition (2007, XBLA)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition DX (2010, XBLA, PSN)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Party [Model RVL-SP7J-JPN] (2010, Wii)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Battle Royale (2011, ARC)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Tilt (2011, 3DS)" },
+          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition DX+ (2013, XBLA, PSN)" },
+          { "type": "numbered_list", "text_contains": "Pac-World (2014, 3DS, Wii U, PS3)" },
+          { "type": "numbered_list", "text_contains": "Pac-World 2 (2014, 3DS, Wii U, PS3)" }
         ]
       },
+
       "staff": {
         "blocks": [
-          { "type": "pair", "label_contains": "Designed by", "value_contains": "Toru Iwatani" },
-          { "type": "pair", "label_contains": "Programmed by", "value_contains": "Hideyuki" },
-          { "type": "pair", "label_contains": "Music", "value_contains": "Toshio Kai" }
+          {
+            "type": "pair",
+            "label_contains": "Designed by",
+            "value_contains": "Toru Iwatani"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Programmed by",
+            "value_contains": "Hideyuki"
+          },
+          {
+            "type": "pair",
+            "label_contains": "Music",
+            "value_contains": "Toshio Kai"
+          }
         ]
       }
     }

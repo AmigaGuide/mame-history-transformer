@@ -1,77 +1,181 @@
 {
-    "notes": [
-        "outrun: overview → four distinct paragraphs (routes, radio tracks).",
-        "technical → a short numbered list of cabinet types.",
-        "trivia → release date, deluxe type alias, fork-in-the-road commentary, music/cabinet notes, Ferrari licensing note, opponent cars bullet list, media trivia, soundtrack lines.",
-        "tips and tricks → two standalone paragraphs and one bullet list (fastest route, secret credit, driving hints).",
-        "series → single numbered list with key entries across years.",
-        "staff → three simple pairs (Designer, Music, High-score names)."
-    ],
-    "expectations": {
-        "sections": {
-            "overview": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "ground-breaking racing game" },
-                    { "type": "paragraph", "text_contains": "civilian traffic" },
-                    { "type": "paragraph", "text_contains": "fork in the road" },
-                    { "type": "paragraph", "text_contains": "\"in-car radio\"" }
-                ]
-            },
+  "notes": [
+    "outrun: overview → four distinct paragraphs (routes, civilian traffic, fork-in-the-road mechanic, and in-car radio) after suppressing boilerplate lines.",
+    "technical → a short numbered list of cabinet types.",
+    "trivia → release date paragraph, several preamble paragraphs ('Also released as', 'Opponent cars list', 'Soundtracks'), cabinet and Ferrari licensing notes, a full opponent-cars bullet list, media trivia, and a soundtrack album bullet list.",
+    "tips and tricks → two subheading-style lines ('* Fastest route:', '* Secret credit message:') followed by explanatory paragraphs and bullet-pointed hints.",
+    "series → full numbered list of nine Out Run series entries (arcade and home releases).",
+    "staff → three simple pairs (Designer, Music, High-score names)."
+  ],
+  "expectations": {
+    "sections": {
+      "overview": {
+        "blocks": [
+          { "type": "paragraph", "text_contains": "ground-breaking racing game" },
+          { "type": "paragraph", "text_contains": "civilian traffic" },
+          { "type": "paragraph", "text_contains": "fork in the road" },
+          { "type": "paragraph", "text_contains": "\"in-car radio\"" }
+        ],
+        "forbid_section_text": [
+          "Arcade Video game published 39 years ago:",
+          "Out Run (c) 1986 Sega Enterprises, Limited."
+        ]
+      },
 
-            "technical": {
-                "blocks": [
-                    { "type": "numbered_list", "text_contains": "Standard Type" },
-                    { "type": "numbered_list", "text_contains": "Upright Type" }
-                ]
-            },
+      "technical": {
+        "blocks": [
+          { "type": "numbered_list", "text_contains": "Standard Type" },
+          { "type": "numbered_list", "text_contains": "Upright Type" }
+        ],
+        "forbid_section_text": []
+      },
 
-            "trivia": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "Released internationally on September 20, 1986" },
-                    { "type": "paragraph", "text_contains": "Also released as" },
-                    { "type": "paragraph", "text_contains": "Deluxe Type" },
-                    { "type": "paragraph", "text_contains": "fork in the road; a unique innovation" },
-                    { "type": "paragraph", "text_contains": "hydraulic tilting cabinet" },
-                    { "type": "paragraph", "text_contains": "didn't actually have (nor indeed ask for) permission from Ferrari" },
-                    { "type": "paragraph", "text_contains": "Opponent cars list" },
-                    { "type": "bullet_list", "text_contains": "Volkswagen Beetle" },
-                    { "type": "bullet_list", "text_contains": "Porsche Carrera 911 Turbo" },
-                    { "type": "paragraph", "text_contains": "billboards advertising KTM motorcycles" },
-                    { "type": "paragraph", "text_contains": "official record", "text_not_contains": "Pac-Man" },
-                    { "type": "paragraph", "text_contains": "Donnie Darko" },
-                    { "type": "paragraph", "text_contains": "Game Of Your Life" },
-                    { "type": "paragraph", "text_contains": "MTV public announcement" },
-                    { "type": "paragraph", "text_contains": "Soundtracks" },
-                    { "type": "paragraph", "text_contains": "Sega Taikan Game Special" },
-                    { "type": "paragraph", "text_contains": "Yu-Suzuki produce Out Run" }
-                ]
-            },
+      "trivia": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text_contains": "Released internationally on September 20, 1986"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Also released as",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Deluxe Type"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "fork in the road; a unique innovation"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "hydraulic tilting cabinet"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "red Ferrari Testarossa"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "didn't actually have (nor indeed ask for) permission from Ferrari"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Opponent cars list",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "1972 Volkswagen Beetle"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "1971 Chevrolet Corvette"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "1985 Porsche Carrera 911 Turbo"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "1985 BMW 325i Cabriolet E30"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Lorry"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "billboards advertising KTM motorcycles"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "official record"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Donnie Darko"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Game Of Your Life"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "MTV public announcement"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "Soundtracks",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Sega Taikan Game Special"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Outrun/SEGA S.S.T."
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "Yu-Suzuki produce Out Run"
+          }
+        ]
+      },
 
-            "tips and tricks": {
-                "blocks": [
-                    { "type": "paragraph", "text_contains": "fastest route for finishing the game is Right (Devil's Canyon)" },
-                    { "type": "bullet_list", "text_contains": "Fastest route:" },
-                    { "type": "paragraph", "text_contains": "secret credit message will come up on the screen" },
-                    { "type": "bullet_list", "text_contains": "Secret credit message:" },
-                    { "type": "bullet_list", "text_contains": "pressing the accelerator" },
-                    { "type": "bullet_list", "text_contains": "change very quickly to low gear and then high gear again" }
-                ]
-            },
+      "tips and tricks": {
+        "blocks": [
+          {
+            "type": "subheading",
+            "text_contains": "Fastest route:"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "fastest route for finishing the game is Right (Devil's Canyon)"
+          },
+          {
+            "type": "subheading",
+            "text_contains": "Secret credit message:"
+          },
+          {
+            "type": "paragraph",
+            "text_contains": "secret credit message will come up on the screen"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "pressing the accelerator"
+          },
+          {
+            "type": "bullet_list",
+            "text_contains": "change very quickly to low gear and then high gear again"
+          }
+        ]
+      },
 
-            "series": {
-                "blocks": [
-                    { "type": "numbered_list", "text_contains": "Out Run (1986, Arcade)" },
-                    { "type": "numbered_list", "text_contains": "Out Run 2 SP - Special Tours" }
-                ]
-            },
+      "series": {
+        "blocks": [
+          { "type": "numbered_list", "text_contains": "Out Run (1986, Arcade)" },
+          { "type": "numbered_list", "text_contains": "Out Run 3-D (1989, Master System)" },
+          { "type": "numbered_list", "text_contains": "Battle Out Run (1989, Master System)" },
+          { "type": "numbered_list", "text_contains": "Turbo Out Run [Model 317-0106] (1989, Arcade)" },
+          { "type": "numbered_list", "text_contains": "Out Run Europa (1991, Game Gear)" },
+          { "type": "numbered_list", "text_contains": "Out Runners (1992, Arcade)" },
+          { "type": "numbered_list", "text_contains": "Out Run 2019 (1993, Mega Drive)" },
+          { "type": "numbered_list", "text_contains": "Out Run 2 [Model GDX-0004] (2003, Arcade)" },
+          { "type": "numbered_list", "text_contains": "Out Run 2 SP - Special Tours [Model GDX-0011] (2004, Arcade)" }
+        ]
+      },
 
-            "staff": {
-                "blocks": [
-                    { "type": "pair", "label_contains": "Designed by", "value_contains": "Yu Suzuki" },
-                    { "type": "pair", "label_contains": "Music by", "value_contains": "Hiroshi Miyauchi" },
-                    { "type": "pair", "label_contains": "From highscore table", "value_contains": "Satoshi Mifune" }
-                ]
-            }
-        }
+      "staff": {
+        "blocks": [
+          { "type": "pair", "label_contains": "Designed by", "value_contains": "Yu Suzuki" },
+          { "type": "pair", "label_contains": "Music by", "value_contains": "Hiroshi Miyauchi" },
+          { "type": "pair", "label_contains": "From highscore table", "value_contains": "Satoshi Mifune" }
+        ]
+      }
     }
+  }
 }
