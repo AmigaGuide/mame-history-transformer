@@ -26,7 +26,7 @@
           }
         ],
         "forbid_section_text": [
-          "Arcade Video game published 34 years ago:",
+          "Arcade Video game published",
           "Street Fighter II - The World Warrior (c) 1991 Capcom."
         ]
       },
@@ -53,10 +53,6 @@
 
       "trivia": {
         "blocks": [
-          {
-            "type": "paragraph",
-            "text_contains": "released in February 1991"
-          },
           {
             "type": "paragraph",
             "text_contains": "14th video game made for the CP System"
@@ -99,9 +95,8 @@
             "text_contains": "Ken music theme was certainly inspired by Cheap Trick"
           },
           {
-            "type": "paragraph",
+			"type": "subheading",
             "text_contains": "background colors that would change",
-            "meta_preamble_for_list": true
           },
           {
             "type": "numbered_list",
@@ -142,11 +137,13 @@
         "blocks": [
           {
             "type": "paragraph",
-            "text_contains": "Here is the list of all versions"
+            "text_contains": "Here is the list of all versions",
+			"meta_preamble_for_list": true
           },
           {
             "type": "paragraph",
-            "text_contains": "910129"
+            "text_contains": "910129",
+			"meta_preamble_for_list": true
           },
           {
             "type": "bullet_list",
@@ -154,14 +151,20 @@
           },
           {
             "type": "paragraph",
-            "text_contains": "911101"
-          },
+            "text_contains": "911101",
+			"meta_preamble_for_list": true
+          },		  		  
+          {
+            "type": "bullet_list",
+            "text_contains": "US release"
+          },		  		  
           {
             "type": "paragraph",
-            "text_contains": "920312"
+            "text_contains": "920312",
+			"meta_preamble_for_list": true
           },
           {
-            "type": "paragraph",
+			"type": "subheading",
             "text_contains": "ADDITIONAL NOTES"
           },
           {
@@ -183,7 +186,7 @@
           },
           {
             "type": "bullet_list",
-            "text_contains": "Guile's deceased friend Charlie is named 'Nash'"
+            "text_contains": "Guile's daughter Amy is named 'Chris'"
           },
           {
             "type": "paragraph",
@@ -214,7 +217,15 @@
           {
             "type": "bullet_list",
             "text_contains": "Characters stats"
+          },		  		  
+          {
+            "type": "paragraph",
+            "text_contains": "First line contains"
           },
+          {
+            "type": "paragraph",
+            "text_contains": "Second line contains"
+          },		  		  		  
           {
             "type": "paragraph",
             "text_contains": "0001 = No idea"
@@ -240,18 +251,16 @@
             "text_contains": "Guile Freeze Himself"
           },
           {
-            "type": "pair",
-            "label_contains": "Un-freeze",
-            "value_contains": "Flash Kick"
+			"type": "paragraph",
+            "text_contains": "Un-freeze"
           },
           {
             "type": "bullet_list",
             "text_contains": "Guile's Handcuffs"
           },
           {
-            "type": "pair",
-            "label_contains": "Un-handcuff",
-            "value_contains": "Shadow Throw"
+			"type": "paragraph",
+            "text_contains": "Un-handcuff"
           },
           {
             "type": "bullet_list",
@@ -260,23 +269,11 @@
           {
             "type": "bullet_list",
             "text_contains": "Guile Reset the Machine"
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Dhalsim Invisible glitch"
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Blanka Double Roll Bite"
-          },
+          },		  		  		  
           {
             "type": "bullet_list",
             "text_contains": "Ken or Ryu Get Stuck on the car"
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Ken or Ryu Endless Hurricane Kick"
-          },
+          },		  
           {
             "type": "bullet_list",
             "text_contains": "Zangief Turbo Short"
@@ -287,43 +284,39 @@
       "series": {
         "blocks": [
           {
-            "type": "paragraph",
+			"type": "subheading",
             "text_contains": "ORIGINAL"
           },
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter (1987)"
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "Street Fighter II' - Champion Edition"
-          },
+          },		  
           {
             "type": "numbered_list",
             "text_contains": "Super Street Fighter II X - Grand Master Challenge"
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "Hyper Street Fighter II - The Anniversary Edition"
-          },
+          },		  
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter VI - Type Arcade"
           },
           {
-            "type": "paragraph",
+			"type": "subheading",
             "text_contains": "ZERO"
           },
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter Zero [Green Board]"
+          },		  
+          {
+            "type": "numbered_list",
+            "text_contains": "Street Fighter Zero 2 Alpha"
           },
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter Zero 3 Upper"
-          },
+          },		  
           {
-            "type": "paragraph",
+			"type": "subheading",
             "text_contains": "EX"
           },
           {
@@ -332,8 +325,12 @@
           },
           {
             "type": "numbered_list",
-            "text_contains": "Street Fighter EX2 Plus"
-          }
+            "text_contains": "Street Fighter EX2 (1998, ARC)"
+          },		  		  
+          {
+            "type": "numbered_list",
+            "text_contains": " Street Fighter EX3"
+          }		  		  
         ]
       },
 
@@ -347,12 +344,12 @@
           {
             "type": "pair",
             "label_contains": "Character designers",
-            "value_contains": "Akiman"
+            "value_contains": "Pigmon"
           },
           {
             "type": "pair",
             "label_contains": "Programmers",
-            "value_contains": "Shin"
+            "value_contains": "Macchan"
           },
           {
             "type": "pair",

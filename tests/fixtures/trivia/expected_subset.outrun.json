@@ -17,7 +17,7 @@
           { "type": "paragraph", "text_contains": "\"in-car radio\"" }
         ],
         "forbid_section_text": [
-          "Arcade Video game published 39 years ago:",
+          "Arcade Video game published",
           "Out Run (c) 1986 Sega Enterprises, Limited."
         ]
       },
