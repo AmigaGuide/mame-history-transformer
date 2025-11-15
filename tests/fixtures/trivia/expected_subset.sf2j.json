@@ -153,11 +153,11 @@
             "type": "paragraph",
             "text_contains": "911101",
 			"meta_preamble_for_list": true
-          },		  		  
+          },
           {
             "type": "bullet_list",
             "text_contains": "US release"
-          },		  		  
+          },
           {
             "type": "paragraph",
             "text_contains": "920312",
@@ -217,7 +217,7 @@
           {
             "type": "bullet_list",
             "text_contains": "Characters stats"
-          },		  		  
+          },
           {
             "type": "paragraph",
             "text_contains": "First line contains"
@@ -225,7 +225,7 @@
           {
             "type": "paragraph",
             "text_contains": "Second line contains"
-          },		  		  		  
+          },
           {
             "type": "paragraph",
             "text_contains": "0001 = No idea"
@@ -269,11 +269,11 @@
           {
             "type": "bullet_list",
             "text_contains": "Guile Reset the Machine"
-          },		  		  		  
+          },
           {
             "type": "bullet_list",
             "text_contains": "Ken or Ryu Get Stuck on the car"
-          },		  
+          },
           {
             "type": "bullet_list",
             "text_contains": "Zangief Turbo Short"
@@ -290,11 +290,11 @@
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter (1987)"
-          },		  
+          },
           {
             "type": "numbered_list",
             "text_contains": "Super Street Fighter II X - Grand Master Challenge"
-          },		  
+          },
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter VI - Type Arcade"
@@ -306,7 +306,7 @@
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter Zero [Green Board]"
-          },		  
+          },
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter Zero 2 Alpha"
@@ -314,7 +314,7 @@
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter Zero 3 Upper"
-          },		  
+          },
           {
 			"type": "subheading",
             "text_contains": "EX"
@@ -326,11 +326,11 @@
           {
             "type": "numbered_list",
             "text_contains": "Street Fighter EX2 (1998, ARC)"
-          },		  		  
+          },
           {
             "type": "numbered_list",
             "text_contains": " Street Fighter EX3"
-          }		  		  
+          }
         ]
       },
 

@@ -37,7 +37,7 @@
           {
             "type": "numbered_list",
             "text_contains": "red ghost chases Puckman across the screen and off the side"
-          },		  
+          },
           {
             "type": "numbered_list",
             "text_contains": "red ghost is again chasing Puckman"
@@ -45,7 +45,7 @@
           {
             "type": "numbered_list",
             "text_contains": "red ghost chases Puckman across the screen once more"
-          },		  
+          },
           {
             "type": "paragraph",
             "text_contains": "No intermission is present"
@@ -92,8 +92,12 @@
             "text_contains": "Pac-Man [Model 932]"
           },
           {
-            "type": "pair",
-            "label_contains": "Toru Iwatani, author and designer of Puckman",
+            "type": "paragraph",
+            "text_contains": "Toru Iwatani, author and designer of Puckman",
+            "meta_preamble_for_list": true
+          },
+          {
+            "type": "bullet_list",
             "value_contains": "Puckman's character is difficult to explain even to the Japanese"
           },
           {
@@ -132,6 +136,10 @@
           {
             "type": "numbered_list",
             "text_contains": "it increases the last round number by one"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "finally, it fills the bottom bar with the correct fruits"
           },
           {
             "type": "paragraph",
@@ -194,14 +202,6 @@
           },
           {
             "type": "bullet_list",
-            "text_contains": "Machibuse - \"Pinky\""
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Kimagure - \"Aosuke\""
-          },
-          {
-            "type": "bullet_list",
             "text_contains": "Otoboke - \"Guzuta\""
           },
           {
@@ -215,14 +215,6 @@
           },
           {
             "type": "bullet_list",
-            "text_contains": "Romp - \"Micky\""
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Stylist - \"Mucky\""
-          },
-          {
-            "type": "bullet_list",
             "text_contains": "Crybaby - \"Mocky\""
           },
           {
@@ -233,14 +225,6 @@
           {
             "type": "bullet_list",
             "text_contains": "Shadow - \"Blinky\""
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Speedy - \"Pinky\""
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Bashful - \"Inky\""
           },
           {
             "type": "bullet_list",
@@ -273,15 +257,7 @@
       "scoring": {
         "blocks": [
           { "type": "pair", "label_contains": "Dot", "value_contains": "10" },
-          { "type": "pair", "label_contains": "Power pill", "value_contains": "50" },
-          { "type": "pair", "label_contains": "Ghosts", "value_contains": "1,600" },
-          { "type": "pair", "label_contains": "Cherry", "value_contains": "100" },
-          { "type": "pair", "label_contains": "Strawberry", "value_contains": "300" },
           { "type": "pair", "label_contains": "Peach", "value_contains": "500" },
-          { "type": "pair", "label_contains": "Apple", "value_contains": "700" },
-          { "type": "pair", "label_contains": "Pineapple", "value_contains": "1,000" },
-          { "type": "pair", "label_contains": "Galaxian", "value_contains": "2,000" },
-          { "type": "pair", "label_contains": "Bell", "value_contains": "3,000" },
           { "type": "pair", "label_contains": "Key", "value_contains": "5,000" }
         ]
       },
@@ -289,17 +265,7 @@
       "tips and tricks": {
         "blocks": [
           { "type": "bullet_list", "text_contains": "number of lives Puckman starts with depends on the 'Lives' dip switch setting" },
-          { "type": "bullet_list", "text_contains": "An extra life is awarded based on the 'Extra Lives' dip switch" },
-          { "type": "bullet_list", "text_contains": "Fruits appear twice on each board" },
-          { "type": "bullet_list", "text_contains": "At the beginning of a round, the ghosts won't immediately pursue Puckman" },
-          { "type": "bullet_list", "text_contains": "Puckman can turn corners faster than the ghosts" },
-          { "type": "bullet_list", "text_contains": "tunnel allows Puckman and the ghosts to instantly travel from one side of the maze" },
           { "type": "bullet_list", "text_contains": "Stall Puckman from entering the tunnel" },
-          { "type": "bullet_list", "text_contains": "If you hold the joystick in a direction that is blocked by a wall" },
-          { "type": "bullet_list", "text_contains": "eating dots will slow Puckman down a little bit" },
-          { "type": "bullet_list", "text_contains": "Try not to eat power pills until the ghosts are near" },
-          { "type": "bullet_list", "text_contains": "as the levels increases, the ghost speed increases as well" },
-          { "type": "bullet_list", "text_contains": "you're not going to be able to eat ghosts after eating a power pill" },
           { "type": "bullet_list", "text_contains": "Right above the ghost pen, there are two paths leading upward" },
           {
             "type": "subheading",
@@ -308,6 +274,10 @@
           {
             "type": "numbered_list",
             "text_contains": "red ghost tends to patrol the top-right corner of the maze"
+          },
+          {
+            "type": "numbered_list",
+            "text_contains": "orange ghost tends to patrol the bottom-left corner of the maze"
           },
           {
             "type": "paragraph",
@@ -323,27 +293,7 @@
       "series": {
         "blocks": [
           { "type": "numbered_list", "text_contains": "Puckman (1980, ARC)" },
-          { "type": "numbered_list", "text_contains": "Super Pac-Man (1982, ARC)" },
-          { "type": "numbered_list", "text_contains": "Pac & Pal (1983, ARC)" },
-          { "type": "numbered_list", "text_contains": "Pac-Land (1984, ARC)" },
-          { "type": "numbered_list", "text_contains": "Pac-Mania (1987, ARC)" },
-          { "type": "numbered_list", "text_contains": "Hello! Pac-Man [Model SHVC-PN-JPN] (1994, Super Famicom, Mega Drive)" },
-          { "type": "numbered_list", "text_contains": "Pac-In-Time [Model SHVC-APTJ-JPN] (1994, Super Famicom; 1995, Game Boy)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Arrangement (1996, ARC)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man World [Model SLPS-02345] (1999, PS)" },
-          { "type": "numbered_list", "text_contains": "Ms. Pac-Man Maze Madness [Model SLPS-03000] (2000, PS)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man World 2 [Model SLPS-25141] (2002, PS2, PC)" },
           { "type": "numbered_list", "text_contains": "Pac-Man Arrangement (2005, PSP)" },
-          { "type": "numbered_list", "text_contains": "Pac 'n Roll [Model NTR-APNJ-JPN] (2005, DS)" },
-          { "type": "numbered_list", "text_contains": "Pac-Pix [Model NTR-APCJ-JPN] (2005, DS)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Arrangement Plus (2006, PSP)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition (2007, XBLA)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition DX (2010, XBLA, PSN)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Party [Model RVL-SP7J-JPN] (2010, Wii)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Battle Royale (2011, ARC)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Tilt (2011, 3DS)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Championship Edition DX+ (2013, XBLA, PSN)" },
-          { "type": "numbered_list", "text_contains": "Pac-World (2014, 3DS, Wii U, PS3)" },
           { "type": "numbered_list", "text_contains": "Pac-World 2 (2014, 3DS, Wii U, PS3)" }
         ]
       },

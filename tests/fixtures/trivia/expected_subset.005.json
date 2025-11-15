@@ -21,7 +21,7 @@
         ],
         "forbid_section_text": [
           "Arcade Video game published",
-          "(c) 1981"
+          "005 (c) 1981 Sega."
         ]
       },
 
@@ -34,7 +34,7 @@
           {
             "type": "paragraph",
             "text_contains": "Cabinet dimensions",
-            "meta_preamble_for_pairs": true
+            "meta_preamble_for_list": true
           },
           {
             "type": "pair",
@@ -82,7 +82,7 @@
           {
             "type": "paragraph",
             "text_contains": "Entering a building with",
-            "meta_preamble_for_pairs": true
+            "meta_preamble_for_list": true
           },
           {
             "type": "pair",
@@ -102,7 +102,7 @@
           {
             "type": "paragraph",
             "text_contains": "Shooting down",
-            "meta_preamble_for_pairs": true
+            "meta_preamble_for_list": true
           },
           {
             "type": "pair",

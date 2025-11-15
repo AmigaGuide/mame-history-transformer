@@ -72,15 +72,7 @@
           },
           {
             "type": "bullet_list",
-            "text_contains": "1971 Chevrolet Corvette"
-          },
-          {
-            "type": "bullet_list",
             "text_contains": "1985 Porsche Carrera 911 Turbo"
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "1985 BMW 325i Cabriolet E30"
           },
           {
             "type": "bullet_list",
@@ -92,7 +84,7 @@
           },
           {
             "type": "paragraph",
-            "text_contains": "official record"
+            "text_contains": "Richard Jackson holds the official record"
           },
           {
             "type": "paragraph",
@@ -158,13 +150,7 @@
       "series": {
         "blocks": [
           { "type": "numbered_list", "text_contains": "Out Run (1986, Arcade)" },
-          { "type": "numbered_list", "text_contains": "Out Run 3-D (1989, Master System)" },
-          { "type": "numbered_list", "text_contains": "Battle Out Run (1989, Master System)" },
-          { "type": "numbered_list", "text_contains": "Turbo Out Run [Model 317-0106] (1989, Arcade)" },
           { "type": "numbered_list", "text_contains": "Out Run Europa (1991, Game Gear)" },
-          { "type": "numbered_list", "text_contains": "Out Runners (1992, Arcade)" },
-          { "type": "numbered_list", "text_contains": "Out Run 2019 (1993, Mega Drive)" },
-          { "type": "numbered_list", "text_contains": "Out Run 2 [Model GDX-0004] (2003, Arcade)" },
           { "type": "numbered_list", "text_contains": "Out Run 2 SP - Special Tours [Model GDX-0011] (2004, Arcade)" }
         ]
       },
