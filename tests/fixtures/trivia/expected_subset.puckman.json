@@ -186,71 +186,66 @@
       },
 
       "updates": {
-        "blocks": [
-          {
-            "type": "paragraph",
-            "text_contains": "The attract mode's title sequence introduces the ghosts with name/nickname combinations"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "The default name/nickname combinations for the ghosts in the original Japanese version are",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Oikake - \"Akabei\""
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Otoboke - \"Guzuta\""
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "The Japanese version also has a DIP switch for alternate name/nickname combinations for the ghosts",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Urchin - \"Macky\""
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Crybaby - \"Mocky\""
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "The name/nickname combinations for the ghosts in the North American version are",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Shadow - \"Blinky\""
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Pokey - \"Clyde\""
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Unlike the Japanese version, the American version has no DIP switch for alternate ghost names"
-          },
-          {
-            "type": "subheading",
-            "text_contains": "ADDITIONAL NOTES"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "In a later revision (\"Japan Set 2\" in Mame)",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "instead of 'Nickname', it says 'Ghost'"
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Press Start screen displays 1981 as the year of release"
-          }
+        "blocks": [		
+			{
+			  "type": "paragraph",
+			  "text_contains": "The default name/nickname combinations for the ghosts in the original Japanese version are"
+			},
+
+			{
+			  "type": "pair",
+			  "label_contains": "Oikake - \"Akabei\"",
+			  "value_contains": "Chaser - \"Red Guy\""
+			},
+			{
+			  "type": "pair",
+			  "label_contains": "Machibuse - \"Pinky\"",
+			  "value_contains": "Ambusher - \"Pink Guy\""
+			},
+			{
+			  "type": "paragraph",
+			  "text_contains": "The Japanese version also has a DIP switch for alternate name/nickname combinations for the ghosts"
+			},
+			{
+			  "type": "pair",
+			  "label_contains": "Urchin",
+			  "value_contains": "\"Macky\""
+			},
+			{
+			  "type": "pair",
+			  "label_contains": "Romp",
+			  "value_contains": "\"Micky\""
+			},
+			{
+			  "type": "paragraph",
+			  "text_contains": "The name/nickname combinations for the ghosts in the North American version are"
+			},
+			{
+			  "type": "pair",
+			  "label_contains": "Shadow",
+			  "value_contains": "\"Blinky\""
+			},
+			{
+			  "type": "pair",
+			  "label_contains": "Pokey",
+			  "value_contains": "\"Clyde\""
+			},
+			{
+			  "type": "paragraph",
+			  "text_contains": "Unlike the Japanese version, the American version has no DIP switch"
+			},
+			{
+			  "type": "paragraph",
+			  "text_contains": "ADDITIONAL NOTES"
+			},
+			{
+			  "type": "paragraph",
+			  "text_contains": "In a later revision (\"Japan Set 2\" in Mame):"
+			},
+			{
+			  "type": "bullet_list",
+			  "item_contains": "At the top of the title screen"
+			}					
         ]
       },
 

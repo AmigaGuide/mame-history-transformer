@@ -96,7 +96,7 @@
           },
           {
 			"type": "subheading",
-            "text_contains": "background colors that would change",
+            "text_contains": "background colors that would change"
           },
           {
             "type": "numbered_list",

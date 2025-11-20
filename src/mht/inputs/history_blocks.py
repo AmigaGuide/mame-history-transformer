@@ -58,6 +58,95 @@ ALLOWED_META_KEYS = {
 # Only these keys are permitted inside meta.policy by the schema
 ALLOWED_POLICY_KEYS = {"per_line", "heuristic_per_line"}
 
+def _split_pair_line(ln: str) -> tuple[str, str, str] | None:
+    """
+    Try to split a line into (kind, label, value) where kind is
+    'pair_colon' or 'pair_dash', only using separators that are
+    *outside* any parentheses/brackets.
+
+    Returns None if the line shouldn't be treated as a pair.
+    """
+    if not ln:
+        return None
+
+    s = ln.rstrip("\n")
+    paren_depth = 0
+    bracket_depth = 0
+
+    colon_pos: int | None = None
+    dash_pos: int | None = None
+
+    # First pass: find candidate ':' and ' - ' positions at top level
+    i = 0
+    while i < len(s):
+        ch = s[i]
+
+        if ch == "(":
+            paren_depth += 1
+        elif ch == ")":
+            paren_depth = max(0, paren_depth - 1)
+        elif ch == "[":
+            bracket_depth += 1
+        elif ch == "]":
+            bracket_depth = max(0, bracket_depth - 1)
+
+        # candidate ':' (only if not nested)
+        if ch == ":" and paren_depth == 0 and bracket_depth == 0 and colon_pos is None:
+            colon_pos = i
+
+        # candidate " - " (only if not nested)
+        if ch == "-" and paren_depth == 0 and bracket_depth == 0 and dash_pos is None:
+            # require spaces around the dash to reduce false positives
+            if i > 0 and i < len(s) - 1 and s[i - 1].isspace() and s[i + 1].isspace():
+                dash_pos = i
+
+        i += 1
+
+    # Prefer whichever valid separator occurs first in the string
+    sep_kind: str | None = None
+    sep_index: int | None = None
+
+    def _better(a: int | None, b: int | None) -> int | None:
+        if a is None:
+            return b
+        if b is None:
+            return a
+        return a if a < b else b
+
+    first_colon = colon_pos
+    first_dash = dash_pos
+    first_any = _better(first_colon, first_dash)
+
+    if first_any is None:
+        return None  # no usable separator at top level
+
+    if first_any == first_colon:
+        sep_kind = "pair_colon"
+        sep_index = first_colon
+    else:
+        sep_kind = "pair_dash"
+        sep_index = first_dash
+
+    # Split into label/value and enforce basic sanity
+    assert sep_kind is not None and sep_index is not None
+    label_raw = s[:sep_index].rstrip()
+    value_raw = s[sep_index + 1 :].lstrip()  # +1: skip ':' or '-'
+
+    # For colon we expect "label : value" so skip extra spaces after colon;
+    # for dash we already required spaces around it.
+    if sep_kind == "pair_colon" and value_raw.startswith(" "):
+        value_raw = value_raw.lstrip()
+
+    label = label_raw.strip()
+    value = value_raw.strip()
+
+    if not label or not value:
+        return None
+    if len(label) > 100:
+        return None
+
+    return sep_kind, label, value
+
 def schema_sanitize_blocks(blocks: list[dict]) -> list[dict]:
     """
     Enforce a minimal, schema-safe block shape while preserving analysis metadata
@@ -171,10 +260,10 @@ def _is_structural_line(line: str) -> bool:
     if _SUBHEADING_RE.match(line):
         return True
     if _NEAR_MISS_BANNER_RE.match(line):
-        return True
-    # use strict spaced separators only for pair detection here        
-    if _PAIR_COLON_RE.match(line) or _PAIR_DASH_RE.match(line):
-        return True
+        return True        
+    # use the same top-level separator logic as pair splitting
+    if _split_pair_line(line) is not None:
+        return True        
     return False
 
 def _inc_count(ps: Dict, kind: str) -> None:
@@ -364,9 +453,9 @@ def process_section_blocks(
                 _inc_count(parsing_state, "subheading")
                 filtered_idx += 1
                 continue
-
-        # pairs: only in normal mode (not per-line)
-        if not per_line:
+        
+        # pairs: only in normal mode (not per-line), and NOT in "tips and tricks"
+        if not per_line and tag != "tips and tricks":
             m_pair = _PAIR_COLON_RE.match(ln) or _PAIR_DASH_RE.match(ln)
             if m_pair:
                 flush_para("paragraph_default")
@@ -374,9 +463,18 @@ def process_section_blocks(
                 label = m_pair.group(1).strip()
                 value = m_pair.group(2).strip()
                 text = f"{label}: {value}"
-                meta = _make_meta(detectors=["pair_colon" if ":" in ln else "pair_dash"],
-                                  f_start=filtered_idx, f_end=filtered_idx, text=text)
-                blocks.append({ "type": "pair", "label": label, "value": value, "meta": meta })
+                meta = _make_meta(
+                    detectors=["pair_colon" if ":" in ln else "pair_dash"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=text,
+                )
+                blocks.append({
+                    "type": "pair",
+                    "label": label,
+                    "value": value,
+                    "meta": meta,
+                })
                 _inc_count(parsing_state, "pair")
                 filtered_idx += 1
                 continue

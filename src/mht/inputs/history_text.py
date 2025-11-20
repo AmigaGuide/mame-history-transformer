@@ -183,10 +183,10 @@ def extract_text_sections(elem: ET.Element, parsing_state: dict, primary: str | 
             nsb = parsing_state.setdefault("banner_spacing_anomalies", {})
             nsb.setdefault(primary or "<unknown>", []).append(raw_line)
 
-        # Blank lines: only preserve inside PORTS (helps block detection there)
+        # Blank lines: preserve in *all* sections so downstream block
+        # classification can use them as paragraph/list separators.
         if line == "":
-            if current_section == "PORTS":
-                sections[current_section].append("")  # keep separator
+            sections[current_section].append("")  # keep separator everywhere
             continue
 
         # Normal content: append the trimmed line
