@@ -178,6 +178,12 @@ def _scan_outputs(ver: str) -> Dict[str, Any]:
     return out
 
 def _read_versions_from_summaries(ver: str) -> Dict[str, Any]:
+    """
+    Best-effort extraction of version info from per-release summaries.
+
+    Missing summary files are treated as 'no data yet' (normal for a
+    freshly ingested release with no pipeline run).
+    """
     sdir = summaries_dir(ver)
     data: Dict[str, Any] = {
         "mame_xml_version": None,
@@ -185,38 +191,44 @@ def _read_versions_from_summaries(ver: str) -> Dict[str, Any]:
         "history_date": None,
         "ini_versions": {},
     }
-    # mame
+
+    # --- MAME summary ---
     mp = sdir / "mame_parsing_summary.json"
-    m = read_json(mp) or {}
-    mv = (m.get("header", {}).get("versions") or {})
-    data["mame_xml_version"] = mv.get("mame_xml_version") or mv.get("mame_build")
-    # history
+    if mp.exists():
+        m = read_json(mp) or {}
+        mv = (m.get("header", {}).get("versions") or {})
+        data["mame_xml_version"] = mv.get("mame_xml_version") or mv.get("mame_build")
+
+    # --- History summary ---
     hp = sdir / "history_parsing_summary.json"
-    h = read_json(hp) or {}
-    hv = (h.get("header", {}).get("versions") or {})
-    data["history_version"] = hv.get("gh_version")
-    data["history_date"]    = hv.get("gh_date")
-    # ini
+    if hp.exists():
+        h = read_json(hp) or {}
+        hv = (h.get("header", {}).get("versions") or {})
+        data["history_version"] = hv.get("gh_version")
+        data["history_date"]    = hv.get("gh_date")
+
+    # --- INI summary ---
     ip = sdir / "ini_parsing_summary.json"
-    i = read_json(ip) or {}
-    #ini_files = []
-    # try a couple shapes the code already supports
-    ini_root = (i.get("ini") or {}) if isinstance(i, dict) else {}
-    files_node = ini_root.get("files")
-    if isinstance(files_node, dict):
-        for item in files_node.values():
-            fn = (item.get("filename") or item.get("path") or "").strip()
-            v  = item.get("version") or {}
-            ver = v.get("mame_version") or v.get("raw") or "Unknown"
-            if fn:
-                data["ini_versions"][fn] = ver
-    elif isinstance(i.get("files"), list):
-        for item in i["files"]:
-            fn = (item.get("filename") or item.get("path") or "").strip()
-            v  = item.get("version") or {}
-            ver = v.get("mame_version") or v.get("raw") or "Unknown"
-            if fn:
-                data["ini_versions"][fn] = ver
+    if ip.exists():
+        i = read_json(ip) or {}
+        ini_root = (i.get("ini") or {}) if isinstance(i, dict) else {}
+        files_node = ini_root.get("files")
+
+        if isinstance(files_node, dict):
+            for item in files_node.values():
+                fn = (item.get("filename") or item.get("path") or "").strip()
+                v  = item.get("version") or {}
+                ver_str = v.get("mame_version") or v.get("raw") or "Unknown"
+                if fn:
+                    data["ini_versions"][fn] = ver_str
+        elif isinstance(i.get("files"), list):
+            for item in i["files"]:
+                fn = (item.get("filename") or item.get("path") or "").strip()
+                v  = item.get("version") or {}
+                ver_str = v.get("mame_version") or v.get("raw") or "Unknown"
+                if fn:
+                    data["ini_versions"][fn] = ver_str
+
     return data
 
 def build_release_record(ver: str) -> Dict[str, Any]:

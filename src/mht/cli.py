@@ -737,7 +737,7 @@ def cmd_fetch_download(args: argparse.Namespace) -> int:
             return 1
 
     plan = probe_latest(use_cache=(not args.no_cache), debug=args.debug)
-    results = perform_downloads(plan, ingest=False, overwrite=args.overwrite, debug=args.debug)
+    results = perform_downloads(plan, ingest=False, overwrite=args.overwrite)
 
     # JSON mode: print and exit early
     if args.json:
