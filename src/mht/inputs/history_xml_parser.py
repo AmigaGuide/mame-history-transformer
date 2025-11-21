@@ -384,7 +384,8 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         return False
     log.info(f"Wrote {gh_system_trivia_path()} ({len(trivia_sorted)} systems)")
 
-    validate_trivia_file_against_schema(gh_system_trivia_path(), warn_only=True)
+    # Commenting this out as it slows the Run down
+    #validate_trivia_file_against_schema(gh_system_trivia_path(), warn_only=True)
 
     summary = build_history_summary(
         history_version=history_version,

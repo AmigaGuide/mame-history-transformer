@@ -54,37 +54,60 @@ def validate(names: Iterable[str] | None = None) -> list[str]:
     list[str]
         Human-readable error lines; empty list means 'Validation OK'.
     """
-    targets = list(names) if names else list(REGISTRY.keys())
+    # Determine which targets we are actually going to run
+    requested = list(names) if names else list(REGISTRY.keys())
+    known = []
     errors_out: list[str] = []
 
-    for name in targets:
+    for name in requested:
         if name not in REGISTRY:
-            errors_out.append(f"[{name}] unknown target")
-            continue
+            msg = f"[{name}] unknown target"
+            errors_out.append(msg)
+            _log.warning(msg)
+        else:
+            known.append(name)
 
+    if not known:
+        # Nothing valid to do; return whatever "unknown target" errors we had
+        return errors_out
+
+    total = len(known)
+    for idx, name in enumerate(known, start=1):
         schema_path, doc_getter = REGISTRY[name]
         doc_path = doc_getter()
 
+        _log.info(f"[validator] {idx}/{total} – {name}: starting")
         if not schema_path.exists():
-            errors_out.append(f"[{name}] missing schema: {schema_path}")
+            msg = f"[{name}] missing schema: {schema_path}"
+            errors_out.append(msg)
+            _log.warning(msg)
             continue
         if not doc_path.exists():
-            errors_out.append(f"[{name}] missing document: {doc_path}")
+            msg = f"[{name}] missing document: {doc_path}"
+            errors_out.append(msg)
+            _log.warning(msg)
             continue
 
         try:
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
             doc    = json.loads(doc_path.read_text(encoding="utf-8"))
         except Exception as e:
-            errors_out.append(f"[{name}] read error: {e}")
+            msg = f"[{name}] read error: {e}"
+            errors_out.append(msg)
+            _log.warning(msg)
             continue
 
         v = Draft202012Validator(schema)
         problems = list(v.iter_errors(doc))
         if problems:
+            _log.warning(f"[validator] {name}: {len(problems)} issue(s) found")
             for e in sorted(problems, key=lambda e: (list(e.path), e.message)):
                 path_str = "/".join(map(str, e.path)) or "(root)"
-                errors_out.append(f"[{name}] /{path_str} -> {e.message}")
+                line = f"[{name}] /{path_str} -> {e.message}"
+                errors_out.append(line)
+            continue
+
+        _log.info(f"[validator] {name}: OK")
 
     return errors_out
 
@@ -379,7 +402,16 @@ def validate_json_with_schema(doc: Any, schema_path: Path, *, warn_only: bool = 
 def validate_trivia_file_against_schema(trivia_path: Path, *, warn_only: bool = True) -> bool:
     """
     Load gh_system_trivia.json and validate against the shipped schema.
+
+    Returns True if:
+      - the file is present and valid against the schema, or
+      - schema validation is skipped (e.g. jsonschema not installed and warn_only=True).
+
+    Returns False if:
+      - the file is missing/unreadable, or
+      - schema validation fails (but only raises if warn_only=False).
     """
+    _log.info(f"[validator] trivia schema – validating {trivia_path.name}")
     try:
         doc = _load_json(trivia_path)
     except FileNotFoundError:
@@ -389,4 +421,9 @@ def validate_trivia_file_against_schema(trivia_path: Path, *, warn_only: bool = 
         _log.warning("Trivia file unreadable (%s): %s", trivia_path.name, e)
         return False
 
-    return validate_json_with_schema(doc, GH_SYSTEM_TRIVIA_SCHEMA, warn_only=warn_only)
+    ok = validate_json_with_schema(doc, GH_SYSTEM_TRIVIA_SCHEMA, warn_only=warn_only)
+    if ok:
+        _log.info("[validator] trivia schema – OK")
+    else:
+        _log.warning("[validator] trivia schema – issues detected (see warnings above)")
+    return ok
