@@ -162,9 +162,8 @@
             "text_contains": "The alien spaceship 'Galaxian' makes an appearance as the prize"
           },
           {
-            "type": "pair",
-            "label_contains": "Note :",
-            "value_contains": "there are 23 different name/nickname combinations for the ghosts in Puckman/Pac-Man"
+			"type": "paragraph",
+            "text_contains": "there are 23 different name/nickname combinations for the ghosts in Puckman/Pac-Man"
           },
           {
             "type": "paragraph",

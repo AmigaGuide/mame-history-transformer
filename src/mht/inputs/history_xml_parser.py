@@ -46,13 +46,16 @@ from mht.inputs.history_ports import extract_ports_section
 from mht.inputs.history_text import parse_gh_id_from_contribute, extract_text_sections
 from mht.inputs.history_summary import build_history_summary
 from mht.utils.history_xml import capture_history_root_attrs, classify_entry
-from mht.utils.validator import check_history_parse_invariants, validate_trivia_file_against_schema
+from mht.utils.validator import check_history_parse_invariants
 from mht.utils.records import build_history_system_record, build_history_systems_sorted
 from mht.utils.summaries import apply_ports_results, update_history_totals
 from mht.utils.encoding_utils import load_encodings_cache
 from mht.inputs.history_blocks import (
-    classify_section_blocks, process_section_blocks, attach_list_preambles, 
-    flag_suspect_hard_wraps, schema_sanitize_blocks,
+    process_section_blocks,
+    attach_list_preambles,
+    flag_suspect_hard_wraps,
+    schema_sanitize_blocks,
+    promote_preamble_paragraphs_to_bullet_lists,
 )
 from mht.inputs.history_suppress import apply_suppressions
 
@@ -292,7 +295,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
                                 # Raw strings for continuity
                                 raw_sections[tag] = "\n".join(lines_filtered)
-
+                                
                                 # Structured blocks with provenance injected
                                 try:
                                     blocks = process_section_blocks(
@@ -305,26 +308,46 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                     )
                                 except Exception as e:
                                     debug_log(f"[history_parser::blocks] {primary}:{sec_name} classification error: {e}")
-                                    blocks = [{"type": "paragraph", "text": "\n".join(lines_filtered), "meta": {
-                                        "system": primary, "section_tag": tag, "block_index": None,
-                                        "raw_line_start": prov.get("raw_line_indices", [None])[0] if prov.get("raw_line_indices") else None,
-                                        "raw_line_end": prov.get("raw_line_indices", [None])[-1] if prov.get("raw_line_indices") else None,
-                                        "filtered_line_start": 0, "filtered_line_end": len(lines_filtered) - 1,
-                                        "policy": {"per_line": False, "heuristic_per_line": False},
-                                        "detectors": ["paragraph_fallback"], "suppressions": [], "text_hash": ""
-                                    }}] if lines_filtered else []
+                                    blocks = [{
+                                        "type": "paragraph",
+                                        "text": "\n".join(lines_filtered),
+                                        "meta": {
+                                            "system": primary,
+                                            "section_tag": tag,
+                                            "block_index": None,
+                                            "raw_line_start": prov.get("raw_line_indices", [None])[0]
+                                                if prov.get("raw_line_indices") else None,
+                                            "raw_line_end": prov.get("raw_line_indices", [None])[-1]
+                                                if prov.get("raw_line_indices") else None,
+                                            "filtered_line_start": 0,
+                                            "filtered_line_end": len(lines_filtered) - 1,
+                                            "policy": {"per_line": False, "heuristic_per_line": False},
+                                            "detectors": ["paragraph_fallback"],
+                                            "suppressions": [],
+                                            "text_hash": "",
+                                        },
+                                    }] if lines_filtered else []
 
-                                # Finalise per-block meta: index/system/section_tag + sanitize
+                                # 1) flag hard wraps for diagnostics
+                                blocks = flag_suspect_hard_wraps(blocks)
+
+                                # 2) promote colon-ended preambles followed by
+                                #    contiguous paragraphs into bullet_list blocks
+                                blocks = promote_preamble_paragraphs_to_bullet_lists(blocks)
+
+                                # 3) finalise per-block meta: block_index/system/section_tag
                                 for idx, b in enumerate(blocks):
                                     m = b.setdefault("meta", {})
                                     m["block_index"] = idx
                                     m["system"] = primary
                                     m["section_tag"] = tag
-                                    #b["meta"] = _sanitize_block_meta(m)
 
+                                # 4) annotate preambles on list blocks
                                 blocks = attach_list_preambles(blocks)
-                                blocks = flag_suspect_hard_wraps(blocks)
-                                blocks = schema_sanitize_blocks(blocks)   # <-- final guard
+
+                                # 5) schema guard
+                                blocks = schema_sanitize_blocks(blocks)
+
                                 blocks_by_section[tag] = blocks
 
                             if raw_sections or blocks_by_section:

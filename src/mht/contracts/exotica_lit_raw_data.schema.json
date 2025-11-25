@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:exotica:schema:exotica_lit_raw_data:1.1.1",
+  "$id": "urn:exotica:schema:exotica_lit_raw_data:1.1.2",
   "title": "ExoticA Lost in Translation - Raw Data",
   "description": "Schema for the verbose/raw LiT output used for validation and review.",
   "type": "object",
@@ -13,7 +13,7 @@
       "required": ["schema_id", "schema_version", "versions", "generated_at"],
       "properties": {
         "schema_id":      { "const": "exotica_lit_raw_data" },
-        "schema_version": { "const": "1.1.1" },
+        "schema_version": { "const": "1.1.2" },
         "generated_at":   { "type":  "string", "format": "date-time" },
         "versions": {
           "type": "object",
@@ -390,7 +390,7 @@
           ]
         },
 
-        "game_status": { "type": "string", "enum": ["game", "no-game"] },
+        "game_status": { "type": "string", "enum": ["game", "no-game", "unknown"] },
 
         "category": {
           "type": "array",

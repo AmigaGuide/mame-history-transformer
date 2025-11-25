@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable, Tuple, Dict, Any, Set, Optional
+from typing import Iterable, Tuple, Dict, Any, Set
 from jsonschema import Draft202012Validator
 from collections import Counter
 

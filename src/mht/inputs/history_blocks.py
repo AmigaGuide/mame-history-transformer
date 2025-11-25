@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Optional, Any
 import hashlib
 
 __all__ = [
@@ -10,6 +10,7 @@ __all__ = [
     "attach_list_preambles",
     "flag_suspect_hard_wraps",
     "schema_sanitize_blocks",
+    "promote_preamble_paragraphs_to_bullet_lists",
 ]
 
 # --- Line classifiers ---------------------------------------------------------
@@ -30,6 +31,10 @@ _NEAR_MISS_BANNER_RE = re.compile(r"^\s*-\s*([^-].*[^-])\s*-\s*$")
 #   "Label : value"  or  "Label - value"
 _PAIR_COLON_RE = re.compile(r"^\s*([^:]{1,100}?)\s*:\s+(\S.*\S|\S)\s*$")
 _PAIR_DASH_RE  = re.compile(r"^\s*([^-]{1,100}?)\s+-\s+(\S.*\S|\S)\s*$")
+# Standalone all-caps heading, optionally ending with a colon, e.g. "ADDITIONAL NOTES" or "ADDITIONAL NOTES:"
+_UPPER_HEADING_RE = re.compile(r"^[A-Z0-9][A-Z0-9 \-&'/]+:?$")
+
+
 _LIST_TYPES = {"bullet_list", "numbered_list"}
 
 # ---- Section policies --------------------------------------------------------
@@ -357,7 +362,7 @@ def process_section_blocks(
     list_kind: Optional[str] = None
 
     def flush_list():
-        nonlocal list_acc, list_kind, filtered_idx
+        nonlocal list_acc, list_kind
         if list_kind and list_acc:
             start = filtered_idx - len(list_acc)
             end   = filtered_idx - 1
@@ -376,7 +381,7 @@ def process_section_blocks(
     para_start_idx: Optional[int] = None
 
     def flush_para(detector_label: str):
-        nonlocal para_acc, para_start_idx, filtered_idx
+        nonlocal para_acc, para_start_idx
         if para_acc:
             start = para_start_idx if para_start_idx is not None else filtered_idx - len(para_acc)
             end   = filtered_idx - 1
@@ -405,6 +410,60 @@ def process_section_blocks(
             flush_list()
             filtered_idx += 1
             continue
+        
+        # subheading: "* Something :" (star + text + colon) → treat as subheading,
+        # and check this BEFORE generic bullet detection.
+        if _SUBHEADING_RE.match(ln):
+            flush_para("paragraph_default")
+            flush_list()
+            text = ln.strip()
+            # drop the leading "*" but KEEP the trailing ":" so tests can
+            # match "Fastest route:" etc.
+            text = re.sub(r"^\s*\*\s+", "", text, count=1)
+            meta = _make_meta(
+                detectors=["subheading_star_colon"],
+                f_start=filtered_idx,
+                f_end=filtered_idx,
+                text=text,
+            )
+            blocks.append({"type": "subheading", "text": text, "meta": meta})
+            _inc_count(parsing_state, "subheading")
+            filtered_idx += 1
+            continue
+
+        # near-miss banner -> treat as subheading
+        m_nm = _NEAR_MISS_BANNER_RE.match(ln)
+        if m_nm:
+            flush_para("paragraph_default")
+            flush_list()
+            content = m_nm.group(1).strip()
+            if content and not re.fullmatch(r"-+", content):
+                meta = _make_meta(
+                    detectors=["near_miss_banner"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=content,
+                )
+                blocks.append({"type": "subheading", "text": content, "meta": meta})
+                _inc_count(parsing_state, "subheading")
+                filtered_idx += 1
+                continue
+
+        # stand-alone all-caps heading (e.g. "ADDITIONAL NOTES")
+        if _UPPER_HEADING_RE.match(ln.strip()):
+            flush_para("paragraph_default")
+            flush_list()
+            text = ln.strip()
+            meta = _make_meta(
+                detectors=["all_caps_heading"],
+                f_start=filtered_idx,
+                f_end=filtered_idx,
+                text=text,
+            )
+            blocks.append({"type": "subheading", "text": text, "meta": meta})
+            _inc_count(parsing_state, "subheading")
+            filtered_idx += 1
+            continue
 
         # bullets
         if _BULLET_RE.match(ln):
@@ -423,37 +482,16 @@ def process_section_blocks(
             if list_kind not in (None, "numbered_list"):
                 flush_list()
             list_kind = "numbered_list"
-            item = re.sub(r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+", "", ln, count=1).strip()
+            item = re.sub(
+                r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+",
+                "",
+                ln,
+                count=1,
+            ).strip()
             list_acc.append(item)
             filtered_idx += 1
             continue
 
-        # subheading
-        if _SUBHEADING_RE.match(ln):
-            flush_para("paragraph_default")
-            flush_list()
-            text = ln.strip()
-            text = re.sub(r"^\s*\*\s+", "", text, count=1)
-            text = re.sub(r":\s*$", "", text, count=1)
-            meta = _make_meta(detectors=["subheading_star_colon"], f_start=filtered_idx, f_end=filtered_idx, text=text)
-            blocks.append({ "type": "subheading", "text": text, "meta": meta })
-            _inc_count(parsing_state, "subheading")
-            filtered_idx += 1
-            continue
-
-        # near-miss banner -> treat as subheading
-        m_nm = _NEAR_MISS_BANNER_RE.match(ln)
-        if m_nm:
-            flush_para("paragraph_default")
-            flush_list()
-            content = m_nm.group(1).strip()
-            if content and not re.fullmatch(r"-+", content):
-                meta = _make_meta(detectors=["near_miss_banner"], f_start=filtered_idx, f_end=filtered_idx, text=content)
-                blocks.append({ "type": "subheading", "text": content, "meta": meta })
-                _inc_count(parsing_state, "subheading")
-                filtered_idx += 1
-                continue
-        
         # pairs: only in normal mode (not per-line), and NOT in "tips and tricks"
         if not per_line and tag != "tips and tricks":
             m_pair = _PAIR_COLON_RE.match(ln) or _PAIR_DASH_RE.match(ln)
@@ -521,6 +559,103 @@ def classify_section_blocks(
     return process_section_blocks(primary=None, section_tag=section_tag, lines=lines, parsing_state=parsing_state)
 
 # --- Fine-tuning helpers: colon preamble binding and hard-wrap flagging ---
+
+def promote_preamble_paragraphs_to_bullet_lists(blocks: list[dict]) -> list[dict]:
+    """
+    Look for patterns like:
+
+        paragraph: "Known re-releases:"
+        paragraph: "\"Street Fighter II - The World Warrior [B-Board 90629B-2]\""
+        paragraph: "\"Street Fighter II - The World Warrior [B-Board 90629B-3]\""
+
+    where:
+      * the preamble paragraph text ends with ':'
+      * the immediately following blocks are also paragraphs
+      * those following paragraphs are on consecutive filtered lines
+
+    and convert the *run* of following paragraphs into a single `bullet_list` block.
+
+    The preamble paragraph remains as-is; the list is inserted immediately after it.
+    This is deliberately conservative so we don't reclassify unrelated paragraphs.
+    """
+    if not isinstance(blocks, list) or not blocks:
+        return blocks
+
+    out: list[dict] = []
+    i = 0
+    n = len(blocks)
+
+    while i < n:
+        b = blocks[i]
+        if isinstance(b, dict) and b.get("type") == "paragraph":
+            text = (b.get("text") or "").rstrip()
+            meta = b.get("meta") or {}
+
+            # Only treat as a preamble if it ends with ':'.
+            if text.endswith(":"):
+                items: list[str] = []
+                first_item_meta: dict | None = None
+                last_item_meta: dict | None = None
+
+                # We will only attach paragraphs that are:
+                #  - directly following in the block list, and
+                #  - on consecutive filtered lines (no blank-line gaps).
+                cur_end = meta.get("filtered_line_end")
+                j = i + 1
+
+                while j < n:
+                    nb = blocks[j]
+                    if not (isinstance(nb, dict) and nb.get("type") == "paragraph"):
+                        break
+
+                    nm = nb.get("meta") or {}
+                    fs = nm.get("filtered_line_start")
+                    # Require adjacency in filtered line numbers to avoid
+                    # swallowing paragraphs separated by blank lines.
+                    if cur_end is not None and fs is not None and fs == (cur_end + 1):
+                        items.append(nb.get("text") or "")
+                        if first_item_meta is None:
+                            first_item_meta = nm
+                        last_item_meta = nm
+                        cur_end = nm.get("filtered_line_end")
+                        j += 1
+                    else:
+                        break
+
+                # If we found at least one contiguous paragraph item, emit a list.
+                if items:
+                    out.append(b)  # keep the preamble paragraph itself
+
+                    # Build list meta based on the preamble + item range.
+                    new_meta = dict(meta)
+                    det = new_meta.setdefault("detectors", [])
+                    if isinstance(det, list) and "preamble_promoted_bullets" not in det:
+                        det.append("preamble_promoted_bullets")
+
+                    if first_item_meta is not None and last_item_meta is not None:
+                        # Use the item range as the effective range of the list.
+                        new_meta["filtered_line_start"] = first_item_meta.get("filtered_line_start")
+                        new_meta["filtered_line_end"] = last_item_meta.get("filtered_line_end")
+                        new_meta["raw_line_start"] = first_item_meta.get("raw_line_start")
+                        new_meta["raw_line_end"] = last_item_meta.get("raw_line_end")
+
+                    new_meta["text_hash"] = _short_hash("\n".join(items))
+
+                    out.append({
+                        "type": "bullet_list",
+                        "items": items,
+                        "meta": new_meta,
+                    })
+
+                    # Skip over the paragraphs we just consumed into the list.
+                    i = j
+                    continue
+
+        # Default: just copy the block through unchanged.
+        out.append(b)
+        i += 1
+
+    return out
 
 def attach_list_preambles(blocks: list[dict]) -> list[dict]:
     """

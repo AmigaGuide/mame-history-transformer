@@ -4,7 +4,6 @@ import pytest
 
 from mht.utils.paths import gh_system_trivia_path, history_summary_path
 from mht.utils.validator import validate_trivia_file_against_schema
-from tests.util_json_subset import is_subset
 from tests.util_expectations import blocks_satisfy_expectations
 
 

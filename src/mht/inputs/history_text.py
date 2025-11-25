@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter, defaultdict
-from typing import Dict, List, Iterable, Optional, Any
+from typing import Dict, List, Iterable, Optional
 from difflib import get_close_matches
 import html
 import xml.etree.ElementTree as ET

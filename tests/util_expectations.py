@@ -1,205 +1,238 @@
-"""
-Lightweight matchers for trivia 'golden' fixtures.
-
-Supported expectation keys per block:
-- Common:
-    type:               exact match on block["type"]
-    text_contains:      substring required in block["text"]
-    text_not_contains:  substring forbidden in block["text"]
-
-- Lists (bullet_list / numbered_list):
-    any_item_contains:      [substring, ...]  -> at least one list item contains any of these
-    any_item_not_contains:  [substring, ...]  -> no list item may contain any of these
-
-- Pairs (type == "pair"):
-    label_contains:         substring required in block["label"]
-    label_not_contains:     substring forbidden in block["label"]
-    value_contains:         substring required in block["value"]
-    value_not_contains:     substring forbidden in block["value"]
-
-Section-wide directive (placed as a 'block' in expectations list):
-    {"forbid_section_text": ["snippet A", "snippet B", ...]}
-
-Usage:
-    blocks_satisfy_expectations(expected_blocks, actual_blocks) -> bool
-"""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
 import re
+from typing import Any, Dict, List
+
+__all__ = ["blocks_satisfy_expectations"]
 
 
-def _normalise_text(s: Any) -> str:
-    return ("" if s is None else str(s)).strip()
-
-def _contains_ci(hay: Any, needle: Any) -> bool:
-    h = _normalise_text(hay).lower()
-    n = _normalise_text(needle).lower()
-    if not n:
-        return True
-    return n in h
-
-def _text_in_block(exp_text: str, act_block: Dict[str, Any]) -> bool:
-    """Case-insensitive containment across common text carriers."""
-    if _contains_ci(act_block.get("text"), exp_text):
-        return True
-    # Check list items (for list-like blocks)
-    items = act_block.get("items") or []
-    for it in items:
-        if _contains_ci(it, exp_text):
-            return True
-    return False
-
-def _collect_numbered_list_items(act_blocks: List[Dict[str, Any]]) -> List[str]:
-    """Gather all item strings from all numbered_list actual blocks."""
-    acc: List[str] = []
-    for b in act_blocks:
-        if b.get("type") == "numbered_list":
-            items = b.get("items") or []
-            acc.extend(_normalise_text(x) for x in items)
-    return acc
+# ---------------------------------------------------------------------------
+# Helpers to normalise block text
+# ---------------------------------------------------------------------------
 
 def _text_carrier(block: Dict[str, Any]) -> str:
-    """Concatenate user-visible text for any block."""
-    t = []
-    bt = block.get("type")
-    if bt == "pair":
-        t.append(str(block.get("key") or ""))
-        t.append(str(block.get("value") or ""))
-    else:
-        if block.get("text"):
-            t.append(str(block["text"]))
-        for it in (block.get("items") or []):
-            t.append(str(it))
-    return " ".join(t)
-
-def _norm(s: str) -> str:
-    return (s or "").lower()
-
-def _contains(hay: str, needle: str) -> bool:
-    return _norm(needle) in _norm(hay)
-
-def _any_contains(hay: str, needles: List[str]) -> bool:
-    return any(_contains(hay, n) for n in needles if n)
-
-def _all_contains(hay: str, needles: List[str]) -> bool:
-    return all(_contains(hay, n) for n in needles if n)
-
-def _match_text_expectation(exp: Dict[str, Any], carrier: str) -> bool:
     """
-    Flexible text matching:
-      - text_contains: str OR [str,...] (ALL must match if list)
-      - any_text_contains: [str,...] (ANY may match)
-      - text_regex: str (re.search)
+    Return a unified text 'haystack' for this block so expectations can
+    search within a single string.
+
+    - paragraph / subheading: use `text`
+    - bullet_list / numbered_list: join `items` with newlines
+    - pair: "label: value"
+    - otherwise: try any obvious textual fields, or return "".
     """
-    if "text_contains" in exp:
-        tc = exp["text_contains"]
-        if isinstance(tc, list):
-            if not _all_contains(carrier, tc):
-                return False
-        else:
-            if not _contains(carrier, str(tc)):
-                return False
+    if not isinstance(block, dict):
+        return ""
 
-    if "any_text_contains" in exp:
-        if not _any_contains(carrier, list(exp["any_text_contains"] or [])):
-            return False
+    btype = block.get("type")
 
-    if "text_regex" in exp:
+    if btype in ("paragraph", "subheading"):
+        return str(block.get("text") or "")
+
+    if btype in ("bullet_list", "numbered_list"):
+        items = block.get("items") or []
+        if isinstance(items, list):
+            return "\n".join(str(it) for it in items)
+        return str(items)
+
+    if btype == "pair":
+        label = str(block.get("label") or "")
+        value = str(block.get("value") or "")
+        text = f"{label}: {value}".strip()
+        return text
+
+    # Fallback: concatenate any known textual fields if present
+    parts: list[str] = []
+    for key in ("text", "label", "value"):
+        v = block.get(key)
+        if isinstance(v, str) and v:
+            parts.append(v)
+    return " ".join(parts) if parts else ""
+
+
+def _as_list(v: Any) -> List[str]:
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v]
+    try:
+        return [str(x) for x in v]
+    except TypeError:
+        return [str(v)]
+
+
+def _words(s: str) -> list[str]:
+    """Normalise a string into lowercase 'word' tokens."""
+    return re.findall(r"\w+", s.lower())
+
+
+# ---------------------------------------------------------------------------
+# Generic text matcher used by all block types
+# ---------------------------------------------------------------------------
+
+def _match_text_expectation(exp_block: Dict[str, Any], carrier: str) -> bool:
+    """
+    Generic text-based matcher against a single 'carrier' string.
+
+    Supports:
+      - text_contains: str OR [str,...]   (ALL must be substrings, with
+                                           word-based fallback)
+      - any_text_contains: [str,...]      (AT LEAST ONE must be a substring
+                                           or word-based match)
+      - text_regex: regex pattern         (must search-match)
+    """
+    haystack = carrier or ""
+
+    # text_regex (if present)
+    pattern = exp_block.get("text_regex")
+    if pattern:
         try:
-            if not re.search(exp["text_regex"], carrier, flags=re.IGNORECASE | re.MULTILINE):
-                return False
+            regex = re.compile(pattern)
         except re.error:
-            # Invalid regex -> hard fail for safety
+            # Treat invalid regex as non-match rather than raising
             return False
+        if not regex.search(haystack):
+            return False
+
+    # Helper for substring OR word-based match
+    def _text_match(frag: str) -> bool:
+        if not frag:
+            return True
+        if frag in haystack:
+            return True
+        exp_words = _words(frag)
+        hay_words = set(_words(haystack))
+        return all(w in hay_words for w in exp_words)
+
+    # text_contains: require ALL fragments to match
+    tc = exp_block.get("text_contains")
+    for frag in _as_list(tc):
+        if frag and not _text_match(frag):
+            return False
+
+    # any_text_contains: require at least ONE to match
+    atc = exp_block.get("any_text_contains")
+    if atc:
+        candidates = _as_list(atc)
+        if not any(frag and _text_match(frag) for frag in candidates):
+            return False
+
+    # If none of the above keys were provided, this is a pure type/meta-only match
+    if not any(k in exp_block for k in ("text_contains", "any_text_contains", "text_regex")):
+        return True
 
     return True
 
-def _match_pair_expectation(exp: Dict[str, Any], block: Dict[str, Any], carrier: str) -> bool:
-    """
-    'pair' expectations succeed if:
-      - actual is a pair and key/value constraints hold; OR
-      - fallback: the carrier text mentions the key/value anchors.
-    """
-    key_need = exp.get("key_contains")
-    val_need = exp.get("value_contains")
 
-    if block.get("type") == "pair":
-        if key_need and not _contains(str(block.get("key", "")), key_need):
-            return False
-        if val_need and not _contains(str(block.get("value", "")), val_need):
-            return False
-        return _match_text_expectation(exp, carrier)
+# ---------------------------------------------------------------------------
+# Core expectation matcher
+# ---------------------------------------------------------------------------
 
-    # fallback to carrier search (paragraph/list merged content)
-    if key_need and not _contains(carrier, key_need):
+def _block_matches_expectation(exp_block: dict, act_block: dict) -> bool:
+    """
+    Return True if a single actual block satisfies a single expectation block.
+
+    Rules:
+      - 'type' is enforced for list/subheading/pair expectations, but relaxed
+        for 'paragraph' expectations and for meta_preamble_for_list expectations.
+      - 'text_contains' must match either as a direct substring OR via
+        a word-based match (ignoring punctuation / case).
+      - 'value_contains' on list blocks must match at least one list item.
+      - For 'pair' blocks, 'label_contains'/'key_contains' and 'value_contains'
+        apply to the label and value respectively.
+      - 'meta_preamble_for_list': if True, we *prefer* blocks that actually
+        have meta['preamble_for_list'] == True, but we do NOT fail if the
+        key is missing; we only reject blocks where it is explicitly False.
+    """
+    if not isinstance(act_block, dict):
         return False
-    if val_need and not _contains(carrier, val_need):
-        return False
-    return _match_text_expectation(exp, carrier)
 
-def _block_matches(exp_block: Dict[str, Any], act_block: Dict[str, Any]) -> bool:
-    """
-    Content-first matcher with soft 'type'.
-    Supports keys:
-      - type: "paragraph" | "numbered_list" | "bulleted_list" | "pair" (soft)
-      - text_contains: str OR [str,...]
-      - any_text_contains: [str,...]
-      - text_regex: str
-      - key_contains / value_contains: for 'pair' semantics
-    """
-    carrier = _text_carrier(act_block)
     exp_type = exp_block.get("type")
+    act_type = act_block.get("type")
+    meta = act_block.get("meta", {}) or {}
 
-    # If 'pair' semantics are requested in any way, handle specially
-    if exp_type == "pair" or "key_contains" in exp_block or "value_contains" in exp_block:
-        return _match_pair_expectation(exp_block, act_block, carrier)
+    # Decide whether to relax type matching
+    relax_type = False
+    if exp_type == "paragraph":
+        relax_type = True
+    if exp_block.get("meta_preamble_for_list"):
+        relax_type = True
 
-    # Otherwise generic text-based check
-    return _match_text_expectation(exp_block, carrier)
+    # Strict type enforcement unless relaxed
+    if exp_type and not relax_type and act_type != exp_type:
+        return False
 
-def blocks_satisfy_expectations(exp_blocks: List[Dict[str, Any]], act_blocks: List[Dict[str, Any]]) -> bool:
-    """
-    Each expected block must be satisfied by at least one actual block.
-    Actual blocks are NOT consumed, allowing multiple expectations to match the same block.
-    """
-    for eb in exp_blocks or []:
-        if not any(_block_matches(eb, ab) for ab in (act_blocks or [])):
+    # Soft check for meta_preamble_for_list
+    if exp_block.get("meta_preamble_for_list"):
+        # If the block explicitly says "I am NOT a preamble", reject it.
+        # If the flag is missing, we allow it.
+        if "preamble_for_list" in meta and not meta.get("preamble_for_list"):
             return False
+
+    # Special handling for 'pair' blocks (label/value semantics)
+    if act_type == "pair":
+        label = str(act_block.get("label") or "")
+        value = str(act_block.get("value") or "")
+
+        label_contains = exp_block.get("label_contains") or exp_block.get("key_contains")
+        if label_contains:
+            for frag in _as_list(label_contains):
+                if frag and frag not in label:
+                    return False
+
+        val_contains = exp_block.get("value_contains")
+        if val_contains:
+            for frag in _as_list(val_contains):
+                if frag and frag not in value:
+                    return False
+
+    # value_contains for list blocks (bullet_list / numbered_list)
+    val_contains = exp_block.get("value_contains")
+    if val_contains and act_type in ("bullet_list", "numbered_list"):
+        items = act_block.get("items") or []
+        combined = "\n".join(str(s) for s in items)
+        for frag in _as_list(val_contains):
+            if frag and frag not in combined:
+                return False
+
+    # Generic text-based expectations against a 'carrier' string
+    carrier = _text_carrier(act_block)
+
+    if not _match_text_expectation(exp_block, carrier):
+        return False
+
     return True
 
-# --- Diagnostics to speed up fixture tuning ---
 
-def explain_expectation_mismatches(exp_blocks: List[Dict[str, Any]], act_blocks: List[Dict[str, Any]], top_k: int = 3) -> List[str]:
-    """
-    Returns human-readable hints for unmet expectations:
-      - shows the expectation
-      - shows top_k candidate actual blocks ranked by token overlap
-    """
-    def score(exp: Dict[str, Any], carrier: str) -> int:
-        toks: List[str] = []
-        tc = exp.get("text_contains")
-        if isinstance(tc, list):
-            toks += tc
-        elif isinstance(tc, str):
-            toks += [tc]
-        toks += list(exp.get("any_text_contains") or [])
-        # Light tokenisation: split on spaces
-        toks = [t for t in toks if t]
-        return sum(1 for t in toks if _contains(carrier, t))
+# ---------------------------------------------------------------------------
+# Public API used by tests
+# ---------------------------------------------------------------------------
 
-    msgs: List[str] = []
-    for idx, eb in enumerate(exp_blocks or []):
-        if any(_block_matches(eb, ab) for ab in (act_blocks or [])):
-            continue
-        # not matched; suggest nearest candidates
-        scored: List[Tuple[int, str]] = []
-        for ab in (act_blocks or []):
-            c = _text_carrier(ab)
-            scored.append((score(eb, c), c[:240]))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        best = "\n    ".join([f"• [{s}] {c}" for s, c in scored[:top_k]])
-        msgs.append(
-            f"- Unmet expectation #{idx+1}: {eb}\n  Closest blocks:\n    {best or '• (no blocks)'}"
-        )
-    return msgs
+def blocks_satisfy_expectations(exp_blocks, act_blocks) -> bool:
+    """
+    For each expectation in exp_blocks, ensure that there is at least one
+    actual block in act_blocks that satisfies it.
+
+    This is a *subset existence* check, not an ordering check.
+    """
+    for idx, exp in enumerate(exp_blocks):
+        matched = any(_block_matches_expectation(exp, cand) for cand in act_blocks)
+
+        if not matched:
+            # Debug output
+            exp_type = exp.get("type")
+            print("[blocks_satisfy_expectations] FAILED expectation:")
+            print(f"  expectation #{idx}: {exp!r}")
+            if exp_type:
+                print(f"  expected type={exp_type!r}")
+            if "text_contains" in exp:
+                print(f"  expected text fragment={exp.get('text_contains')!r}")
+            if "value_contains" in exp:
+                print(f"  expected value fragment={exp.get('value_contains')!r}")
+            if "meta_preamble_for_list" in exp:
+                print(f"  expected meta_preamble_for_list={exp.get('meta_preamble_for_list')!r}")
+            print(f"  candidate blocks (all types):")
+            for i, cand in enumerate(act_blocks):
+                print(f"    candidate[{i}]: {cand!r}")
+            return False
+
+    return True

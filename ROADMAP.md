@@ -1,105 +1,198 @@
 # Roadmap (v2)
 
-## Phase 1 — Structure & Contracts (complete)
-
-✅ **Unified summary headers**
-All stages now share a standard header (`schema_id`, `schema_version`, `generated_at`, `versions`).
-
-✅ **Centralised versions** in `mht/utils/versions.py`
-(Schema IDs/versions, tool versions, and output dataset schemas.)
-
-✅ **Per-release provenance**
-Each release maintains its own:
-
-* `archives/` (ZIPs)
-* `.stamps/` (stage fingerprints)
-* `encodings.json` (encoding + version cache)
-
-✅ **Parser refactor to orchestrators**
-`mame_parser.py`, `history_xml_parser.py`, and `history_ini_parser.py` now delegate to helpers under `utils/`.
-
-✅ **ZIP-only pipeline**
-All inputs are read directly from archives; extraction removed.
-
-✅ **Progress & logging helpers**
-`utils.logger.maybe_log_progress()` and `debug_log()` unify output; optional `--debug` for network probes.
-
-✅ **Docs & tests**
-README, CHANGELOG, and test suite updated; pytest fully green across Windows paths.
+This roadmap reflects the current architecture and long-term development path of **MAME-History-Transformer (MHT)**.
 
 ---
 
-## Phase 2 — CLI & Orchestration (stable)
+## **Phase 1 — Structure & Contracts (complete)**
 
-✅ **`mht` CLI core**
+### **✓ Unified summary headers**
 
-* `run` — explicit full pipeline (no longer default).
-* `status` — stamp freshness summary.
-* `clean` — safe cleanup with `--dry-run`/`--yes`.
-* `validate` — schema validation for outputs.
-* `fetch` — probe and download upstream MAME + GH ZIPs.
-* `ingest` — auto-route incoming ZIPs by version hint/build.
-* `releases` — manage active version, index, prune, GC.
-* `incoming` — inspect or adopt staged archives.
+All stages now emit a standard header (`schema_id`, `schema_version`, `generated_at`, `versions`).
 
-✅ **User experience**
+### **✓ Centralised version management**
 
-* Root (`python -m mht`) prints help + active release (no automatic run).
-* Parent groups print contextual help instead of argparse errors.
-* All commands show `[active] release = <ver>` banner (root excluded).
+`mht/utils/versions.py` now tracks:
 
-✅ **Fetch debugging**
+* Schema IDs
+* Schema versions
+* Tool versions
+* Output dataset schema versions
 
-* `--debug` logs every attempted online URL (`history282.zip`, `history282a.zip`, …).
-* Duplicate downloads skipped unless `--overwrite` given.
+### **✓ Per-release provenance directories**
 
-✅ **Releases index**
+Each release version now has its own:
 
-* `releases_index.json` summarises archives, outputs, summaries, encodings per release.
-* All paths normalised via `as_posix()` for cross-platform stability.
+* `archives/` (ZIPs ingested via `mht ingest`)
+* `.stamps/` (checksum + input provenance per stage)
+* `encodings.json` (per-file encoding + version caches)
+* `outputs/`
+* `summaries/`
 
-⏳ **Next CLI tasks**
+### **✓ Parser refactor into orchestrators**
 
-* Add `mht diff` to compare outputs or summaries between two releases.
-* Optional `--json` output for `status` (machine-readable CI use).
+`mame_parser.py`, `history_xml_parser.py`, and `history_ini_parser.py` now delegate to structured helpers in `utils/`.
 
----
+### **✓ ZIP-only pipeline**
 
-## Phase 3 — Validation & Invariants (in progress)
+All input is streamed directly from ZIP archives.
+No temporary extraction.
 
-◻ **Schema + invariant tests**
+### **✓ Logging and progress framework**
 
-* Verify parent/clone counts, display/device totals.
-* Ensure unique redirects and provenance completeness (PORTS).
-* Confirm output dataset schemas match `OUTPUT_SCHEMAS`.
+Common helpers:
 
-◻ **Performance guardrails**
+* `maybe_log_progress()`
+* `debug_log()`
+* Normalised `[file::function]` debug tags
+* Consistent `[active] release = …` banners
 
-* Record wall-clock and memory metrics per stage; warn on regressions.
+### **✓ Documentation & Tests Updated**
 
-◻ **Contract tests**
-
-* Header-first version reads (with fallbacks) validated automatically.
-* Confirm every stage writes a valid stamp and summary header.
+README, CHANGELOG, CLI help screens, and the pytest suite are aligned with the v2 architecture.
 
 ---
 
-## Phase 4 — Nice-to-haves (planned)
+## **Phase 2 — CLI & Orchestration (stable)**
 
-◻ **Optional YAML renderer** for key artefacts (human-diff friendly).
-◻ **Read-only HTML viewer** for summaries and run manifests.
-◻ **GH TRIVIA parsing** as a future optional stage feeding transform.
-◻ **Whitelist toggle** for benign anomalies (e.g. `bitmap_printer`) while keeping audit trail.
-◻ **Release diff engine** – compare `mame_machines.json` or `gh_system_ports.json` across versions.
+### **✓ Core `mht` CLI groups**
+
+**Pipeline**
+
+* `mht run` — explicit full pipeline run (never implicit)
+* `mht validate` — schema validation for outputs
+* `mht clean` — safe deletion with `--dry-run` and `--yes`
+
+**Releases**
+
+* `mht releases list`
+* `mht releases set <ver>`
+* `mht releases prune`
+* Automatic `releases_index.json` (paths normalised)
+
+**Incoming / Fetch**
+
+* `mht fetch probe` — online discovery of new versions
+* `mht fetch download` — download paired ZIPs
+* `mht incoming scan` — preview incoming archives
+* `mht ingest` — classify and place archives into a release directory
+
+### **✓ Usability Enhancements**
+
+* Root invocation (`python -m mht`) prints help and active release
+* Parent groups (`mht releases`, `mht fetch`, `mht incoming`) show contextual help
+* Optional `--debug` shows every attempted fetch URL
+* All commands banner the active release (except root)
+
+### **Next CLI tasks (remaining for Phase 2)**
+
+* Optional `--json` output for `mht status`
+* Improve error text when ZIPs or stamps are missing
+* Optional `mht run --limit <n>` to parse only a subset for debugging
 
 ---
 
-## Maintenance Checklist (before v1.1.0 tag)
+## **Phase 3 — Validation, Invariants, and Extended Trivia Parsing (in progress)**
 
-* [x] Update `README.md` and `CHANGELOG.md`.
-* [x] Confirm all CLI help screens and banners consistent.
-* [x] End-to-end parse on 0.281 data set with correct per-release stamps.
-* [x] Full `pytest` suite passes (Windows paths included).
-* [ ] Run `pyflakes`/`ruff` to remove any unused imports or variables.
-* [ ] Tag release `v1.1.0` and rebuild `releases_index.json`.
+This phase reflects your **current work**.
 
+### **✓ Extended Trivia Parsing (non-PORTS sections)**
+
+Trivia parsing now includes:
+
+* Paragraph detection
+* Bullet lists
+* Dash lists
+* Pairs (`a : b`, or hyphen separators)
+* Preambles before lists
+* Multi-paragraph structures
+* Bracket-aware separators
+* Various edge cases (translation text, mixed formats)
+
+This is now part of the **core Trivia extraction** and is no longer listed as a “future feature”.
+
+### **✓ Expected subsets for Trivia**
+
+Test fixtures for Trivia (e.g. *puckman*, *sf2j*, *005*) are now aligned with new structural rules.
+
+### **✓ Manual validation command**
+
+`python -m mht validate` now:
+
+* Performs JSON Schema validation
+* Validates gh_system_trivia.json
+* Shows progress for multi-file validation
+* Is **not** run automatically as part of `mht run`
+
+### **◻ Schema + invariant tests**
+
+Remaining tasks:
+
+* Validate parent/clone and counter consistency
+* Validate PORTS coverage, platform categories, and residue
+* Reinforce schema completeness via CI-friendly tests
+
+### **◻ Performance guardrails**
+
+Future part of Phase 3:
+
+* Record basic wall-clock times in stage summaries
+* Track potential slow regressions (useful for large GH releases)
+
+---
+
+## **Phase 4 — Nice-to-haves (planned)**
+
+### **◻ Enhanced Trivia rendering / presentation**
+
+Optional improvements which build on the *existing* Trivia parser:
+
+* Convert logical lists or pairs into HTML-ready table structures
+* Improved cross-release comparison of Trivia formatting
+* Render Staff or Versions sections in table-like formats
+* Optional inclusion of “raw-text” Trivia output for diffing
+
+### **◻ `mht diff` (cross-release diff engine)**
+
+Compare outputs or summaries between releases, e.g.:
+
+* Parent/clone changes
+* Port coverage differences
+* Trivia structure evolution
+* Machine counts per year/manufacturer
+
+This only makes sense once Trivia & PORTS parsing is completely stable.
+
+### **◻ Optional YAML output**
+
+Generate YAML variants of JSON outputs for human-readable diffs.
+
+### **◻ Static HTML viewer (read-only)**
+
+A small static HTML interface to browse:
+
+* Summaries
+* Headers
+* Trivia blocks
+* Version metadata
+* Port tables
+
+### **◻ Anomaly whitelist**
+
+Let users suppress repetitive or harmless anomalies (e.g. `bitmap_printer`, odd spacing patterns), while preserving full audit logs.
+
+---
+
+## **Maintenance Checklist (before v1.1.0)**
+
+* [x] Update README/CHANGELOG
+* [x] Ensure all CLI help screens are accurate
+* [x] Full end-to-end run on 0.281 and 0.282 data sets
+* [x] New manual validation workflow
+* [x] Restore green pytest across all platforms
+* [ ] Run pyflakes/ruff cleanup (unused imports etc.)
+* [ ] Tag release `v1.1.0`
+* [ ] Rebuild `releases_index.json` for full history
+
+### **To Do**
+From 0.282 onward, GH Game/No Game INI no longer covers many clones; game_status may be `"unknown"` for valid clones. Future work: decide whether to infer clone game_status from parent, or treat GH as parent-only classification
