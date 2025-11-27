@@ -52,6 +52,7 @@ from mht.utils.selection import (
     build_final_set as _build_final_set,
     build_eligible_parents_set,
     universe_parent_clone_counts,
+    inherit_parent_classification_for_clones,
 )
 from mht.utils.mame_overrides import (
     load_title_overrides as _load_title_overrides,
@@ -259,16 +260,21 @@ def run_transformer() -> bool:
     have_overrides = isinstance(overrides, dict) and bool(overrides)
     overrides_applied: list[dict[str, str]] = []
     overrides_stats = {"configured": len(overrides) if isinstance(overrides, dict) else 0, "eligible": 0, "applied": 0}
-
+   
     mame_machines, parent_index, gh_system_ports, ini_classifications = load_stage_inputs()
+
     # Normalise inputs to dicts and bind to names the rest of the file expects
-    mame     = mame_machines or {}
-    ini_map  = ini_classifications or {}
-    gh_ports = gh_system_ports or {}
+    mame       = mame_machines or {}
+    ini_raw    = ini_classifications or {}   # raw gh_ini_classifications.json (parents only)
+    gh_ports   = gh_system_ports or {}
     parent_index = parent_index or {}
 
-    gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
+    # For transform-time classification, let clones inherit their parent's
+    # INI row when the parent exists in ini_raw but the clone does not.
+    ini_map = inherit_parent_classification_for_clones(ini_raw, parent_index)
 
+    gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
+   
     if not isinstance(mame, dict) or not isinstance(ini_map, dict) or not isinstance(parent_index, dict):
         log.error("Missing or invalid inputs; aborting transform.")
         return False
@@ -500,14 +506,14 @@ def run_transformer() -> bool:
         gh_not_in_arcade_scope=gh_not_in_arcade_scope,
     )
 
-    # New: coverage stats showing how GH systems-with-ports intersect with
+    # Coverage stats showing how GH systems-with-ports intersect with
     # MAME parent/clone roles and INI classifications.
     ports_ini_coverage = _build_ports_ini_coverage_telemetry(
         mame=mame,
         parent_index=parent_index,
         gh_ports=gh_ports,
         gh_keys_with_ports=gh_keys_with_ports,
-        ini_map=ini_map,
+        ini_map=ini_raw,
     )
     summary_ports["ini_and_history_coverage"] = ports_ini_coverage
 

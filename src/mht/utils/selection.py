@@ -147,6 +147,43 @@ def classify_from_ini(machine_name: str, parsed: Dict[str, dict]) -> Dict[str, o
 
     return {"game_status": game_status, "category": category_list, "type": machine_type}
 
+def inherit_parent_classification_for_clones(
+    ini_map: Dict[str, Dict[str, Any]],
+    parent_index: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Return a new INI classification map where any clone machine inherits its
+    parent's classification if:
+
+      - the clone has no entry in ini_map, and
+      - the parent *does* have an entry in ini_map.
+
+    This is a transform-time convenience only. The on-disk gh_ini_classifications.json
+    continues to reflect the raw INI contents (parents only in newer GH drops).
+    """
+    if not isinstance(ini_map, dict):
+        return {}
+
+    child_to_parent: Dict[str, str] = (parent_index or {}).get("child_to_parent", {}) or {}
+    if not child_to_parent:
+        # Nothing to inherit; return the original mapping unchanged.
+        return dict(ini_map)
+
+    expanded: Dict[str, Dict[str, Any]] = dict(ini_map)
+
+    for clone_name, parent_name in child_to_parent.items():
+        # Only inherit when:
+        #  - the clone is not already classified
+        #  - the parent has a classification row
+        if clone_name in expanded:
+            continue
+        parent_row = ini_map.get(parent_name)
+        if not isinstance(parent_row, dict):
+            continue
+        expanded[clone_name] = parent_row
+
+    return expanded
+
 def build_eligible_parents_set(mame: Dict[str, Dict[str, Any]], ini_map: Dict[str, Any]) -> Set[str]:
     """
     Return the set of parent machine names that are eligible according to INI classification.
