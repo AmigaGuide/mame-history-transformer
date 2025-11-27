@@ -225,7 +225,6 @@ def build_parent_record(
         "displays_display": displays_display,
         "controls": controls_section,
         "controls_display": controls_display,
-        # >>> add these <<<
         "game_status": game_status,
         "category":    category,
         "type":        type_,        

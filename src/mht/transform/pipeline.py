@@ -107,6 +107,111 @@ def _records_in_wiki_or_raw_json(p: Path) -> int | None:
         pass
     return None
 
+def _build_ports_ini_coverage_telemetry(
+    *,
+    mame: Dict[str, Any],
+    parent_index: Dict[str, Any],
+    gh_ports: Dict[str, Any],
+    gh_keys_with_ports: set[str] | List[str] | None,
+    ini_map: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Build telemetry about how History (GH) systems with ports intersect with:
+
+      - MAME parent/clone roles, and
+      - INI coverage (gh_ini_classifications.json).
+
+    This is purely diagnostic: it does not affect selection or output content.
+    """
+    # Normalise to sets
+    ports_keys: set[str] = set(gh_keys_with_ports or [])
+    ini_keys: set[str] = set((ini_map or {}).keys())
+    history_systems: set[str] = set((gh_ports or {}).keys())
+
+    # Systems with ports that do / do not appear in the INI classifications
+    ports_missing_ini: set[str] = ports_keys - ini_keys
+    ports_present_ini: set[str] = ports_keys & ini_keys
+
+    # Classify systems-with-ports by MAME role (parent / clone / unknown)
+    ports_parents: set[str] = set()
+    ports_clones: set[str] = set()
+    ports_unknown_in_mame: set[str] = set()
+
+    for name in ports_keys:
+        minfo = (mame or {}).get(name)
+        if not isinstance(minfo, dict):
+            ports_unknown_in_mame.add(name)
+            continue
+        if minfo.get("cloneof"):
+            ports_clones.add(name)
+        else:
+            ports_parents.add(name)
+
+    ports_parents_missing_ini: set[str] = ports_parents & ports_missing_ini
+    ports_clones_missing_ini: set[str] = ports_clones & ports_missing_ini
+    ports_unknown_missing_ini: set[str] = ports_unknown_in_mame & ports_missing_ini
+
+    # INI coverage by MAME role (are INIs mostly parents-only?)
+    ini_parents: set[str] = set()
+    ini_clones: set[str] = set()
+    ini_unknown_in_mame: set[str] = set()
+
+    for name in ini_keys:
+        minfo = (mame or {}).get(name)
+        if not isinstance(minfo, dict):
+            ini_unknown_in_mame.add(name)
+            continue
+        if minfo.get("cloneof"):
+            ini_clones.add(name)
+        else:
+            ini_parents.add(name)
+
+    # History systems that do not appear in the INI map at all
+    history_missing_ini: set[str] = history_systems - ini_keys
+
+    coverage: Dict[str, Any] = {
+        # How many GH systems have usable PORTS, by MAME role
+        "systems_with_ports_total": len(ports_keys),
+        "parents_with_ports_total": len(ports_parents),
+        "clones_with_ports_total": len(ports_clones),
+        "systems_with_ports_unknown_in_mame_total": len(ports_unknown_in_mame),
+
+        # INI coverage for systems-with-ports
+        "systems_with_ports_with_ini_total": len(ports_present_ini),
+        "systems_with_ports_missing_ini_total": len(ports_missing_ini),
+        "parents_with_ports_missing_ini_total": len(ports_parents_missing_ini),
+        "clones_with_ports_missing_ini_total": len(ports_clones_missing_ini),
+        "unknown_in_mame_with_ports_missing_ini_total": len(ports_unknown_missing_ini),
+
+        # History vs INI coverage (all systems, not just those with PORTS)
+        "history_systems_total": len(history_systems),
+        "history_systems_missing_ini_total": len(history_missing_ini),
+
+        # INI contents by MAME role
+        "ini_machines_total": len(ini_keys),
+        "ini_parents_total": len(ini_parents),
+        "ini_clones_total": len(ini_clones),
+        "ini_unknown_in_mame_total": len(ini_unknown_in_mame),
+    }
+
+    # Optionally embed concrete name lists when they are small enough to be inspectable
+    max_list = 200
+
+    if 0 < len(ports_missing_ini) <= max_list:
+        coverage["systems_with_ports_missing_ini"] = sorted(ports_missing_ini)
+
+    if 0 < len(history_missing_ini) <= max_list:
+        coverage["history_systems_missing_ini"] = sorted(history_missing_ini)
+
+    debug_log(
+        "[transform::ports] "
+        f"systems_with_ports={len(ports_keys)}, "
+        f"ports_missing_ini={len(ports_missing_ini)}, "
+        f"history_missing_ini={len(history_missing_ini)}"
+    )
+
+    return coverage
+
 def run_transformer() -> bool:
     """
     Execute the transform stage end-to-end for the **active release**.
@@ -394,6 +499,17 @@ def run_transformer() -> bool:
         systems_with_parent_clone_port_dupes_list=systems_with_parent_clone_port_dupes_list,
         gh_not_in_arcade_scope=gh_not_in_arcade_scope,
     )
+
+    # New: coverage stats showing how GH systems-with-ports intersect with
+    # MAME parent/clone roles and INI classifications.
+    ports_ini_coverage = _build_ports_ini_coverage_telemetry(
+        mame=mame,
+        parent_index=parent_index,
+        gh_ports=gh_ports,
+        gh_keys_with_ports=gh_keys_with_ports,
+        ini_map=ini_map,
+    )
+    summary_ports["ini_and_history_coverage"] = ports_ini_coverage
 
     selection_telemetry = build_selection_telemetry(
         out_map=out_map,

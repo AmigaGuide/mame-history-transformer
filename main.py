@@ -93,14 +93,6 @@ __all__ = [
 
 log = setup_logger(log_level=LOG_LEVEL)
 
-# Cache file for per-source encodings + versions
-#ENCODINGS_PATH = ENCODINGS_JSON
-
-# Note: kept for traceability; not used by other modules.
-ok_mame = False
-ok_history = False
-
-
 # ----------------------------
 # Version parsing helpers
 # ----------------------------
@@ -285,20 +277,19 @@ def version_record(raw: str) -> Dict[str, Optional[str]]:
 
 def check_required_files() -> Optional[List[Path]]:
     """
-    Ensure we have usable inputs. We now accept either:
-      - Extracted files in releases/<active>/extracted (classic),
-      - OR the two ZIP archives staged in releases/<active>/archives.
+    Ensure we have usable inputs. We now require:
+      - Two ZIP archives staged in releases/<active>/archives:
+          * one 'mame*.zip'
+          * one 'history*.zip'
 
-    Returns a list of *things found* (Paths) primarily for logging/manifest,
-    or None if nothing usable is present.
+    Returns a list of the staged ZIP Paths for logging/manifest, or None if missing.
     """
-    from mht.utils.paths import active_version, archives_dir, extracted_dir
+    from mht.utils.paths import active_version, archives_dir
     try:
         ver = active_version()
     except Exception:
         ver = None
 
-    # Preferred: staged archives
     arc = archives_dir(ver)
     mame_zip = None
     hist_zip = None
@@ -311,39 +302,15 @@ def check_required_files() -> Optional[List[Path]]:
                 if ("history" in low) and (hist_zip is None):
                     hist_zip = p
 
-    # Fallback: extracted files
-    ext = extracted_dir(ver)
-    mame_xml = ext / "mame.xml"
-    history_xml = ext / "history.xml"
-    ini_game = ext / "[GAMING HISTORY] Game Or No Game.ini"
-    ini_cat  = ext / "[GAMING HISTORY] Machine Category.ini"
-    ini_type = ext / "[GAMING HISTORY] Machine Type.ini"
-
     found: list[Path] = []
-    notes: list[str] = []
-
     if mame_zip and hist_zip:
-        notes.append("found staged archives (ZIPs)")
         found += [mame_zip, hist_zip]
-    else:
-        # accept classic extracted layout if present
-        missing = []
-        for f in (mame_xml, history_xml, ini_game, ini_cat, ini_type):
-            if f.exists():
-                found.append(f)
-            else:
-                missing.append(f.name)
-        if missing and not (mame_zip and hist_zip):
-            log.error("Missing required files (ZIPs or extracted).")
-            if not (mame_zip and hist_zip):
-                log.error("  - Expect two ZIPs in releases/<ver>/archives: one 'mame*.zip' and one 'history*.zip'")
-            log.error("  - Or provide extracted: mame.xml, history.xml and three GH INIs in releases/<ver>/extracted/")
-            return None
-        else:
-            notes.append("using extracted files")
+        log.info("All required inputs present (staged archives).")
+        return found
 
-    log.info("All required inputs present (%s).", ", ".join(notes))
-    return found
+    log.error("Missing required archives in releases/<ver>/archives.")
+    log.error("  - Expect one 'mame*.zip' and one 'history*.zip'")
+    return None
 
 def get_xml_version(file_path: Path, root_tag: str) -> str:
     """
@@ -467,10 +434,11 @@ def main() -> None:
     )
 
     # Normalise encodings for downstream modules: {leaf -> "utf-8"/...}
-    encodings = {}
-    for leaf, rec in encodings_dict.items():
-        if isinstance(rec, dict):
-            encodings[leaf] = rec.get("encoding") or "utf-8"
+    encodings = {
+        leaf: (rec.get("encoding") or "utf-8")
+        for leaf, rec in encodings_dict.items()
+        if isinstance(rec, dict)
+    }
 
     # Persist per-release cache
     # Always write when:
@@ -490,7 +458,7 @@ def main() -> None:
     else:
         log.info("Encodings unchanged; reusing per-release cache: %s", enc_cache_path.as_posix())
 
-    updated_encodings = encodings_dict  # keep your alias for downstream usage
+    #updated_encodings = encodings_dict  # keep your alias for downstream usage
 
     # Version consistency report (use the raw hints we recorded under xml_root_attrs/ini_header)
     def _raw_version_from_record(leaf: str) -> str:
@@ -541,7 +509,7 @@ def main() -> None:
 
     # Pass encodings to downstream modules (filename -> encoding)
     encodings = {k: v.get("encoding", "utf-8")
-                 for k, v in updated_encodings.items()
+                 for k, v in encodings_dict.items()
                  if isinstance(v, dict)}
 
     # ---------------- HISTORY .ini parse ----------------
@@ -591,11 +559,11 @@ def main() -> None:
         # Attach visible versions from encodings cache where available (by leaf name)
         meta["sources"] = []
         for leaf in (ini_game_path().name, ini_category_path().name, ini_type_path().name):
-            vrec = ((updated_encodings.get(leaf) or {}).get("version") or {})
+            vrec = ((encodings_dict.get(leaf) or {}).get("version") or {})
             src = {"leaf": leaf}
             if vrec:
                 src["version"] = {k: vrec[k] for k in ("raw", "numeric_core", "suffix") if vrec.get(k)}
-            enc = ((updated_encodings.get(leaf) or {}).get("encoding")) or "utf-8"
+            enc = ((encodings_dict.get(leaf) or {}).get("encoding")) or "utf-8"
             src["encoding"] = enc
             meta["sources"].append(src)
 

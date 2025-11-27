@@ -71,13 +71,6 @@ __all__ = [
     "load_ini_classifications",
 ]
 
-def _ini_input_paths() -> dict[str, Path]:
-    """Resolve the three INI input paths for the ACTIVE release at call time."""
-    return {
-        "game_status": ini_game_path(),
-        "category":    ini_category_path(),
-        "type":        ini_type_path(),
-    }
 
 # --- ZIP-only helpers ---------------------------------------------------------
 
@@ -237,7 +230,7 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     # Warnings-only invariants
     ini_issues = validate_ini_parsed_bundle(parsed, log)
     if ini_issues == 0:
-        debug_log("[history_metadata] INI invariants passed (ZIP-only)")
+        debug_log("[history_ini_parser] INI invariants passed (ZIP-only)")
 
     # Build docs
     summary   = build_ini_summary(parsed, now_iso)
@@ -253,15 +246,15 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
 
         # Inputs (three INIs) from encodings cache
         enc_cache_path = encodings_cache_path(ver)  # data/releases/<ver>/encodings.json
-        enc_cache     = load_encodings_cache(enc_cache_path)
-        leaf_game     = ini_game_path(ver).name
-        leaf_category = ini_category_path(ver).name
-        leaf_type     = ini_type_path(ver).name
+        enc_cache_file = load_encodings_cache(enc_cache_path)
+        leaf_game      = ini_game_path(ver).name
+        leaf_category  = ini_category_path(ver).name
+        leaf_type      = ini_type_path(ver).name
 
         inputs_detail = [
-            _ini_input_from_cache(enc_cache, leaf_game, kind="ini_game"),
-            _ini_input_from_cache(enc_cache, leaf_category, kind="ini_category"),
-            _ini_input_from_cache(enc_cache, leaf_type, kind="ini_type"),
+            _ini_input_from_cache(enc_cache_file, leaf_game, kind="ini_game"),
+            _ini_input_from_cache(enc_cache_file, leaf_category, kind="ini_category"),
+            _ini_input_from_cache(enc_cache_file, leaf_type, kind="ini_type"),
         ]
                         
         # Outputs meta
