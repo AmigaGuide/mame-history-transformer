@@ -11,6 +11,47 @@ All notable changes to this project will be documented here.
 
 ---
 
+## [1.2.1] – 2025-11-27
+
+### Added
+
+* **Clone classification inheritance**
+  - Clones now inherit their parent’s INI classification (`game_status`, `category`, `type`)
+    when they do not appear in the GH INI files.
+  - Ensures consistent metadata for clones in `exotica_lit_raw_data.json`,
+    `exotica_lit_wiki.json`, and the wiki page/redirect generator.
+  - No changes to `gh_ini_classifications.json` (remains a faithful reflection of
+    the actual GH INI files, which appear to be parent-only in recent releases).
+
+* **INI vs History coverage telemetry**
+  - New detailed reporting in `transform_summary.json` showing:
+    - Total GH systems with GH PORTS rows.
+    - Counts of parents vs clones with ports.
+    - Which systems lack INI coverage.
+    - Parent-only nature of new GH INIs.
+  - Helps detect when GH reduces or alters INI coverage between releases.
+
+### Changed
+
+* Transform stage now expands the INI map in-memory to include inherited clone classifications.
+* Classification lookup (`classify`) now transparently uses inherited values without altering on-disk INI outputs.
+* Cleaner separation between raw INI source data and transform-time classification semantics.
+
+### Fixed
+
+* Clones previously appeared with `"game_status": "unknown"` even when their
+  parent had correct INI flags.
+* Raw JSON outputs now correctly reflect inherited classification for all clones.
+
+### Notes
+
+* This change was triggered by the discovery that recent Gaming-History INI
+  files have dropped clone entries entirely, supplying only parent classifications.
+* Behaviour remains backward compatible: the canonical INI output is unchanged,
+  and inherited values are applied only in the transform stage.
+
+---
+
 ## [1.2.0] – 2025-11-09
 
 ### Added

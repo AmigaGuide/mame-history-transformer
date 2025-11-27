@@ -48,6 +48,18 @@ Some tests are intentionally strict: they surface upstream anomalies (e.g., odd 
 * **Path normalisation:** JSON and stamps record paths with `as_posix()` for stable, cross-platform diffs.
 * **Releases index:** `data/releases_index.json` summarises staged archives, outputs, summaries and encodings per release.
 
+
+### **Classification behaviour (GH INIs are now parent-only)**
+
+Recent Gaming-History INI files no longer include clone machine names.
+To preserve stable behaviour:
+
+* `gh_ini_classifications.json` remains a **faithful reflection** of the actual GH INI files (parents-only).
+* During the **transform stage**, clones now automatically **inherit their parent’s classification** (`game_status`, `category`, `type`) if they have no own entry.
+* This ensures clone metadata in the final ExoticA datasets always reflects the intended class of the parent, even if GH later changes INI structure again.
+
+This is entirely backward compatible and does not affect stamp freshness: the inheritance occurs only in memory during the transform stage.
+
 ---
 
 ## Data layout (per release)
@@ -100,6 +112,8 @@ data/
   * `history_parsing_summary.json`
   * `ini_parsing_summary.json`
   * `transform_summary.json`
+
+* Clone classifications are inherited automatically during the transform stage when absent in GH INIs (see notes under “What’s new in v2”).
 
 ---
 
@@ -247,3 +261,4 @@ JSON writes use `utils.io.write_json` which pretty-prints and sorts keys by defa
 * Paths written into JSON are normalised with `as_posix()` for consistent diffs on Windows/macOS/Linux.
 * Title overrides (when needed) live in `data/title_overrides.json`.
 * The project prefers additive, non-breaking schema evolution. Legacy aliases are kept for at least one cycle when fields move or are renamed.
+* The GH INI files in recent releases appear to contain only parent entries. The pipeline preserves raw INI content but applies classification inheritance for clones during the transform phase to maintain stable semantics for ExoticA.
