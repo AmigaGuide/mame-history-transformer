@@ -15,15 +15,53 @@
     <div>
       <h1>{{ wiki_page_name }}</h1>
 
+      {# Opening sentence only #}
       <p class="lead">
         {{ opening_sentence }}
-        {% if overview_text %}
-          {{ overview_text }}
-        {% endif %}
       </p>
 
-      {% if description %}
-        <p class="muted">MAME description: {{ description }}</p>
+      {# Full overview section (all blocks, in order), but no "Overview" heading #}
+      {% if overview_blocks %}
+        {% for block in overview_blocks %}
+          {% set kind = block.kind or block.type %}
+
+          {% if kind == "bullet_list" %}
+            {% set items = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
+            <ul>
+              {% for item in items %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+
+          {% elif kind == "numbered_list" %}
+            {% set items = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
+            <ol>
+              {% for item in items %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ol>
+
+          {% elif kind == "pair" or kind == "pairs" %}
+            {% set pairs = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
+            <dl>
+              {% for pair in pairs %}
+                {% if pair is mapping %}
+                  {% set label = pair.get("label") %}
+                  {% set value = pair.get("value") %}
+                {% else %}
+                  {% set label = pair.label if pair.label is defined else "" %}
+                  {% set value = pair.value if pair.value is defined else "" %}
+                {% endif %}
+                <dt>{{ label }}</dt>
+                <dd>{{ value }}</dd>
+              {% endfor %}
+            </dl>
+
+          {% else %}
+            {% set text = block.text if block.text is defined else block.value %}
+            <p>{{ text }}</p>
+          {% endif %}
+        {% endfor %}
       {% endif %}
 
       {% if mame_titles_display %}
@@ -35,32 +73,48 @@
         </pre>
       {% endif %}
 
+      {# Remaining trivia sections (overview already removed on the server) #}
       {% for section in trivia_sections %}
         <h2>{{ section.name }}</h2>
 
         {% for block in section.blocks %}
           {% set kind = block.kind or block.type %}
+
           {% if kind == "bullet_list" %}
+            {% set items = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
             <ul>
-              {% for item in block.items %}
+              {% for item in items %}
                 <li>{{ item }}</li>
               {% endfor %}
             </ul>
+
           {% elif kind == "numbered_list" %}
+            {% set items = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
             <ol>
-              {% for item in block.items %}
+              {% for item in items %}
                 <li>{{ item }}</li>
               {% endfor %}
             </ol>
+
           {% elif kind == "pair" or kind == "pairs" %}
+            {% set pairs = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
             <dl>
-              {% for pair in block.items %}
-                <dt>{{ pair.label }}</dt>
-                <dd>{{ pair.value }}</dd>
+              {% for pair in pairs %}
+                {% if pair is mapping %}
+                  {% set label = pair.get("label") %}
+                  {% set value = pair.get("value") %}
+                {% else %}
+                  {% set label = pair.label if pair.label is defined else "" %}
+                  {% set value = pair.value if pair.value is defined else "" %}
+                {% endif %}
+                <dt>{{ label }}</dt>
+                <dd>{{ value }}</dd>
               {% endfor %}
             </dl>
+
           {% else %}
-            <p>{{ block.text or block.value }}</p>
+            {% set text = block.text if block.text is defined else block.value %}
+            <p>{{ text }}</p>
           {% endif %}
         {% endfor %}
       {% endfor %}
@@ -79,25 +133,68 @@
       <h2>{{ wiki_page_name }}</h2>
       <table>
         {% if record.year is not none %}
-        <tr><th>Year</th><td>{{ record.year }}</td></tr>
+        <tr>
+          <th>Year</th>
+          <td>{{ record.year }}</td>
+        </tr>
         {% endif %}
+
         {% if record.manufacturer %}
-        <tr><th>Manufacturer</th><td>{{ record.manufacturer }}</td></tr>
+        <tr>
+          <th>Manufacturer</th>
+          <td>{{ record.manufacturer }}</td>
+        </tr>
         {% endif %}
-        {% if record.roms_display %}
-        <tr><th>ROMs</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.roms_display }}</pre></td></tr>
-        {% endif %}
-        {% if record.chips_display %}
-        <tr><th>Hardware</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.chips_display }}</pre></td></tr>
-        {% endif %}
-        {% if record.displays_display %}
-        <tr><th>Display</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.displays_display }}</pre></td></tr>
-        {% endif %}
-        {% if record.controls_display %}
-        <tr><th>Controls</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.controls_display }}</pre></td></tr>
-        {% endif %}
+
         {% if record.gh_ids %}
-        <tr><th>Gaming-History IDs</th><td>{{ record.gh_ids|join(", ") if record.gh_ids is iterable else record.gh_ids }}</td></tr>
+        <tr>
+          <th>GH IDs</th>
+          <td>{{ record.gh_ids|join(", ") if record.gh_ids is iterable else record.gh_ids }}</td>
+        </tr>
+        {% endif %}
+
+        {% if record.roms_display %}
+        <tr>
+          <th>ROMs</th>
+          <td>
+            <pre>
+{{ record.roms_display }}
+            </pre>
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if record.chips_display %}
+        <tr>
+          <th>Hardware</th>
+          <td>
+            <pre>
+{{ record.chips_display }}
+            </pre>
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if record.displays_display %}
+        <tr>
+          <th>Display</th>
+          <td>
+            <pre>
+{{ record.displays_display }}
+            </pre>
+          </td>
+        </tr>
+        {% endif %}
+
+        {% if record.controls_display %}
+        <tr>
+          <th>Controls</th>
+          <td>
+            <pre>
+{{ record.controls_display }}
+            </pre>
+          </td>
+        </tr>
         {% endif %}
       </table>
     </aside>

@@ -4,11 +4,14 @@
     <meta charset="utf-8">
     <title>{% block title %}MAME-History-Transformer Preview{% endblock %}</title>
     <style>
+      /* Base (light) theme defaults */
+
       body {
         font-family: sans-serif;
         margin: 0;
         padding: 0;
         background: #f5f5f5;
+        color: #000000;
       }
       header {
         background: #20232a;
@@ -29,13 +32,14 @@
         text-decoration: underline;
       }
       main {
-        max-width: 1100px;
-        margin: 1rem auto 2rem auto;
-        padding: 0 1rem;
+        width: 100%;
+        margin: 1rem 0 2rem 0;
+        padding: 0 1.5rem;
+        box-sizing: border-box;
       }
       .layout {
         display: grid;
-        grid-template-columns: minmax(0, 2.4fr) minmax(260px, 1fr);
+        grid-template-columns: minmax(0, 1fr) auto;
         gap: 1.5rem;
         align-items: flex-start;
       }
@@ -50,22 +54,29 @@
         text-align: center;
       }
       .infobox table {
-        width: 100%;
         border-collapse: collapse;
+        width: auto; /* table width driven by content */
       }
       .infobox th,
       .infobox td {
         border-top: 1px solid #ddd;
         padding: 0.25rem 0.3rem;
         vertical-align: top;
+        white-space: nowrap; /* avoid wrapping in both columns */
       }
       .infobox th {
         text-align: left;
-        width: 40%;
         font-weight: bold;
       }
       .infobox td {
         text-align: left;
+      }
+      .infobox pre {
+        margin: 0;
+        white-space: pre; /* preserve spacing/line breaks; no wrapping */
+        font-family: inherit;
+        font-size: 0.9rem;
+        line-height: 1.4;
       }
       h1 {
         margin-top: 0.4rem;
@@ -86,8 +97,9 @@
         background: #ffffff;
         border: 1px solid #ddd;
         padding: 0.5rem 0.75rem;
-        font-family: monospace;
-        font-size: 0.85rem;
+        font-family: inherit;
+        font-size: 0.9rem;
+        line-height: 1.4;
         white-space: pre-wrap;
       }
       .search-form {
@@ -104,13 +116,72 @@
         text-align: left;
       }
       .muted {
-        color: #666;
+        color: #666666;
         font-size: 0.9rem;
       }
       .summary-block {
         background: #ffffff;
         border: 1px solid #ddd;
         padding: 0.75rem;
+      }
+
+      /* Header right side: toggle + search */
+
+      .nav-right {
+        display: flex;
+        align-items: centre;
+        gap: 0.5rem;
+      }
+      #theme-toggle {
+        padding: 0.25rem 0.6rem;
+        font-size: 0.85rem;
+        border-radius: 3px;
+        border: 1px solid #61dafb;
+        background: transparent;
+        color: #ffffff;
+        cursor: pointer;
+      }
+      #theme-toggle:focus {
+        outline: 2px solid #61dafb;
+        outline-offset: 1px;
+      }
+
+      /* Dark theme overrides */
+
+      body.theme-dark {
+        background: #121212;
+        color: #e0e0e0;
+      }
+      body.theme-dark header {
+        background: #111111;
+        color: #f5f5f5;
+      }
+      body.theme-dark header a {
+        color: #8fdcff;
+      }
+      body.theme-dark .infobox {
+        background: #1e1e1e;
+        border-color: #444444;
+      }
+      body.theme-dark .infobox th,
+      body.theme-dark .infobox td {
+        border-top-color: #444444;
+      }
+      body.theme-dark .ports-block,
+      body.theme-dark .summary-block {
+        background: #1e1e1e;
+        border-color: #444444;
+      }
+      body.theme-dark .muted {
+        color: #aaaaaa;
+      }
+      body.theme-dark #theme-toggle {
+        border-color: #8fdcff;
+        color: #f5f5f5;
+      }
+      body.theme-dark .search-results th,
+      body.theme-dark .search-results td {
+        border-bottom-color: #333333;
       }
     </style>
   </head>
@@ -120,7 +191,8 @@
         <div>
           {% block nav_left %}{% endblock nav_left %}
         </div>
-        <div>
+        <div class="nav-right">
+          <button type="button" id="theme-toggle">Dark mode</button>
           <form action="{{ url_for('search') }}" method="get" class="search-form">
             <input type="text" name="q" placeholder="Search by MAME name…" value="{{ request.args.get('q', '') }}">
             <button type="submit">Search</button>
@@ -131,5 +203,56 @@
     <main>
       {% block content %}{% endblock content %}
     </main>
+
+    <script>
+      (function () {
+        var storageKey = "mht_theme";
+        var body = document.body;
+        var toggle = document.getElementById("theme-toggle");
+
+        function applyTheme(theme) {
+          body.classList.remove("theme-light", "theme-dark");
+          if (theme === "dark") {
+            body.classList.add("theme-dark");
+          } else {
+            body.classList.add("theme-light");
+          }
+          toggle.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+        }
+
+        function detectInitialTheme() {
+          var stored = null;
+          try {
+            stored = window.localStorage.getItem(storageKey);
+          } catch (e) {
+            stored = null;
+          }
+
+          if (stored === "light" || stored === "dark") {
+            return stored;
+          }
+
+          if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            return "dark";
+          }
+          return "light";
+        }
+
+        var currentTheme = detectInitialTheme();
+        applyTheme(currentTheme);
+
+        if (toggle) {
+          toggle.addEventListener("click", function () {
+            currentTheme = currentTheme === "dark" ? "light" : "dark";
+            applyTheme(currentTheme);
+            try {
+              window.localStorage.setItem(storageKey, currentTheme);
+            } catch (e) {
+              /* ignore storage errors */
+            }
+          });
+        }
+      })();
+    </script>
   </body>
 </html>

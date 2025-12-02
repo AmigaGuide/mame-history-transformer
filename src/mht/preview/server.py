@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
-from flask import Flask, abort, redirect, render_template, request, url_for
+from flask import Flask, abort, render_template, request
 
 from mht.utils.config import WEB_PREVIEW_PORT, WEB_PREVIEW_AUTO_OPEN
 from mht.utils.logger import setup_logger
@@ -56,6 +56,7 @@ def _load_json(path: Path, label: str) -> Dict[str, Any]:
 def _find_trivia_path() -> Path:
     """Return the trivia path for the active release."""
     return gh_system_trivia_path()
+
 
 def _normalise_trivia_root(doc: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -138,7 +139,6 @@ def create_app(preview_data: PreviewData) -> Flask:
         next_m = order[idx + 1] if idx < len(order) - 1 else order[0]
         return prev_m, next_m
 
-    # Make prev/next available to templates
     @app.context_processor
     def inject_nav_helpers() -> Dict[str, Any]:
         return {"preview_machine_order": preview_data.machine_order}
@@ -173,7 +173,7 @@ def create_app(preview_data: PreviewData) -> Flask:
         # Prev / next navigation
         prev_m, next_m = _prev_next(machine)
 
-        # Description from MAME (raw)
+        # Description from MAME (raw) – currently only used on the search page.
         mame_info = pd.mame_machines.get(machine) or {}
         raw_description = mame_info.get("description") or ""
 
@@ -192,46 +192,70 @@ def create_app(preview_data: PreviewData) -> Flask:
             opening_parts.append(".")
         opening_sentence = " ".join(opening_parts)
 
-        # Trivia for this machine
-        trivia = pd.trivia_by_machine.get(machine) or {}
+        # ------------------------------------------------------------------ trivia / overview
 
-        # Try to find an "Overview" section (list of blocks)
-        overview_text: Optional[str] = None
+        trivia_root = pd.trivia_by_machine.get(machine) or {}
+        sections_map: Dict[str, Any] = {}
+
+        if isinstance(trivia_root, dict):
+            # Preferred shape: { "gh_id": ..., "sections_raw": {...}, "sections": {...} }
+            if isinstance(trivia_root.get("sections"), dict):
+                sections_map = trivia_root["sections"]
+            else:
+                # Fallback: older shape where section names map directly to lists/blocks.
+                sections_map = {
+                    k: v for k, v in trivia_root.items()
+                    if isinstance(v, (list, dict))
+                }
+
+        overview_blocks: List[Dict[str, Any]] = []
         overview_section_key: Optional[str] = None
 
-        for sec_name, blocks in trivia.items():
-            if isinstance(blocks, list) and sec_name.lower() == "overview":
-                overview_section_key = sec_name
-                # Take the first paragraph-like block as overview
-                for blk in blocks:
-                    if not isinstance(blk, dict):
-                        continue
-                    kind = blk.get("kind") or blk.get("type")
-                    text = blk.get("text") or blk.get("value")
-                    if (kind in (None, "paragraph")) and isinstance(text, str):
-                        overview_text = text
-                        break
-                break
+        # Extract the full ordered list of blocks from the "overview" section, if present.
+        for sec_name, sec_value in sections_map.items():
+            if sec_name.lower() != "overview":
+                continue
 
-        # Trivia sections: only include entries whose value is a list
-        # (skip scalar/meta entries entirely)
+            overview_section_key = sec_name
+
+            # Newer shape: section is a dict with "blocks".
+            if isinstance(sec_value, dict) and isinstance(sec_value.get("blocks"), list):
+                overview_blocks = list(sec_value["blocks"])
+            # Fallback: section is already a list of blocks.
+            elif isinstance(sec_value, list):
+                overview_blocks = list(sec_value)
+
+            break  # only consider the first matching "overview" section
+
+        # Build trivia_sections for the template, excluding the overview section entirely.
         trivia_sections: List[Dict[str, Any]] = []
-        for sec_name, blocks in trivia.items():
-            # Skip the overview section if we already folded it into the intro
+
+        for sec_name, sec_value in sections_map.items():
             if overview_section_key and sec_name == overview_section_key:
                 continue
-            if not isinstance(blocks, list):
-                # e.g. numeric counters or other metadata – not a real section
+
+            if isinstance(sec_value, dict) and isinstance(sec_value.get("blocks"), list):
+                blocks = list(sec_value["blocks"])
+            elif isinstance(sec_value, list):
+                blocks = list(sec_value)
+            else:
+                continue  # unsupported shape; skip
+
+            if not blocks:
                 continue
-            trivia_sections.append({"name": sec_name, "blocks": blocks})
 
-        # Ports section (from wiki output) – last on the page
+            trivia_sections.append(
+                {
+                    "name": sec_name,
+                    "blocks": blocks,
+                }
+            )
+
+        # ------------------------------------------------------------------ ports and titles
+
         ports_display = rec.get("ports_display") or []
-
-        # MAME title display block (e.g. multiple titles)
         mame_titles_display = rec.get("mame_titles_display")
 
-        # Infobox fields: we just pass the record through, templates decide
         return render_template(
             "game.html",
             machine=machine,
@@ -239,14 +263,14 @@ def create_app(preview_data: PreviewData) -> Flask:
             next_machine=next_m,
             wiki_page_name=wiki_page_name,
             opening_sentence=opening_sentence,
-            overview_text=overview_text,
+            overview_blocks=overview_blocks,
             description=raw_description,
             record=rec,
             mame_titles_display=mame_titles_display,
             trivia_sections=trivia_sections,
             ports_display=ports_display,
         )
-    
+
     @app.route("/search")
     def search() -> str:
         q = (request.args.get("q") or "").strip()
@@ -318,7 +342,7 @@ def run_preview(port: int | None = None, auto_open: Optional[bool] = None) -> No
             webbrowser.open(url)
         threading.Timer(0.8, _open_browser).start()
 
-    # Use reloader=False so we don't double-load data.
+    # Use reloader=False so we do not double-load data.
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
 
 
