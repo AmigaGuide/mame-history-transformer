@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Search – MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <a href="{{ url_for('home') }}">Home</a>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>Search results</h1>
+
+  {% if not query %}
+    <p class="muted">Enter a MAME shortname in the search box above.</p>
+  {% else %}
+    <p class="muted">
+      Query: <strong>{{ query }}</strong>.
+      {% if results %}
+        {{ results|length }} result{{ "" if results|length == 1 else "s" }} found.
+      {% else %}
+        No results.
+      {% endif %}
+    </p>
+
+    {% if results %}
+      <div class="search-results">
+        <table>
+          <thead>
+            <tr>
+              <th>MAME name</th>
+              <th>Description</th>
+              <th>Year</th>
+              <th>Manufacturer</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in results %}
+              <tr>
+                <td><a href="{{ url_for('game', machine=r.machine) }}">{{ r.machine }}</a></td>
+                <td>{{ r.description }}</td>
+                <td>{{ r.year or "" }}</td>
+                <td>{{ r.manufacturer or "" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endblock content %}

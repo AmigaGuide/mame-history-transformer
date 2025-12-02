@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}MHT Preview – Release {{ version }}{% endblock %}
+
+{% block nav_left %}
+  <strong>MHT Preview</strong> – active release: {{ version }}
+  &nbsp;|&nbsp;
+  <a href="{{ url_for('home') }}">Home</a>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>MAME-History-Transformer Preview</h1>
+  <p class="lead">
+    This temporary web view lets you browse ExoticA-ready data for the active release
+    and spot anomalies before publishing to the real Lost in Translation wiki.
+  </p>
+
+  <div class="summary-block">
+    <h2>Transform summary (excerpt)</h2>
+    <p class="muted">Total included parent records: {{ summary.selection.included_parents_total if summary.selection is defined and summary.selection.included_parents_total is defined else "unknown" }}.</p>
+    <p class="muted">Total games in wiki output: {{ total_games }}.</p>
+
+    {% if summary.ports %}
+      <h3>PORTS coverage</h3>
+      <ul>
+        <li>GH arcade entries with ports: {{ summary.ports.gh_arcade_entries_with_ports_total or "unknown" }}</li>
+        <li>Included parents with own ports: {{ summary.ports.included_parents_with_own_ports.count or "unknown" }}</li>
+        <li>Clones with ports: {{ summary.ports.included_clones_with_ports.count or "unknown" }}</li>
+        <li>GH systems with ports but outside Arcade/Game scope: {{ summary.ports.gh_arcade_entries_with_ports_excluded_by_ini.count or "unknown" }}</li>
+      </ul>
+    {% endif %}
+  </div>
+
+  <p style="margin-top:1rem;">
+    Use the search box in the header to find a game by MAME shortname.
+  </p>
+{% endblock content %}

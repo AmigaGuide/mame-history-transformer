@@ -43,6 +43,8 @@ from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDA
 from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
+from mht.utils import config as mht_config
+from mht.preview.server import run_preview
 
 
 def _print_active_banner() -> None:
@@ -407,6 +409,24 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     print("Validation OK")
     return 0
+
+# --------------------------------------------------------------------------------------
+# Preview web server
+# --------------------------------------------------------------------------------------
+
+def cmd_preview(args: argparse.Namespace) -> int:
+    """
+    Launch the local web preview server for the active release.
+
+    This uses exotica_lit_wiki.json, gh_system_trivia.json and
+    mame_machines.json for the active version, plus transform_summary.json.
+    """
+    try:
+        run_preview()  # server.py will use WEB_PREVIEW_PORT / WEB_PREVIEW_AUTO_OPEN
+        return 0
+    except KeyboardInterrupt:
+        print("\nPreview server stopped by user.")
+        return 0
 
 # --------------------------------------------------------------------------------------
 # Run (delegate to your existing main.py)
@@ -810,7 +830,14 @@ def main() -> None:
         help="Limit validation to one or more of: " + ", ".join(sorted(VALIDATION_REGISTRY.keys())),
     )
     s_validate.set_defaults(func=cmd_validate)
-    
+
+    # preview
+    s_preview = sub.add_parser(
+        "preview",
+        help="Launch a local read-only web preview for the active release",
+    )
+    s_preview.set_defaults(func=cmd_preview)
+
     # incoming
     s_incoming = sub.add_parser("incoming", help="Manage incoming ZIP archives")
     s_incoming_sub = s_incoming.add_subparsers(dest="subcmd", required=False)

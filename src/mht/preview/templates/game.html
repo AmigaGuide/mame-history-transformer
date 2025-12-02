@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}{{ wiki_page_name }} – MHT Preview{% endblock %}
+
+{% block nav_left %}
+  ← Previous (<a href="{{ url_for('game', machine=prev_machine) }}">{{ prev_machine }}</a>)
+  &nbsp;&nbsp;
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;&nbsp;
+  Next (<a href="{{ url_for('game', machine=next_machine) }}">{{ next_machine }}</a>) →
+{% endblock nav_left %}
+
+{% block content %}
+  <div class="layout">
+    <div>
+      <h1>{{ wiki_page_name }}</h1>
+
+      <p class="lead">
+        {{ opening_sentence }}
+        {% if overview_text %}
+          {{ overview_text }}
+        {% endif %}
+      </p>
+
+      {% if description %}
+        <p class="muted">MAME description: {{ description }}</p>
+      {% endif %}
+
+      {% if mame_titles_display %}
+        <h2>MAME titles</h2>
+        <pre class="ports-block">
+{% for line in mame_titles_display %}
+{{ line }}
+{% endfor %}
+        </pre>
+      {% endif %}
+
+      {% for section in trivia_sections %}
+        <h2>{{ section.name }}</h2>
+
+        {% for block in section.blocks %}
+          {% set kind = block.kind or block.type %}
+          {% if kind == "bullet_list" %}
+            <ul>
+              {% for item in block.items %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% elif kind == "numbered_list" %}
+            <ol>
+              {% for item in block.items %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ol>
+          {% elif kind == "pair" or kind == "pairs" %}
+            <dl>
+              {% for pair in block.items %}
+                <dt>{{ pair.label }}</dt>
+                <dd>{{ pair.value }}</dd>
+              {% endfor %}
+            </dl>
+          {% else %}
+            <p>{{ block.text or block.value }}</p>
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+
+      {% if ports_display %}
+        <h2>Ports</h2>
+        <div class="ports-block">
+{% for line in ports_display %}
+{{ line }}
+{% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <aside class="infobox">
+      <h2>{{ wiki_page_name }}</h2>
+      <table>
+        {% if record.year is not none %}
+        <tr><th>Year</th><td>{{ record.year }}</td></tr>
+        {% endif %}
+        {% if record.manufacturer %}
+        <tr><th>Manufacturer</th><td>{{ record.manufacturer }}</td></tr>
+        {% endif %}
+        {% if record.roms_display %}
+        <tr><th>ROMs</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.roms_display }}</pre></td></tr>
+        {% endif %}
+        {% if record.chips_display %}
+        <tr><th>Hardware</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.chips_display }}</pre></td></tr>
+        {% endif %}
+        {% if record.displays_display %}
+        <tr><th>Display</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.displays_display }}</pre></td></tr>
+        {% endif %}
+        {% if record.controls_display %}
+        <tr><th>Controls</th><td><pre style="margin:0; white-space:pre-wrap;">{{ record.controls_display }}</pre></td></tr>
+        {% endif %}
+        {% if record.gh_ids %}
+        <tr><th>Gaming-History IDs</th><td>{{ record.gh_ids|join(", ") if record.gh_ids is iterable else record.gh_ids }}</td></tr>
+        {% endif %}
+      </table>
+    </aside>
+  </div>
+{% endblock content %}

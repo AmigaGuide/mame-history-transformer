@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Not found – MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <a href="{{ url_for('home') }}">Home</a>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>Not found</h1>
+  <p>The requested game could not be found. Try searching by MAME shortname.</p>
+{% endblock content %}
