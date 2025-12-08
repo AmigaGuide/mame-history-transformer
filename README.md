@@ -1,10 +1,20 @@
-# MAME-History-Transformer
+# MAME-History-Transformer (MHT)
 
-**Lineage:** this repository mirrors the full history of the TM470 EMA project (tag: `tm470-ema-2025`) and continues as a modular v2.
+MAME-History-Transformer (MHT) is a modular Python toolkit for parsing, validating
+and transforming metadata from:
 
-This repository contains code developed for the Open University TM470 project:
+- **MAME XML** (structured machine, ROM, chip, display and control data)
+- **Gaming-History XML** (semi-structured trivia, including ports and developer notes)
+- **Gaming-History INI files** (classification lists for parent machines)
 
-**“Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation.”**
+The transformer produces ExoticA-ready JSON for the *Lost in Translation* wiki,
+along with provenance summaries, version tracking and diagnostics for large-scale
+metadata analysis.
+
+**Lineage:** MHT began life as an Open University TM470 project  
+(**“Adapting MAME and Gaming-History XML Metadata for ExoticA’s Lost in Translation.”**).  
+The EMA submission snapshot is tagged as `tm470-ema-2025` (also tagged `v1.0.0`) on the
+`main` branch. The `v2` branch continues active development.
 
 ---
 
