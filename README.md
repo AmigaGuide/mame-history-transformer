@@ -272,3 +272,10 @@ JSON writes use `utils.io.write_json` which pretty-prints and sorts keys by defa
 * Title overrides (when needed) live in `data/title_overrides.json`.
 * The project prefers additive, non-breaking schema evolution. Legacy aliases are kept for at least one cycle when fields move or are renamed.
 * The GH INI files in recent releases appear to contain only parent entries. The pipeline preserves raw INI content but applies classification inheritance for clones during the transform phase to maintain stable semantics for ExoticA.
+
+## Licence
+
+This project is licensed under the 
+[Creative Commons Attribution–NonCommercial 4.0 International License](https://creativecommons.org/licenses/by-nc/4.0/).
+
+Copyright © 2025 Jason "XtC" Skelly.
