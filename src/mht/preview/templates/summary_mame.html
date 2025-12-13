@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}MAME summary – MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <strong>MHT Preview</strong>
+  &nbsp;|&nbsp;
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp;
+  <a href="{{ url_for('summary_mame') }}">MAME summary</a>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>MAME parsing summary</h1>
+
+  {% if header %}
+    <div class="summary-block">
+      <h2>Header</h2>
+      <ul>
+        <li>schema_id: {{ header.schema_id or "unknown" }}</li>
+        <li>schema_version: {{ header.schema_version or "unknown" }}</li>
+        <li>generated_at: {{ header.generated_at or "unknown" }}</li>
+      </ul>
+
+      {% if header.versions %}
+        <h3>Versions</h3>
+        <ul>
+          {% for k, v in header.versions.items() %}
+            <li>{{ k }}: {{ v }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if totals %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Totals</h2>
+      <ul>
+        {% for k, v in totals.items() %}
+          {% if v is mapping %}
+            <li>{{ k }}: (mapping)</li>
+          {% elif v is sequence and v is not string %}
+            <li>{{ k }}: (list, {{ v|length }} items)</li>
+          {% else %}
+            <li>{{ k }}: {{ v }}</li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+      <p class="muted">
+        Note: distributions and example lists are shown further down the page where present.
+      </p>
+    </div>
+  {% endif %}
+
+  {% if distributions %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Distributions</h2>
+      {% for title, dist in distributions %}
+        <h3>{{ title }}</h3>
+        {% if dist %}
+          <table class="search-results">
+            <thead>
+              <tr><th>Key</th><th>Count</th></tr>
+            </thead>
+            <tbody>
+              {% for k, v in dist %}
+                <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted">No data.</p>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+	{% if example_groups %}
+	  <div class="summary-block" style="margin-top:1rem;">
+		<h2>Examples</h2>
+		{% for eg in example_groups %}
+		  <h3>{{ eg.title }}</h3>
+		  {% if eg["items"] %}
+			<ul>
+			  {% for item in eg["items"] %}
+				<li>{{ item }}</li>
+			  {% endfor %}
+			</ul>
+		  {% else %}
+			<p class="muted">No examples.</p>
+		  {% endif %}
+		{% endfor %}
+	  </div>
+	{% endif %}
+
+
+  {% if raw_json %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Raw JSON</h2>
+      <p class="muted">
+        This is the full summary document for reference (read-only).
+      </p>
+      <pre class="ports-block">{{ raw_json }}</pre>
+    </div>
+  {% endif %}
+{% endblock content %}

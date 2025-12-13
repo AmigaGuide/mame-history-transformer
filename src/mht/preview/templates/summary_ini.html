@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Gaming-History INI summary – MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <strong>MHT Preview</strong>
+  &nbsp;|&nbsp;
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp;
+  <a href="{{ url_for('summary_ini') }}">GH INI summary</a>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>Gaming-History INI parsing summary</h1>
+
+  {% if header %}
+    <div class="summary-block">
+      <h2>Header</h2>
+      <ul>
+        <li>schema_id: {{ header.schema_id or "unknown" }}</li>
+        <li>schema_version: {{ header.schema_version or "unknown" }}</li>
+        <li>generated_at: {{ header.generated_at or "unknown" }}</li>
+      </ul>
+
+      {% if header.versions %}
+        <h3>Versions</h3>
+        <ul>
+          {% for k, v in header.versions.items() %}
+            <li>{{ k }}: {{ v }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if ini %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>INI files</h2>
+
+      {% if ini.files %}
+        {% for file_key, f in ini.files.items() %}
+          <h3 style="margin-top:1rem;">{{ f.filename or file_key }}</h3>
+
+          <ul class="muted" style="margin-top:0.25rem;">
+            {% if f.source_zip %}<li>Source ZIP: {{ f.source_zip }}</li>{% endif %}
+            {% if f.version %}<li>Version: {{ f.version }}</li>{% endif %}
+            {% if f.total_lines is defined %}<li>Total lines: {{ f.total_lines }}</li>{% endif %}
+            {% if f.total_entries is defined %}<li>Total entries: {{ f.total_entries }}</li>{% endif %}
+          </ul>
+
+          {% if f.section_counts_listed %}
+            <h4 style="margin-top:0.75rem;">Counts by value</h4>
+            <table class="search-results">
+              <thead>
+                <tr><th>Value</th><th>Count</th></tr>
+              </thead>
+              <tbody>
+                {% for k, v in f.section_counts_listed.items() %}
+                  <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endif %}
+
+          {% if f.duplicates %}
+            <h4 style="margin-top:0.75rem;">Duplicates</h4>
+            <ul>
+              {% if f.duplicates.count is defined %}
+                <li>Total duplicates: {{ f.duplicates.count }}</li>
+              {% endif %}
+              {% if f.duplicates.examples %}
+                <li>Examples:</li>
+                <ul>
+                  {% for ex in f.duplicates.examples %}
+                    <li>{{ ex }}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </ul>
+          {% endif %}
+        {% endfor %}
+      {% else %}
+        <p class="muted">No INI file breakdown found.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if totals %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Totals</h2>
+      <ul>
+        {% for k, v in totals.items() %}
+          {% if v is mapping %}
+            <li>{{ k }}: (mapping)</li>
+          {% elif v is sequence and v is not string %}
+            <li>{{ k }}: (list, {{ v|length }} items)</li>
+          {% else %}
+            <li>{{ k }}: {{ v }}</li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if raw_json %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Raw JSON</h2>
+      <p class="muted">This is the full summary document for reference (read-only).</p>
+      <pre class="ports-block">{{ raw_json }}</pre>
+    </div>
+  {% endif %}
+{% endblock content %}

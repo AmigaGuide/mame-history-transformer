@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Transform summary – MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <strong>MHT Preview</strong>
+  &nbsp;|&nbsp;
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp;
+  <a href="{{ url_for('summary_transform') }}">Transform summary</a>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>Transform stage summary</h1>
+
+  {% if header %}
+    <div class="summary-block">
+      <h2>Header</h2>
+      <ul>
+        <li>schema_id: {{ header.schema_id or "unknown" }}</li>
+        <li>schema_version: {{ header.schema_version or "unknown" }}</li>
+        <li>generated_at: {{ header.generated_at or "unknown" }}</li>
+        {% if header.started_utc %}
+          <li>started_utc: {{ header.started_utc }}</li>
+        {% endif %}
+        {% if header.finished_utc %}
+          <li>finished_utc: {{ header.finished_utc }}</li>
+        {% endif %}
+        {% if header.duration_seconds is not none %}
+          <li>duration_seconds: {{ header.duration_seconds }}</li>
+        {% endif %}
+      </ul>
+
+      {% if header.versions %}
+        <h3>Versions</h3>
+        <ul>
+          {% for k, v in header.versions.items() %}
+            <li>{{ k }}: {{ v }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if counts %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Counts</h2>
+      <ul>
+        {% for k, v in counts.items() %}
+          <li>{{ k }}: {{ v }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if selection %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Selection</h2>
+      <ul>
+        {% for k, v in selection.items() %}
+          <li>{{ k }}: {{ v }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if excluded_pairs %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Excluded parents by reason</h2>
+      <table class="search-results">
+        <thead>
+          <tr>
+            <th>Reason</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for reason, count in excluded_pairs %}
+            <tr>
+              <td>{{ reason }}</td>
+              <td>{{ count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if ports %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>PORTS coverage</h2>
+      <ul>
+        {% for k, v in ports.items() %}
+          {% if v is mapping %}
+            <li>{{ k }}: {{ v.count if v.count is defined else v }}</li>
+          {% else %}
+            <li>{{ k }}: {{ v }}</li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if raw_json %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Raw JSON</h2>
+      <p class="muted">
+        This is the full transform summary document for reference.
+      </p>
+      <pre class="ports-block">{{ raw_json }}</pre>
+    </div>
+  {% endif %}
+{% endblock content %}
