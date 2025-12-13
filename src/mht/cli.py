@@ -43,7 +43,6 @@ from mht.utils.validator import validate as validate_outputs, REGISTRY as VALIDA
 from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
-from mht.utils import config as mht_config
 from mht.preview.server import run_preview
 
 

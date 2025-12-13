@@ -1,5 +1,18 @@
 from __future__ import annotations
 
+"""
+MHT Web Preview server.
+
+This module provides a read-only Flask web application for inspecting the
+artefacts produced by the MAME-History-Transformer (MHT) pipeline for the
+currently active release.
+
+Design notes:
+- JSON artefacts are authoritative; this server does not invent or normalise data.
+- Artefacts are loaded once at startup (no Flask reloader) to avoid double loads.
+- Summary pages render full detail; the home page remains a curated overview.
+"""
+
 import json
 import threading
 import webbrowser
@@ -9,43 +22,54 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from flask import Flask, abort, render_template, request
 
-from mht.utils.config import WEB_PREVIEW_PORT, WEB_PREVIEW_AUTO_OPEN
+from mht.utils.config import WEB_PREVIEW_AUTO_OPEN, WEB_PREVIEW_PORT
 from mht.utils.logger import setup_logger
 from mht.utils.paths import (
-    exotica_wiki_path,
-    mame_machines_path,
-    transform_summary_path,
-    gh_system_trivia_path,
     active_version,
+    exotica_wiki_path,
+    gh_system_trivia_path,
+    mame_machines_path,
     outputs_dir,
+    transform_summary_path,
 )
 
 log = setup_logger(__name__)
+
+JsonDict = Dict[str, Any]
+
 
 # ----------------------------------------------------------------------------
 # Optional summary path helpers (fallbacks if paths module lacks them)
 # ----------------------------------------------------------------------------
 
 try:
+    # Some versions of the refactor may already provide these in paths.py.
     from mht.utils.paths import (  # type: ignore
-        mame_parsing_summary_path,
         history_parsing_summary_path,
         ini_parsing_summary_path,
+        mame_parsing_summary_path,
     )
-except Exception:  # noqa: BLE001
-
+except ImportError:
+    # Fall back to a conventional summaries folder adjacent to outputs/.
     def _summaries_dir() -> Path:
-        # outputs_dir() is expected to be: data/releases/<ver>/outputs
-        # so summaries are likely: data/releases/<ver>/summaries
+        """
+        Compute the summaries directory for the active release.
+
+        We expect outputs_dir() to be: data/releases/<ver>/outputs
+        So summaries are:           data/releases/<ver>/summaries
+        """
         return outputs_dir().parent / "summaries"
 
     def mame_parsing_summary_path() -> Path:  # type: ignore[misc]
+        """Path to the MAME parsing summary JSON for the active release."""
         return _summaries_dir() / "mame_parsing_summary.json"
 
     def history_parsing_summary_path() -> Path:  # type: ignore[misc]
+        """Path to the Gaming-History XML parsing summary JSON for the active release."""
         return _summaries_dir() / "history_parsing_summary.json"
 
     def ini_parsing_summary_path() -> Path:  # type: ignore[misc]
+        """Path to the Gaming-History INI parsing summary JSON for the active release."""
         return _summaries_dir() / "ini_parsing_summary.json"
 
 
@@ -53,45 +77,75 @@ except Exception:  # noqa: BLE001
 # Data structures
 # ----------------------------------------------------------------------------
 
-@dataclass
+@dataclass(frozen=True)
 class PreviewData:
-    wiki_doc: Dict[str, Any]
-    wiki_games: Dict[str, Dict[str, Any]]
-    trivia_by_machine: Dict[str, Any]
-    mame_machines: Dict[str, Dict[str, Any]]
+    """
+    In-memory snapshot of all artefacts required by the preview server.
+    """
+    wiki_doc: JsonDict
+    wiki_games: Dict[str, JsonDict]
+    trivia_by_machine: JsonDict
+    mame_machines: Dict[str, JsonDict]
 
     # Summaries
-    mame_summary: Dict[str, Any]
-    history_summary: Dict[str, Any]
-    ini_summary: Dict[str, Any]
-    transform_summary: Dict[str, Any]
+    mame_summary: JsonDict
+    history_summary: JsonDict
+    ini_summary: JsonDict
+    transform_summary: JsonDict
 
+    # Stable navigation order for /game/<machine>
     machine_order: List[str]
 
 
 # ----------------------------------------------------------------------------
-# Helpers to locate and load JSON
+# JSON helpers
 # ----------------------------------------------------------------------------
 
-def _load_json(path: Path, label: str) -> Dict[str, Any]:
+def _as_dict(obj: Any) -> JsonDict:
+    """Return obj if it is a dict; otherwise return an empty dict."""
+    return obj if isinstance(obj, dict) else {}
+
+
+def _as_list(obj: Any) -> List[Any]:
+    """Return obj if it is a list; otherwise return an empty list."""
+    return obj if isinstance(obj, list) else []
+
+
+def _load_json(path: Path, label: str) -> JsonDict:
+    """
+    Load a JSON document expected to be a top-level object (dict).
+
+    Raises:
+        FileNotFoundError: if the file does not exist.
+        RuntimeError: if the JSON cannot be loaded or is not a JSON object.
+    """
     if not path.exists():
         raise FileNotFoundError(f"{label} not found at {path.as_posix()}")
+
     try:
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
+
         if not isinstance(data, dict):
             raise ValueError(f"{label} at {path.as_posix()} is not a JSON object.")
+
         return data
+
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"Failed to load {label} from {path.as_posix()}: {exc}") from exc
 
 
+def _pretty_json(doc: JsonDict) -> str:
+    """Render a dict as human-readable JSON for template display."""
+    return json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=False)
+
+
 def _find_trivia_path() -> Path:
-    """Return the trivia path for the active release."""
+    """Return the trivia JSON path for the active release."""
     return gh_system_trivia_path()
 
 
-def _normalise_trivia_root(doc: Dict[str, Any]) -> Dict[str, Any]:
+def _normalise_trivia_root(doc: JsonDict) -> JsonDict:
     """
     Trivia JSON may be shaped as:
       { "<machine>": {...}, ... }
@@ -100,25 +154,29 @@ def _normalise_trivia_root(doc: Dict[str, Any]) -> Dict[str, Any]:
     or:
       { "games": { "<machine>": {...}, ... } }
 
-    This function returns the inner mapping keyed by machine name.
+    This returns the inner mapping keyed by machine name.
     """
-    if "systems" in doc and isinstance(doc["systems"], dict):
-        return doc["systems"]
-    if "games" in doc and isinstance(doc["games"], dict):
-        return doc["games"]
+    systems = doc.get("systems")
+    if isinstance(systems, dict):
+        return systems
+
+    games = doc.get("games")
+    if isinstance(games, dict):
+        return games
+
     return doc
 
 
 def _load_preview_data() -> PreviewData:
     """
     Load all JSON artefacts required for the preview server.
-    Raises clear exceptions if anything is missing.
+
+    Raises clear exceptions if anything is missing or malformed.
     """
     wiki_path = exotica_wiki_path()
     mame_path = mame_machines_path()
     trivia_path = _find_trivia_path()
 
-    # Summaries
     mame_sum_path = mame_parsing_summary_path()
     hist_sum_path = history_parsing_summary_path()
     ini_sum_path = ini_parsing_summary_path()
@@ -134,16 +192,19 @@ def _load_preview_data() -> PreviewData:
     log.info("  sum(xfrm): %s", xform_sum_path.as_posix())
 
     wiki_doc = _load_json(wiki_path, "Exotica wiki data")
-    wiki_games = wiki_doc.get("games") or {}
-    if not isinstance(wiki_games, dict) or not wiki_games:
+    wiki_games_obj = wiki_doc.get("games") or {}
+    if not isinstance(wiki_games_obj, dict) or not wiki_games_obj:
         raise RuntimeError("Exotica wiki data has no 'games' mapping; run the pipeline first?")
+
+    wiki_games: Dict[str, JsonDict] = {k: v for k, v in wiki_games_obj.items() if isinstance(v, dict)}
 
     trivia_doc = _load_json(trivia_path, "GH system trivia")
     trivia_by_machine = _normalise_trivia_root(trivia_doc)
 
-    mame_machines = _load_json(mame_path, "MAME machines")
+    mame_machines_obj = _load_json(mame_path, "MAME machines")
+    mame_machines: Dict[str, JsonDict] = {k: v for k, v in mame_machines_obj.items() if isinstance(v, dict)}
 
-    # Load summaries
+    # Summaries
     mame_summary = _load_json(mame_sum_path, "MAME parsing summary")
     history_summary = _load_json(hist_sum_path, "History parsing summary")
     ini_summary = _load_json(ini_sum_path, "INI parsing summary")
@@ -165,18 +226,15 @@ def _load_preview_data() -> PreviewData:
 
 
 # ----------------------------------------------------------------------------
-# Generic helpers
+# Generic formatting helpers
 # ----------------------------------------------------------------------------
 
-def _pretty_json(doc: Dict[str, Any]) -> str:
-    return json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=False)
-
-
-def _sorted_pairs_from_mapping(mapping: Dict[str, Any]) -> List[Tuple[str, Any]]:
+def _sorted_pairs_from_mapping(mapping: JsonDict) -> List[Tuple[str, Any]]:
     """
     Sort mapping by numeric value descending if possible; otherwise by key.
 
-    Returns a list of (key, value) pairs.
+    Returns:
+        List of (key, value) tuples.
     """
     pairs = list(mapping.items())
     try:
@@ -186,32 +244,32 @@ def _sorted_pairs_from_mapping(mapping: Dict[str, Any]) -> List[Tuple[str, Any]]
         return sorted(pairs, key=lambda kv: str(kv[0]))
 
 
-def _top_n_from_mapping(mapping: Dict[str, Any], n: int = 5) -> List[str]:
+def _top_n_from_mapping(mapping: JsonDict, n: int = 5) -> List[str]:
+    """Return human-readable 'key: value' strings for the top-N entries in mapping."""
     pairs = _sorted_pairs_from_mapping(mapping)
-    out: List[str] = []
-    for k, v in pairs[:n]:
-        out.append(f"{k}: {v}")
-    return out
+    return [f"{k}: {v}" for k, v in pairs[:n]]
 
 
-def _overview_headlines(labels_and_values: List[Tuple[str, Any]]) -> List[Dict[str, Any]]:
+def _overview_headlines(labels_and_values: List[Tuple[str, Any]]) -> List[JsonDict]:
+    """Convert (label, value) pairs into a template-friendly list of dicts."""
     return [{"label": label, "value": value} for label, value in labels_and_values]
 
 
-def _as_dict(obj: Any) -> Dict[str, Any]:
-    return obj if isinstance(obj, dict) else {}
-
-
-def _as_list(obj: Any) -> List[Any]:
-    return obj if isinstance(obj, list) else []
+def _header_versions(summary: JsonDict) -> JsonDict:
+    """
+    Return summary['header']['versions'] as a dict, or {} if missing.
+    """
+    header = _as_dict(summary.get("header"))
+    return _as_dict(header.get("versions"))
 
 
 # ----------------------------------------------------------------------------
 # Home-page overview builders
 # ----------------------------------------------------------------------------
 
-def _build_mame_overview(mame_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _build_mame_overview(mame_summary: JsonDict) -> JsonDict:
     totals = _as_dict(mame_summary.get("totals"))
+
     headlines = _overview_headlines(
         [
             ("Total machines", totals.get("total_machines", "unknown")),
@@ -224,7 +282,7 @@ def _build_mame_overview(mame_summary: Dict[str, Any]) -> Dict[str, Any]:
         ]
     )
 
-    findings: List[Dict[str, Any]] = []
+    findings: List[JsonDict] = []
 
     for title, key in [
         ("Top display types", "display_types_distribution"),
@@ -234,10 +292,10 @@ def _build_mame_overview(mame_summary: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(dist, dict) and dist:
             findings.append({"title": title, "items": _top_n_from_mapping(dist, 5)})
 
-    inv = totals.get("invalid_displays_dropped")
-    if isinstance(inv, dict) and inv.get("count"):
-        examples = _as_list(inv.get("examples"))
-        lines = [f"Count: {inv.get('count')}"]
+    invalid = totals.get("invalid_displays_dropped")
+    if isinstance(invalid, dict) and invalid.get("count"):
+        examples = _as_list(invalid.get("examples"))
+        lines = [f"Count: {invalid.get('count')}"]
         for ex in examples[:5]:
             if isinstance(ex, dict):
                 lines.append(
@@ -252,21 +310,19 @@ def _build_mame_overview(mame_summary: Dict[str, Any]) -> Dict[str, Any]:
     anomalies = _as_dict(mame_summary.get("anomalies"))
     if anomalies.get("count"):
         examples2 = _as_list(anomalies.get("examples"))
-        lines2 = [f"Count: {anomalies.get('count')}"]
-        for ex in examples2[:5]:
-            lines2.append(str(ex))
+        lines2 = [f"Count: {anomalies.get('count')}"] + [str(ex) for ex in examples2[:5]]
         findings.append({"title": "Anomalies (examples)", "items": lines2})
 
     return {"headlines": headlines, "findings": findings}
 
 
-def _build_history_overview(history_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _build_history_overview(history_summary: JsonDict) -> JsonDict:
     totals = _as_dict(history_summary.get("totals"))
     sections_found = _as_dict(history_summary.get("sections_found"))
     found = _as_dict(history_summary.get("found"))
 
-    overview_sf = _as_dict(sections_found.get("overview"))
-    technical_sf = _as_dict(sections_found.get("technical"))
+    overview_sf = _as_dict(_as_dict(sections_found.get("overview")))
+    technical_sf = _as_dict(_as_dict(sections_found.get("technical")))
 
     headlines = _overview_headlines(
         [
@@ -279,7 +335,7 @@ def _build_history_overview(history_summary: Dict[str, Any]) -> Dict[str, Any]:
         ]
     )
 
-    findings: List[Dict[str, Any]] = []
+    findings: List[JsonDict] = []
 
     blocks = _as_dict(found.get("blocks"))
     by_type = blocks.get("by_type")
@@ -305,7 +361,7 @@ def _build_history_overview(history_summary: Dict[str, Any]) -> Dict[str, Any]:
     return {"headlines": headlines, "findings": findings}
 
 
-def _build_ini_overview(ini_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _build_ini_overview(ini_summary: JsonDict) -> JsonDict:
     ini = _as_dict(ini_summary.get("ini"))
     files = _as_dict(ini.get("files"))
 
@@ -346,7 +402,7 @@ def _build_ini_overview(ini_summary: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _build_transform_overview(transform_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _build_transform_overview(transform_summary: JsonDict) -> JsonDict:
     counts = _as_dict(transform_summary.get("counts"))
     selection = _as_dict(transform_summary.get("selection"))
     ports = _as_dict(transform_summary.get("ports"))
@@ -362,7 +418,7 @@ def _build_transform_overview(transform_summary: Dict[str, Any]) -> Dict[str, An
         ]
     )
 
-    findings: List[Dict[str, Any]] = []
+    findings: List[JsonDict] = []
 
     excluded = transform_summary.get("excluded_parents_by_reason")
     if isinstance(excluded, dict) and excluded:
@@ -370,6 +426,7 @@ def _build_transform_overview(transform_summary: Dict[str, Any]) -> Dict[str, An
 
     if ports:
         lines: List[str] = []
+
         gh_arcade = ports.get("gh_arcade_entries_with_ports_total")
         if gh_arcade is not None:
             lines.append(f"GH arcade entries with ports: {gh_arcade}")
@@ -396,7 +453,7 @@ def _build_transform_overview(transform_summary: Dict[str, Any]) -> Dict[str, An
 # Summary page contexts
 # ----------------------------------------------------------------------------
 
-def _prep_mame_summary_page_context(mame_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _prep_mame_summary_page_context(mame_summary: JsonDict) -> JsonDict:
     header = _as_dict(mame_summary.get("header"))
     totals = _as_dict(mame_summary.get("totals"))
 
@@ -418,7 +475,7 @@ def _prep_mame_summary_page_context(mame_summary: Dict[str, Any]) -> Dict[str, A
         if isinstance(dist, dict) and dist:
             distributions.append((title, _sorted_pairs_from_mapping(dist)))
 
-    example_groups: List[Dict[str, Any]] = []
+    example_groups: List[JsonDict] = []
 
     invalid_displays = totals.get("invalid_displays_dropped")
     if isinstance(invalid_displays, dict) and (invalid_displays.get("count") or invalid_displays.get("examples")):
@@ -426,6 +483,7 @@ def _prep_mame_summary_page_context(mame_summary: Dict[str, Any]) -> Dict[str, A
         cnt = invalid_displays.get("count")
         if cnt is not None:
             lines.append(f"Count: {cnt}")
+
         examples = _as_list(invalid_displays.get("examples"))
         for ex in examples[:25]:
             if isinstance(ex, dict):
@@ -440,6 +498,7 @@ def _prep_mame_summary_page_context(mame_summary: Dict[str, Any]) -> Dict[str, A
                 lines.append(line)
             else:
                 lines.append(str(ex))
+
         example_groups.append({"title": "Invalid displays dropped", "items": lines})
 
     anomalies = mame_summary.get("anomalies")
@@ -453,18 +512,16 @@ def _prep_mame_summary_page_context(mame_summary: Dict[str, Any]) -> Dict[str, A
             lines2.append(str(ex))
         example_groups.append({"title": "Anomalies", "items": lines2})
 
-    raw_json = _pretty_json(mame_summary)
-
     return {
         "header": header,
         "totals": totals,
         "distributions": distributions,
         "example_groups": example_groups,
-        "raw_json": raw_json,
+        "raw_json": _pretty_json(mame_summary),
     }
 
 
-def _prep_history_summary_page_context(history_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _prep_history_summary_page_context(history_summary: JsonDict) -> JsonDict:
     header = _as_dict(history_summary.get("header"))
     totals = _as_dict(history_summary.get("totals"))
     sections_found = _as_dict(history_summary.get("sections_found"))
@@ -494,8 +551,6 @@ def _prep_history_summary_page_context(history_summary: Dict[str, Any]) -> Dict[
                 anomalies_nonzero.append(f"{group_name}: {obj}")
         anomalies_nonzero.sort()
 
-    raw_json = _pretty_json(history_summary)
-
     return {
         "header": header,
         "totals": totals,
@@ -503,21 +558,22 @@ def _prep_history_summary_page_context(history_summary: Dict[str, Any]) -> Dict[
         "found_blocks_by_type": found_blocks_by_type,
         "found_platforms": found_platforms,
         "anomalies_nonzero": anomalies_nonzero,
-        "raw_json": raw_json,
+        "raw_json": _pretty_json(history_summary),
     }
 
 
-def _prep_ini_summary_page_context(ini_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _prep_ini_summary_page_context(ini_summary: JsonDict) -> JsonDict:
     """
     Template-friendly context for summary_ini.html.
 
-    We avoid using ".items" from dicts in templates by providing explicit lists.
+    We avoid relying on dict ".items" directly in templates by providing
+    explicit lists of pairs.
     """
     header = _as_dict(ini_summary.get("header"))
     ini = _as_dict(ini_summary.get("ini"))
     files = _as_dict(ini.get("files"))
 
-    file_cards: List[Dict[str, Any]] = []
+    file_cards: List[JsonDict] = []
     for key in ["game_status", "category", "type"]:
         f = _as_dict(files.get(key))
         section_counts = f.get("section_counts_listed")
@@ -535,17 +591,16 @@ def _prep_ini_summary_page_context(ini_summary: Dict[str, Any]) -> Dict[str, Any
         )
 
     totals = _as_dict(ini_summary.get("totals"))
-    raw_json = _pretty_json(ini_summary)
 
     return {
         "header": header,
         "totals": totals,
         "file_cards": file_cards,
-        "raw_json": raw_json,
+        "raw_json": _pretty_json(ini_summary),
     }
 
 
-def _prep_transform_summary_page_context(transform_summary: Dict[str, Any]) -> Dict[str, Any]:
+def _prep_transform_summary_page_context(transform_summary: JsonDict) -> JsonDict:
     """
     Template-friendly context for summary_transform.html.
 
@@ -559,15 +614,13 @@ def _prep_transform_summary_page_context(transform_summary: Dict[str, Any]) -> D
     excluded = transform_summary.get("excluded_parents_by_reason")
     excluded_pairs = _sorted_pairs_from_mapping(excluded) if isinstance(excluded, dict) else []
 
-    raw_json = _pretty_json(transform_summary)
-
     return {
         "header": header,
         "counts": counts,
         "selection": selection,
         "ports": ports,
         "excluded_pairs": excluded_pairs,
-        "raw_json": raw_json,
+        "raw_json": _pretty_json(transform_summary),
     }
 
 
@@ -576,6 +629,12 @@ def _prep_transform_summary_page_context(transform_summary: Dict[str, Any]) -> D
 # ----------------------------------------------------------------------------
 
 def create_app(preview_data: PreviewData) -> Flask:
+    """
+    Create and configure the Flask application for the web preview.
+
+    The caller is responsible for loading PreviewData first so we can load once
+    and run with the Flask reloader disabled.
+    """
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).with_name("templates")),
@@ -585,9 +644,11 @@ def create_app(preview_data: PreviewData) -> Flask:
     app.config["MHT_PREVIEW_DATA"] = preview_data
 
     def _prev_next(machine: str) -> Tuple[str, str]:
+        """Return (prev_machine, next_machine) according to the stable machine_order."""
         order = preview_data.machine_order
         if machine not in order:
             return machine, machine
+
         idx = order.index(machine)
         prev_m = order[idx - 1] if idx > 0 else order[-1]
         next_m = order[idx + 1] if idx < len(order) - 1 else order[0]
@@ -600,7 +661,8 @@ def create_app(preview_data: PreviewData) -> Flask:
         pd = preview_data
         version = active_version()
 
-        t_hdr = _as_dict(pd.transform_summary.get("header")) if isinstance(pd.transform_summary, dict) else {}
+        # Run timing metadata is currently taken from the transform summary header when available.
+        t_hdr = _as_dict(pd.transform_summary.get("header"))
         run = {
             "started_utc": t_hdr.get("started_utc") or pd.transform_summary.get("started_utc"),
             "finished_utc": t_hdr.get("finished_utc") or pd.transform_summary.get("finished_utc"),
@@ -608,15 +670,12 @@ def create_app(preview_data: PreviewData) -> Flask:
             "generated_at": t_hdr.get("generated_at"),
         }
 
-        m_hdr = _as_dict(pd.mame_summary.get("header"))
-        h_hdr = _as_dict(pd.history_summary.get("header"))
-        i_hdr = _as_dict(pd.ini_summary.get("header"))
+        m_ver = _header_versions(pd.mame_summary)
+        h_ver = _header_versions(pd.history_summary)
+        i_ver = _header_versions(pd.ini_summary)
+        t_ver = _header_versions(pd.transform_summary)
 
-        m_ver = _as_dict(m_hdr.get("versions"))
-        h_ver = _as_dict(h_hdr.get("versions"))
-        i_ver = _as_dict(i_hdr.get("versions"))
-
-        sources: Dict[str, Any] = {
+        sources: JsonDict = {
             "mame": {
                 "build": m_ver.get("mame_build"),
                 "xml_version": m_ver.get("mame_xml_version"),
@@ -634,40 +693,25 @@ def create_app(preview_data: PreviewData) -> Flask:
                 "filename": None,
             },
             "transform": {
-                "mame_build": _as_dict(_as_dict(pd.transform_summary.get("header")).get("versions")).get("mame_build")
-                if isinstance(pd.transform_summary, dict)
-                else None,
-                "history_version": _as_dict(_as_dict(pd.transform_summary.get("header")).get("versions")).get("history_version")
-                if isinstance(pd.transform_summary, dict)
-                else None,
-                "history_date": _as_dict(_as_dict(pd.transform_summary.get("header")).get("versions")).get("history_date")
-                if isinstance(pd.transform_summary, dict)
-                else None,
-                "ini_generated_at": _as_dict(_as_dict(pd.transform_summary.get("header")).get("versions")).get("ini_generated_at")
-                if isinstance(pd.transform_summary, dict)
-                else None,
+                "mame_build": t_ver.get("mame_build"),
+                "history_version": t_ver.get("history_version"),
+                "history_date": t_ver.get("history_date"),
+                "ini_generated_at": t_ver.get("ini_generated_at"),
                 "filename": None,
             },
         }
 
-        mame_overview = _build_mame_overview(pd.mame_summary)
-        history_overview = _build_history_overview(pd.history_summary)
-        ini_overview = _build_ini_overview(pd.ini_summary)
-        transform_overview = _build_transform_overview(pd.transform_summary)
-
-        total_games = len(pd.wiki_games)
-
         return render_template(
             "home.html",
             version=version,
-            total_games=total_games,
+            total_games=len(pd.wiki_games),
             summary=pd.transform_summary,
             run=run,
             sources=sources,
-            mame_overview=mame_overview,
-            history_overview=history_overview,
-            ini_overview=ini_overview,
-            transform_overview=transform_overview,
+            mame_overview=_build_mame_overview(pd.mame_summary),
+            history_overview=_build_history_overview(pd.history_summary),
+            ini_overview=_build_ini_overview(pd.ini_summary),
+            transform_overview=_build_transform_overview(pd.transform_summary),
         )
 
     @app.route("/summary/mame")
@@ -722,8 +766,8 @@ def create_app(preview_data: PreviewData) -> Flask:
 
         trivia = pd.trivia_by_machine.get(machine) or {}
 
-        # Overview blocks (no heading on page, just follows opening sentence)
-        overview_blocks: List[Dict[str, Any]] = []
+        # Overview blocks (no heading on page, just follows opening sentence).
+        overview_blocks: List[JsonDict] = []
         overview_obj = None
         if isinstance(trivia.get("sections"), dict):
             overview_obj = trivia.get("sections", {}).get("overview")
@@ -732,8 +776,8 @@ def create_app(preview_data: PreviewData) -> Flask:
             if isinstance(blocks, list):
                 overview_blocks = [b for b in blocks if isinstance(b, dict)]
 
-        # Remaining sections
-        trivia_sections: List[Dict[str, Any]] = []
+        # Remaining sections.
+        trivia_sections: List[JsonDict] = []
         sections = trivia.get("sections")
         if isinstance(sections, dict):
             for sec_name, sec in sections.items():
@@ -746,9 +790,6 @@ def create_app(preview_data: PreviewData) -> Flask:
                     continue
                 trivia_sections.append({"name": sec_name, "blocks": blocks})
 
-        ports_display = rec.get("ports_display") or []
-        mame_titles_display = rec.get("mame_titles_display")
-
         return render_template(
             "game.html",
             machine=machine,
@@ -759,44 +800,37 @@ def create_app(preview_data: PreviewData) -> Flask:
             overview_blocks=overview_blocks,
             description=raw_description,
             record=rec,
-            mame_titles_display=mame_titles_display,
+            mame_titles_display=rec.get("mame_titles_display"),
             trivia_sections=trivia_sections,
-            ports_display=ports_display,
+            ports_display=rec.get("ports_display") or [],
         )
 
     @app.route("/search")
     def search() -> str:
         q = (request.args.get("q") or "").strip()
         pd = preview_data
-        results: List[Dict[str, Any]] = []
+        results: List[JsonDict] = []
 
         if q:
             q_ci = q.casefold()
             for machine, rec in pd.wiki_games.items():
                 if q_ci in machine.casefold():
                     minfo = pd.mame_machines.get(machine) or {}
-                    desc = minfo.get("description") or ""
-                    year = rec.get("year")
-                    manufacturer = rec.get("manufacturer")
                     results.append(
                         {
                             "machine": machine,
-                            "description": desc,
-                            "year": year,
-                            "manufacturer": manufacturer,
+                            "description": (minfo.get("description") or ""),
+                            "year": rec.get("year"),
+                            "manufacturer": rec.get("manufacturer"),
                         }
                     )
 
         results.sort(key=lambda r: r["machine"])
 
-        return render_template(
-            "search.html",
-            query=q,
-            results=results,
-        )
+        return render_template("search.html", query=q, results=results)
 
     @app.errorhandler(404)
-    def not_found(e):  # type: ignore[override]
+    def not_found(_e):  # type: ignore[override]
         return render_template("404.html"), 404
 
     return app
@@ -810,10 +844,13 @@ def run_preview(port: int | None = None, auto_open: Optional[bool] = None) -> No
     """
     Start the web preview server for the active release.
 
-    - Verifies that required JSON artefacts exist.
-    - Loads them into memory once.
-    - Starts a Flask app on the configured port.
-    - Optionally opens a browser pointing at '/'.
+    Responsibilities:
+    - Verify required JSON artefacts exist and load into memory once.
+    - Start a Flask app on the configured port (reloader disabled).
+    - Optionally open a browser pointing at '/'.
+
+    Note:
+    - We keep debug=False and use_reloader=False to avoid loading artefacts twice.
     """
     port = port or WEB_PREVIEW_PORT
     if auto_open is None:
@@ -837,7 +874,6 @@ def run_preview(port: int | None = None, auto_open: Optional[bool] = None) -> No
 
         threading.Timer(0.8, _open_browser).start()
 
-    # Use reloader=False so we do not double-load data.
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
 
 
