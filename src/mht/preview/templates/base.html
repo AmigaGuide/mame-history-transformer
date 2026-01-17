@@ -21,6 +21,8 @@
             a:visited {
                 color: #0066cc;
                 text-decoration: underline;
+                text-underline-offset: 2px;
+                text-decoration-thickness: 1px;
             }
 
             a:hover,
@@ -32,6 +34,13 @@
             a:focus-visible {
                 outline: 2px solid #0066cc;
                 outline-offset: 2px;
+            }
+
+            /* Subheadings that refer to specific source files (e.g. INI names) */
+
+            .source-subheading {
+                color: #3a6f8f;
+                font-weight: 600;
             }
 
             header {
@@ -48,12 +57,15 @@
 
             header a {
                 color: #61dafb;
-                text-decoration: none;
+                text-decoration: underline;
+                text-underline-offset: 2px;
+                text-decoration-thickness: 1px;
                 margin: 0 0.25rem;
             }
 
-            header a:hover {
-                text-decoration: underline;
+            header a:hover,
+            header a:focus {
+                text-decoration-thickness: 2px;
             }
 
             main {
@@ -169,6 +181,44 @@
                 padding: 0.75rem;
             }
 
+            /* Home page overview grid */
+
+            .overview-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 1rem;
+                align-items: start;
+
+                /* Vertical dividers spanning full grid height */
+                background-image:
+                    linear-gradient(#dddddd, #dddddd),
+                    linear-gradient(#dddddd, #dddddd),
+                    linear-gradient(#dddddd, #dddddd);
+                background-size: 1px 100%, 1px 100%, 1px 100%;
+                background-position:
+                    calc(25% - 0.5rem) 0,
+                    calc(50% - 0.5rem) 0,
+                    calc(75% - 0.5rem) 0;
+                background-repeat: no-repeat;
+            }
+
+            .overview-cell h2 {
+                border-bottom: none;
+                padding-bottom: 0;
+                margin-top: 0;
+                margin-bottom: 0.4rem;
+            }
+
+            .overview-cell ul {
+                padding-left: 1.1rem;
+            }
+
+            .overview-row-divider {
+                border-top: 1px solid #ddd;
+                padding-top: 0.75rem;
+                margin-top: 0.25rem;
+            }
+
             /* Header right side: toggle + search */
 
             .nav-right {
@@ -218,6 +268,10 @@
                 color: #b6ecff;
             }
 
+            body.theme-dark .source-subheading {
+                color: #7fbad6;
+            }
+
             body.theme-dark .infobox {
                 background: #1e1e1e;
                 border-color: #444444;
@@ -246,6 +300,19 @@
             body.theme-dark .search-results th,
             body.theme-dark .search-results td {
                 border-bottom-color: #333333;
+            }
+
+            body.theme-dark .overview-row-divider {
+                border-top-color: #333333;
+            }
+
+            /* Dark theme vertical dividers */
+
+            body.theme-dark .overview-grid {
+                background-image:
+                    linear-gradient(#333333, #333333),
+                    linear-gradient(#333333, #333333),
+                    linear-gradient(#333333, #333333);
             }
         </style>
     </head>

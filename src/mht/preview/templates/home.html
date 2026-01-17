@@ -12,54 +12,172 @@
     <h1>MAME-History-Transformer Preview</h1>
 
     <p class="lead">
-        This temporary web view lets you browse ExoticA-ready data for the active release
-        and spot anomalies before publishing to the real Lost in Translation wiki.
-    </p>
-
-    <p class="muted">
-        Versions are reported per source. MAME, Gaming-History XML, and Gaming-History INIs may not match.
+        This page provides a high-level overview of the data generated for the active
+        MAME-History-Transformer release, intended to support validation of source inputs,
+        transformation results, and overall data health before publishing updates to
+        ExoticA’s Lost in Translation wiki.
+        {% if run and run.generated_at %}
+            <strong>This release was generated at (UTC): {{ run.generated_at }}.</strong>
+        {% endif %}
+        Versions are reported per source, and MAME, Gaming-History XML, and
+        Gaming-History INIs may not necessarily align.
     </p>
 
     <p class="muted">
         Tip: use the search box in the header to find a game by its MAME shortname.
     </p>
 
-    {% if run %}
-        <div class="summary-block" style="margin-top:1rem;">
-            <h2>Run context</h2>
-            <ul>
-                {% if run.started_utc %}<li>Started (UTC): {{ run.started_utc }}</li>{% endif %}
-                {% if run.finished_utc %}<li>Finished (UTC): {{ run.finished_utc }}</li>{% endif %}
-				{% if run.duration_seconds %}<li>Duration: {{ run.duration_seconds }}</li>{% endif %}
-				{% if run.generated_at %}<li>Generated at (UTC): {{ run.generated_at }}</li>{% endif %}
-            </ul>
-        </div>
-    {% endif %}
-
     <div class="summary-block" style="margin-top:1rem;">
-        <h2>Data sources</h2>
+        <div class="overview-grid">
 
-        <h3>MAME XML</h3>
-        <ul>
-            <li>Build: {{ sources.mame.build or "unknown" }}</li>
-            <li>XML version: {{ sources.mame.xml_version or "unknown" }}</li>
-            <li>mameconfig: {{ sources.mame.mameconfig or "unknown" }}</li>
-            <li>File: {{ sources.mame.filename or "not recorded in summary" }}</li>
-        </ul>
+            <!-- Row 1: Data sources -->
 
-        <h3>Gaming-History XML</h3>
-        <ul>
-            <li>Version: {{ sources.history.version or "unknown" }}</li>
-            <li>Date: {{ sources.history.date or "unknown" }}</li>
-            <li>File: {{ sources.history.filename or "not recorded in summary" }}</li>
-        </ul>
+            <div class="overview-cell">
+                <h2>MAME XML</h2>
 
-        <h3>Gaming-History INIs</h3>
-        <ul>
-            <li>INI generated at: {{ sources.ini.generated_at or "unknown" }}</li>
-            <li>Referenced MAME version: {{ sources.ini.mame_xml_version or "unknown" }}</li>
-            <li>File bundle: {{ sources.ini.filename or "not recorded in summary" }}</li>
-        </ul>
+                <h3>Data source</h3>
+                <ul>
+                    <li>Build: {{ sources.mame.build or "unknown" }}</li>
+                    <li>XML version: {{ sources.mame.xml_version or "unknown" }}</li>
+                    <li>mameconfig: {{ sources.mame.mameconfig or "unknown" }}</li>
+                    <li>File: {{ sources.mame.filename or "not recorded in summary" }}</li>
+                </ul>
+            </div>
+
+            <div class="overview-cell">
+                <h2>Gaming-History XML</h2>
+
+                <h3>Data source</h3>
+                <ul>
+                    <li>Version: {{ sources.history.version or "unknown" }}</li>
+                    <li>Date: {{ sources.history.date or "unknown" }}</li>
+                    <li>File: {{ sources.history.filename or "not recorded in summary" }}</li>
+                </ul>
+            </div>
+
+            <div class="overview-cell">
+                <h2>Gaming-History INIs</h2>
+
+                <h3>Data source</h3>
+                <ul>
+                    <li>INI generated at: {{ sources.ini.generated_at or "unknown" }}</li>
+                    <li>Referenced MAME version: {{ sources.ini.mame_xml_version or "unknown" }}</li>
+                    <li>File bundle: {{ sources.ini.filename or "not recorded in summary" }}</li>
+                </ul>
+            </div>
+
+            <div class="overview-cell">
+                <h2>Transform</h2>
+
+                <h3>Data source</h3>
+                <p class="muted">
+                    Not applicable (derived stage).
+                </p>
+            </div>
+
+            <!-- Row 2: Stage overviews -->
+
+            <div class="overview-cell overview-row-divider">
+                <h3>
+                    Stage overview -
+                    <a href="{{ url_for('summary_mame') }}">full summary</a>
+                </h3>
+
+                <ul>
+                    {% for item in mame_overview.headlines %}
+                        <li>{{ item.label }}: {{ item.value }}</li>
+                    {% endfor %}
+                </ul>
+
+                {% if mame_overview.findings %}
+                    {% for group in mame_overview.findings %}
+                        <h4>{{ group.title }}</h4>
+                        <ul>
+                            {% for line in group["items"] %}
+                                <li>{{ line }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="overview-cell overview-row-divider">
+                <h3>
+                    Stage overview -
+                    <a href="{{ url_for('summary_history') }}">full summary</a>
+                </h3>
+
+                <ul>
+                    {% for item in history_overview.headlines %}
+                        <li>{{ item.label }}: {{ item.value }}</li>
+                    {% endfor %}
+                </ul>
+
+                {% if history_overview.findings %}
+                    {% for group in history_overview.findings %}
+                        <h4>{{ group.title }}</h4>
+                        <ul>
+                            {% for line in group["items"] %}
+                                <li>{{ line }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="overview-cell overview-row-divider">
+                <h3>
+                    Stage overview -
+                    <a href="{{ url_for('summary_ini') }}">full summary</a>
+                </h3>
+
+                <h4 class="source-subheading">Game Or No Game.ini</h4>
+                <ul>
+                    {% for item in ini_overview.game_or_no_game %}
+                        <li>{{ item.label }}: {{ item.value }}</li>
+                    {% endfor %}
+                </ul>
+
+                <h4 class="source-subheading">Machine Category.ini</h4>
+                <ul>
+                    {% for item in ini_overview.machine_category %}
+                        <li>{{ item.label }}: {{ item.value }}</li>
+                    {% endfor %}
+                </ul>
+
+                <h4 class="source-subheading">Machine Type.ini</h4>
+                <ul>
+                    {% for item in ini_overview.machine_type %}
+                        <li>{{ item.label }}: {{ item.value }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+
+            <div class="overview-cell overview-row-divider">
+                <h3>
+                    Stage overview -
+                    <a href="{{ url_for('summary_transform') }}">full summary</a>
+                </h3>
+
+                <ul>
+                    {% for item in transform_overview.headlines %}
+                        <li>{{ item.label }}: {{ item.value }}</li>
+                    {% endfor %}
+                </ul>
+
+                {% if transform_overview.findings %}
+                    {% for group in transform_overview.findings %}
+                        <h4>{{ group.title }}</h4>
+                        <ul>
+                            {% for line in group["items"] %}
+                                <li>{{ line }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+        </div>
     </div>
 
     <div class="summary-block" style="margin-top:1rem;">
@@ -67,97 +185,5 @@
         <ul>
             <li>Total games in wiki output: {{ total_games }}</li>
         </ul>
-    </div>
-
-    <div class="summary-block" style="margin-top:1rem;">
-        <h2>Stage summaries (overview)</h2>
-        <p class="muted">
-            This page shows selected highlights only. Use the links below to view the full summary JSON contents.
-        </p>
-
-        <h3>MAME parsing summary</h3>
-        <ul>
-            {% for item in mame_overview.headlines %}
-                <li>{{ item.label }}: {{ item.value }}</li>
-            {% endfor %}
-        </ul>
-        {% if mame_overview.findings %}
-            {% for group in mame_overview.findings %}
-                <h4>{{ group.title }}</h4>
-                <ul>
-                    {% for line in group["items"] %}
-                        <li>{{ line }}</li>
-                    {% endfor %}
-                </ul>
-            {% endfor %}
-        {% endif %}
-        <p class="muted"><a href="{{ url_for('summary_mame') }}">View full MAME summary</a></p>
-
-        <hr>
-
-        <h3>Gaming-History XML parsing summary</h3>
-        <ul>
-            {% for item in history_overview.headlines %}
-                <li>{{ item.label }}: {{ item.value }}</li>
-            {% endfor %}
-        </ul>
-        {% if history_overview.findings %}
-            {% for group in history_overview.findings %}
-                <h4>{{ group.title }}</h4>
-                <ul>
-                    {% for line in group["items"] %}
-                        <li>{{ line }}</li>
-                    {% endfor %}
-                </ul>
-            {% endfor %}
-        {% endif %}
-        <p class="muted"><a href="{{ url_for('summary_history') }}">View full Gaming-History XML summary</a></p>
-
-        <hr>
-
-        <h3>Gaming-History INI parsing summary</h3>
-
-        <h4>Game Or No Game.ini</h4>
-        <ul>
-            {% for item in ini_overview.game_or_no_game %}
-                <li>{{ item.label }}: {{ item.value }}</li>
-            {% endfor %}
-        </ul>
-
-        <h4>Machine Category.ini</h4>
-        <ul>
-            {% for item in ini_overview.machine_category %}
-                <li>{{ item.label }}: {{ item.value }}</li>
-            {% endfor %}
-        </ul>
-
-        <h4>Machine Type.ini</h4>
-        <ul>
-            {% for item in ini_overview.machine_type %}
-                <li>{{ item.label }}: {{ item.value }}</li>
-            {% endfor %}
-        </ul>
-
-        <p class="muted"><a href="{{ url_for('summary_ini') }}">View full INI summary</a></p>
-
-        <hr>
-
-        <h3>Transform summary</h3>
-        <ul>
-            {% for item in transform_overview.headlines %}
-                <li>{{ item.label }}: {{ item.value }}</li>
-            {% endfor %}
-        </ul>
-        {% if transform_overview.findings %}
-            {% for group in transform_overview.findings %}
-                <h4>{{ group.title }}</h4>
-                <ul>
-                    {% for line in group["items"] %}
-                        <li>{{ line }}</li>
-                    {% endfor %}
-                </ul>
-            {% endfor %}
-        {% endif %}
-        <p class="muted"><a href="{{ url_for('summary_transform') }}">View full transform summary</a></p>
     </div>
 {% endblock content %}
