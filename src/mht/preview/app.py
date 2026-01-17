@@ -14,7 +14,7 @@ from flask import Flask, abort, render_template, request
 
 from mht.utils.paths import active_version
 
-from .formatting import as_dict, header_versions
+from .formatting import as_dict, format_duration_seconds, format_utc_iso, header_versions
 from .overview import (
     build_history_overview,
     build_ini_overview,
@@ -62,11 +62,14 @@ def create_app(preview_data: PreviewData) -> Flask:
         version = active_version()
 
         t_hdr = as_dict(pd.transform_summary.get("header"))
+
         run = {
-            "started_utc": t_hdr.get("started_utc") or pd.transform_summary.get("started_utc"),
-            "finished_utc": t_hdr.get("finished_utc") or pd.transform_summary.get("finished_utc"),
-            "duration_seconds": t_hdr.get("duration_seconds") or pd.transform_summary.get("duration_seconds"),
-            "generated_at": t_hdr.get("generated_at"),
+            "started_utc": format_utc_iso(t_hdr.get("started_utc") or pd.transform_summary.get("started_utc")),
+            "finished_utc": format_utc_iso(t_hdr.get("finished_utc") or pd.transform_summary.get("finished_utc")),
+            "duration_seconds": format_duration_seconds(
+                t_hdr.get("duration_seconds") or pd.transform_summary.get("duration_seconds")
+            ),
+            "generated_at": format_utc_iso(t_hdr.get("generated_at")),
         }
 
         m_ver = header_versions(pd.mame_summary)

@@ -8,7 +8,8 @@ keep route handlers readable.
 """
 
 import json
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
+from datetime import datetime, timezone
 
 from .preview_data import JsonDict
 
@@ -60,3 +61,55 @@ def header_versions(summary: JsonDict) -> JsonDict:
     """
     header = as_dict(summary.get("header"))
     return as_dict(header.get("versions"))
+
+def format_utc_iso(ts: object) -> Optional[str]:
+    """
+    Format an ISO-8601 UTC timestamp into a more readable string.
+
+    Accepts strings like:
+        2026-01-17T14:56:26.730236Z
+        2026-01-17T14:56:26Z
+
+    Returns:
+        "17 Jan 2026, 14:56:26 UTC" or None if ts is not usable.
+    """
+    if not isinstance(ts, str):
+        return None
+
+    s = ts.strip()
+    if not s:
+        return None
+
+    # Handle Zulu suffix used by our summaries.
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return ts  # fall back to original string if parsing fails
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+
+    return dt.strftime("%d %b %Y, %H:%M:%S UTC")
+
+
+def format_duration_seconds(value: object) -> Optional[str]:
+    """
+    Format a duration value (seconds) into a friendly string.
+
+    Returns:
+        "12.0 seconds" or None if value is not usable.
+    """
+    if value is None:
+        return None
+
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+    return f"{seconds:.1f} seconds"
