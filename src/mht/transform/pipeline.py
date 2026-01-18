@@ -97,6 +97,37 @@ SCHEMA_VER_PAGES = output_schema("pages")["version"]
 
 # --- stamp + file meta helpers (add near imports) ---
 
+def _records_in_dict_json(p: Path) -> int | None:
+    """
+    Return len(dict) if the JSON root is a dict, else None.
+    Used for input artefacts like mame_machines.json and gh_ini_classifications.json.
+    """
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+        return len(obj) if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+def _read_summary_compact(p: Path) -> dict:
+    """
+    Read an upstream parsing summary and return only the bits Transform cares about.
+    Safe: returns {} on any failure.
+    """
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            doc = json.load(f) or {}
+        header = doc.get("header") or {}
+        prov = doc.get("provenance") or {}
+        return {
+            "header": header,
+            "provenance": {
+                "inputs": prov.get("inputs") or []
+            },
+        }
+    except Exception:
+        return {}
+
 def _records_in_wiki_or_raw_json(p: Path) -> int | None:
     try:
         with open(p, "r", encoding="utf-8") as f:
@@ -532,6 +563,72 @@ def run_transformer() -> bool:
         duration_seconds=duration,
     )
 
+    # --- NEW: Transform provenance (consumed artefacts) ---
+    provenance_inputs = []
+    for p in (
+        mame_machines_path(),
+        parent_index_path(),
+        gh_system_ports_path(),
+        ini_classifications_path(),
+        title_overrides_path(),
+    ):
+        try:
+            if p and p.exists():
+                meta = file_meta(p)
+                # Optional lightweight record counts for JSON dict roots
+                recs = _records_in_dict_json(p)
+                if recs is not None:
+                    meta["records"] = recs
+                provenance_inputs.append(meta)
+            else:
+                provenance_inputs.append({"path": p.as_posix() if isinstance(p, Path) else str(p), "missing": True})
+        except Exception:
+            provenance_inputs.append({"path": p.as_posix() if isinstance(p, Path) else str(p), "error": "stat-failed"})
+
+    upstream_summaries = {
+        "mame": _read_summary_compact(mame_summary_path()),
+        "history": _read_summary_compact(history_summary_path()),
+        "ini": _read_summary_compact(ini_summary_path()),
+    }
+
+    provenance = {
+        "inputs": provenance_inputs,
+        "upstream_summaries": upstream_summaries,
+    }
+
+    # --- Provenance: outputs produced by this stage ---
+    provenance_outputs = []
+
+    def _add_output_meta(p: Path, extra: dict | None = None):
+        if p.exists():
+            meta = file_meta(p)
+            if extra:
+                meta.update(extra)
+            provenance_outputs.append(meta)
+
+    _add_output_meta(
+        exotica_wiki_path(),
+        {"records": _records_in_wiki_or_raw_json(exotica_wiki_path())},
+    )
+
+    _add_output_meta(
+        exotica_raw_path(),
+        {"records": _records_in_wiki_or_raw_json(exotica_raw_path())},
+    )
+
+    _add_output_meta(
+        exotica_pages_path(),
+        {
+            "pages_count": pages_info.get("pages_count") if isinstance(pages_info, dict) else None,
+            "redirects_count": pages_info.get("redirects_count") if isinstance(pages_info, dict) else None,
+            "conflicts_count": pages_info.get("conflicts_count") if isinstance(pages_info, dict) else None,
+        },
+    )
+    provenance["outputs"] = provenance_outputs
+
+    # transform_summary.json itself (self-describing, optional but nice)
+    #_add_output_meta(transform_summary_path())
+
     summary = build_transform_summary(
         header=header,
         inputs=inputs_map,
@@ -558,10 +655,24 @@ def run_transformer() -> bool:
         errors=[],
     )
 
+    # Ensure consistent top-level ordering: header -> provenance -> rest
+    if isinstance(summary, dict):
+        summary = {
+            "header": summary.get("header"),
+            "provenance": provenance,
+            **{k: v for k, v in summary.items() if k != "header"},
+        }
+
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
 
     ok_sum = write_json(transform_summary_path(), summary, sort_keys=False)
+    # Optional: include the summary file itself (now that it's been written)
+    try:
+        if transform_summary_path().exists():
+            provenance["outputs"].append(file_meta(transform_summary_path()))
+    except Exception:
+        pass
 
     # --- Build a rich stamp mirroring other stages ---
     stamp_doc = dict(current_stamp)  # keep the freshness core intact

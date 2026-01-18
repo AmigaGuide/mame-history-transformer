@@ -147,15 +147,7 @@ def build_transform_summary(
 
     summary: Dict[str, Any] = {
         "header": header,
-        # Legacy mirror fields retained one cycle (your transformer does this today)
-        "transformer_schema": header.get("schema_version"),
-        "started_utc": header.get("started_utc"),
-        "finished_utc": header.get("finished_utc"),
-        "duration_seconds": header.get("duration_seconds"),
-        "inputs": inputs or {},
-        "outputs": outputs or {},
-        # Simple mirror of versions (kept for backward-compat in tests)
-        "versions": header.get("versions", {}),
+
         "counts": counts_block,
         "excluded_parents_by_reason": excluded_parents_by_reason or {},
         "included_flags": included_flags or {},
@@ -164,7 +156,6 @@ def build_transform_summary(
         "title_overrides": title_overrides or {"stats": {"configured": 0, "eligible": 0, "applied": 0}, "applied": []},
         "ports": ports or {},
         "notes": {
-            # Keep your current explanatory notes; transformer can still override/extend this dict if desired.
             "ports_attached": True,
             "export_scope": (
                 "Parents are exported only if INI says Arcade/Game AND the parent or any clone has ≥1 valid GH port row (platform present)."
@@ -183,8 +174,6 @@ def build_transform_summary(
                 "nested_preserved_inside": True,
             },
             "clones_list_title_source": "raw MAME 'description' (no overrides)",
-            # The ignored devices “top N” list is curated in transformer; if you
-            # still compute it there, you can attach under notes.ignored_media_devices.
         },
         "errors": errors or [],
     }
