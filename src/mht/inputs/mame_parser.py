@@ -26,6 +26,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict
 import json, datetime
+import zipfile
 
 
 from mht.utils.config import LOG_LEVEL
@@ -250,7 +251,6 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
             )
 
         for event, elem in _event_source():
-        #for event, elem in iter_mame_events(file_path, mame_encoding):
             # Root attributes (build/mameconfig)
             b, mc = capture_root_attrs(event, elem)
             if b is not None or mc is not None:
@@ -464,6 +464,54 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     )
 
     # ----------------------------
+    # Provenance (ZIP-only, Pass A)
+    # ----------------------------
+    try:
+        # Pull ZIP member details from encodings cache (per-release).
+        enc_cache = load_encodings_cache(enc_path)
+        cached = _xml_input_from_cache(enc_cache, "mame.xml", kind="mame_xml")
+
+        zip_archive = cached.get("zip_archive") or primary_input.name
+        zip_member = cached.get("zip_member")
+
+        # Derive timestamp from ZIP member (central directory).
+        # ZIP member timestamps have no timezone information.
+        zip_member_modified = None
+        if zip_member:
+            with zipfile.ZipFile(primary_input) as zf:
+                info = zf.getinfo(zip_member)
+                dt = datetime.datetime(*info.date_time)
+                zip_member_modified = dt.isoformat()
+
+        summary["provenance"] = {
+            "inputs": [
+                {
+                    # Use the ZIP member name (most precise identifier).
+                    "name": zip_member or "mame.xml",
+
+                    # Version declared by the source XML (duplicated intentionally).
+                    "declared_version": (
+                        summary.get("header", {})
+                               .get("versions", {})
+                               .get("mame_xml_version")
+                    ),
+                    "declared_date": None,
+
+                    # ZIP member timestamp as stored (no timezone asserted).
+                    "zip_member_modified": zip_member_modified,
+
+                    # ZIP context.
+                    "zip_archive": zip_archive,
+                    "zip_member": zip_member,
+                }
+            ]
+        }
+    except Exception as e:
+        log.warning(
+            f"[mame_parser::parse_mame_xml] Provenance not recorded: {e}"
+        )
+
+    # ----------------------------
     # Invariants (warnings only)
     # ----------------------------
     check_mame_parse_invariants(
@@ -493,18 +541,23 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     # ----------------------------
     # Write outputs
     # ----------------------------
-    #if not write_json(mame_machines_path(), {k: machines_out[k] for k in sorted(machines_out)}, sort_keys=False):
     if not write_json(mame_machines_path(), {k: machines_out[k] for k in sorted(machines_out)}, sort_keys=False):
         return False
     log.info(f"Wrote canonical machines: {mame_machines_path()}")
 
-    #if not write_json(mame_summary_path(), summary, sort_keys=False):
+    # Reorder keys for readability: header, provenance, then everything else
+    if "provenance" in summary:
+        summary = {
+            "header": summary.get("header", {}),
+            "provenance": summary.get("provenance", {}),
+            **{k: v for k, v in summary.items() if k not in ("header", "provenance")},
+        }
+
     if not write_json(mame_summary_path(), summary, sort_keys=False):
         return False
     log.info(f"Wrote MAME totals summary: {mame_summary_path()}")
 
     parent_index = build_parent_index(machines_out)
-    #if not write_json(parent_index_path(), parent_index):
     if not write_json(parent_index_path(), parent_index):
         return False
     log.info(

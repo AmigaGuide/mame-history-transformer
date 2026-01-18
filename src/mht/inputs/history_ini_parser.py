@@ -161,6 +161,18 @@ def load_ini_classifications(encodings: Dict[str, str],
                 text2 = io.TextIOWrapper(bf2, encoding=enc, errors="replace")
                 ext["version"] = ini_version_info(text2)  # stream again for header sniff
 
+            ext["filename"] = Path(member).name
+            ext["zip_member"] = member            
+            # ZIP provenance (timezone-less; taken from ZIP member metadata)
+            try:
+                zinfo = zf.getinfo(member)
+                dt = datetime.datetime(*zinfo.date_time)  # naive local time stored in zip
+                ext["zip_member_modified"] = dt.isoformat()
+            except Exception:
+                ext["zip_member_modified"] = None
+
+            ext["zip_archive"] = zip_path.name
+                        
             ext["encoding"] = enc
             parsed[key] = ext
 

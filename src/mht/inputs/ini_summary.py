@@ -20,15 +20,6 @@ from mht.utils.ini import (
     sorted_counts_from_listed,
     sorted_counts_from_unique_sets,
 )
-from mht.utils.paths import ini_game_path, ini_category_path, ini_type_path
-
-
-# Local mapping to avoid importing from history_metadata (prevents circularity)
-_INI_PATHS = {
-    "game_status": ini_game_path(),
-    "category": ini_category_path(),
-    "type": ini_type_path(),
-}
 
 
 def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
@@ -54,15 +45,21 @@ def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
 
     # Union of machine names across all INIs
     union_names: Set[str] = set()
-    for key, path in _INI_PATHS.items():
+    
+    expected = ("game_status", "category", "type")
+
+    for key in expected:
         info = parsed.get(key, {}) or {}
         ms: Dict[str, Set[str]] = info.get("machine_sections", {})
         slc: Dict[str, int]      = info.get("section_listed_counts", {})
         sus: Dict[str, Set[str]] = info.get("section_unique_sets", {})
         union_names |= set(ms.keys())
 
+        # Prefer a reported filename if you add one later; otherwise keep key-based friendly names
+        filename = info.get("filename") or key
+
         files_block[key] = {
-            "filename": path.name,
+            "filename": filename,
             "encoding": info.get("encoding", "utf-8"),
             "version": info.get("version", {}) or {},
             "entries_listed": info.get("entries_listed", 0),
@@ -74,11 +71,9 @@ def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
             "duplicate_assignments": info.get("duplicates_across_sections", 0),
         }
 
-        try:
-            if not path.exists():
-                errors.append(f"Missing INI: {path.name}")
-        except Exception:
-            errors.append(f"Missing INI: {path.name}")
+        # ZIP-only: missing means "not present in parsed bundle" OR placeholder shape.
+        #if not info or not ms:
+        #    errors.append(f"Missing INI data: {key}")
 
     coverage = {
         "unique_machine_names_union": len(union_names),
@@ -104,8 +99,11 @@ def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
         for v in (files_block[k]["version"] for k in files_block)
         if v and (v.get("mame_build"))
     }
-    if len(mame_builds) == 1:
-        header_versions["mame_build"] = next(iter(mame_builds))
+    
+    if len(mame_builds) == 1 and len(mame_versions) == 1:
+        v = next(iter(mame_versions))
+        b = next(iter(mame_builds))
+        header_versions["mame_build"] = f"{v} ({b})"
 
     header = build_summary_header(
         schema_id=SCHEMA_IDS["ini"],
@@ -114,8 +112,34 @@ def build_ini_summary(parsed: Dict[str, dict], now_iso: str) -> dict:
         generated_at=now_iso,
     )
 
+    expected = ("game_status", "category", "type")
+
+    prov_inputs = []
+    for key in expected:
+        info = parsed.get(key, {}) or {}
+        
+        v = (info.get("version") or {}).get("mame_version")
+        b = (info.get("version") or {}).get("mame_build")
+
+        declared_build = None
+        if v and b:
+            declared_build = f"{v} ({b})"
+        elif b:
+            declared_build = b
+
+        prov_inputs.append({
+            "name": info.get("zip_member") or info.get("filename") or key,
+            "declared_mame_version": v,
+            "declared_mame_build": declared_build,
+            "zip_member_modified": info.get("zip_member_modified"),
+            "zip_archive": info.get("zip_archive"),
+            "zip_member": info.get("zip_member"),
+            "encoding": info.get("encoding", "utf-8"),
+        })
+
     summary = {
         "header": header,
+        "provenance": {"inputs": prov_inputs},        
         "ini": {
             "generated_at": now_iso,
             "files": files_block,

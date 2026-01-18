@@ -318,6 +318,14 @@ def process_section_blocks(
     dynamic_per_line = allow_heuristic and (not has_structural) and (len(non_blank) > 1)
     per_line = forced_per_line or dynamic_per_line
 
+    # --- Record policy usage for summary (per section call)
+    ppc = parsing_state.setdefault("provenance_policy_counts", {})
+    sec = ppc.setdefault(tag, {"per_line": 0, "heuristic_per_line": 0})
+    if per_line:
+        sec["per_line"] += 1
+    if dynamic_per_line:
+        sec["heuristic_per_line"] += 1
+
     # cursors for provenance across filtered lines
     # filtered_idx will be advanced as we consume lines into blocks
     filtered_idx = 0
@@ -339,6 +347,12 @@ def process_section_blocks(
         # dedupe and keep stable order
         seen = set()
         supp_unique = [s for s in supp if not (s in seen or seen.add(s))]
+
+        # --- Record blocks that carry suppressions (for summary)
+        if supp_unique:
+            parsing_state["provenance_blocks_with_suppressions"] = int(
+                parsing_state.get("provenance_blocks_with_suppressions", 0)
+            ) + 1
 
         return {
             "system": primary,

@@ -35,6 +35,9 @@ def build_history_summary(
     *,
     history_version: str | None,
     history_date: str | None,
+    zip_archive: str | None = None,
+    zip_member: str | None = None,
+    zip_member_modified: str | None = None,    
     parsing_state: Dict,
     systems_count: int,
     software_count: int,
@@ -211,6 +214,18 @@ def build_history_summary(
 
     summary = {
         "header": header,
+        "provenance": {
+            "inputs": [
+                {
+                    "name": zip_member or "history.xml",
+                    "declared_version": history_version,
+                    "declared_date": history_date,
+                    "zip_member_modified": zip_member_modified,
+                    "zip_archive": zip_archive,
+                    "zip_member": zip_member,
+                }
+            ]
+        },                                        
         "totals": {
             "systems_total": systems_count,
             "software_total": software_count,
@@ -227,7 +242,7 @@ def build_history_summary(
             "additional_tag_count_unique": len(_tags_map),
             "ports_with_comments": parsing_state["ports_with_comments"],
             "systems_with_port_overview": len(overviews_map),
-        },
+        },                       
         "found": {
             "section_headings_found": section_headings_block,
             "platform_categories_found": platform_categories_block,
@@ -246,7 +261,7 @@ def build_history_summary(
                 "by_type": dict(sorted(_btc.items(), key=lambda kv: kv[0]))
             }
         },
-        "provenance": {
+        "provenance_qc": {
             "policy_counts": provenance_policy_counts,
             "blocks_with_suppressions": blocks_with_suppressions
         },

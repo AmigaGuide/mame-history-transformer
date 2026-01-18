@@ -203,6 +203,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         "block_type_counts": Counter(),
         "unknown_blocks": {},
 
+        # Block provenance policy summary (written into history_parsing_summary.json)
+        "provenance_policy_counts": {},              # section_tag -> {per_line:int, heuristic_per_line:int}
+        "provenance_blocks_with_suppressions": 0,    # total blocks carrying suppressions
+
         # Suppressions summary
         "suppressions": {"counts": {}, "by_system": {}},
 
@@ -224,6 +228,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     try:
         with zipfile.ZipFile(history_zip) as zf:
             member = _find_history_xml_member(zf)
+            zip_member_modified = None
+            try:
+                info = zf.getinfo(member)
+                zip_member_modified = datetime.datetime(*info.date_time).isoformat()
+            except Exception:
+                zip_member_modified = None
+                        
             if not member:
                 log.error(f"No XML member found inside {history_zip.name}")
                 return False
@@ -284,6 +295,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 # Apply suppressions AND capture line-level provenance
                                 try:
                                     lines_filtered, prov = apply_suppressions(tag, lines, primary, parsing_state)
+                                    
+                                    if prov.get("line_suppressions"):
+                                        parsing_state["debug_non_empty_line_suppressions"] = parsing_state.get("debug_non_empty_line_suppressions", 0) + 1
+                                                                        
                                 except Exception as e:
                                     debug_log(f"[history_parser::suppress] {primary}:{sec_name} suppression error: {e}")
                                     lines_filtered, prov = (lines, {"raw_line_indices": list(range(1, len(lines) + 1)), "line_suppressions": {}})
@@ -395,6 +410,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     log.info(f"  - {systems_count} entries had <systems> (arcade-relevant)")
     log.info(f"  - {software_count} entries had <software> (non-arcade)")
     log.info(f"  - {port_overview_count} entries contained a port overview")
+    log.info(f"Non-empty line_suppressions seen: {parsing_state.get('debug_non_empty_line_suppressions', 0)}")
 
     systems_sorted = build_history_systems_sorted(gh_systems)
     if not write_json(gh_system_ports_path(), systems_sorted, sort_keys=False):
@@ -413,6 +429,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     summary = build_history_summary(
         history_version=history_version,
         history_date=history_date,
+        zip_archive=history_zip.name,
+        zip_member=member,
+        zip_member_modified=zip_member_modified,
         parsing_state=parsing_state,
         systems_count=systems_count,
         software_count=software_count,
