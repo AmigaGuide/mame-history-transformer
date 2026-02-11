@@ -175,11 +175,28 @@ def prep_transform_summary_page_context(transform_summary: JsonDict) -> JsonDict
     excluded = transform_summary.get("excluded_parents_by_reason")
     excluded_pairs = sorted_pairs_from_mapping(excluded) if isinstance(excluded, dict) else []
 
+    # --- NEW: provenance blocks ---
+    provenance = as_dict(transform_summary.get("provenance"))
+    prov_inputs = provenance.get("inputs")
+    prov_outputs = provenance.get("outputs")
+    upstream = provenance.get("upstream_summaries")
+
+    prov_inputs_list = [as_dict(x) for x in prov_inputs] if isinstance(prov_inputs, list) else []
+    prov_outputs_list = [as_dict(x) for x in prov_outputs] if isinstance(prov_outputs, list) else []
+    upstream_dict = as_dict(upstream) if isinstance(upstream, dict) else {}
+
     return {
         "header": header,
         "counts": counts,
         "selection": selection,
         "ports": ports,
         "excluded_pairs": excluded_pairs,
+
+        # NEW
+        "provenance": provenance,
+        "prov_inputs": prov_inputs_list,
+        "prov_outputs": prov_outputs_list,
+        "upstream": upstream_dict,
+
         "raw_json": pretty_json(transform_summary),
     }

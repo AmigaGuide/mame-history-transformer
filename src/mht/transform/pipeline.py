@@ -616,18 +616,50 @@ def run_transformer() -> bool:
         {"records": _records_in_wiki_or_raw_json(exotica_raw_path())},
     )
 
+    provenance["outputs"] = provenance_outputs
+
+    # --- Pages artefact counts for provenance.outputs ---
+    if isinstance(pages_info, dict):
+        stats = pages_info.get("stats")
+        if isinstance(stats, dict):
+            # Prefer explicit stat keys if present
+            pages_count = stats.get("pages_count")
+            redirects_count = stats.get("redirects_count")
+            conflicts_count = stats.get("conflicts_count")
+
+        # Fallback to lengths if still unknown
+        def _len_if_sized(x):
+            return len(x) if isinstance(x, (list, dict)) else None
+
+        pages_list = pages_info.get("pages")
+        redirects_list = pages_info.get("redirects")
+        conflicts_list = pages_info.get("conflicts")
+
+        if pages_count is None:
+            pages_count = _len_if_sized(pages_list)
+        if redirects_count is None:
+            redirects_count = _len_if_sized(redirects_list)
+        if conflicts_count is None:
+            conflicts_count = _len_if_sized(conflicts_list)
+
+        # Fallback to lengths if still unknown (works even if stats keys differ)
+        def _len_if_sized(x):
+            return len(x) if isinstance(x, (list, dict)) else None
+
+        pages_count = _len_if_sized(pages_list)
+        redirects_count = _len_if_sized(redirects_list)
+        conflicts_count = _len_if_sized(conflicts_list)
+
+
     _add_output_meta(
         exotica_pages_path(),
         {
-            "pages_count": pages_info.get("pages_count") if isinstance(pages_info, dict) else None,
-            "redirects_count": pages_info.get("redirects_count") if isinstance(pages_info, dict) else None,
-            "conflicts_count": pages_info.get("conflicts_count") if isinstance(pages_info, dict) else None,
+            "pages_count": pages_count,
+            "redirects_count": redirects_count,
+            "conflicts_count": conflicts_count,
         },
     )
-    provenance["outputs"] = provenance_outputs
 
-    # transform_summary.json itself (self-describing, optional but nice)
-    #_add_output_meta(transform_summary_path())
 
     summary = build_transform_summary(
         header=header,
@@ -656,23 +688,29 @@ def run_transformer() -> bool:
     )
 
     # Ensure consistent top-level ordering: header -> provenance -> rest
-    if isinstance(summary, dict):
+    if isinstance(summary, dict):        
         summary = {
             "header": summary.get("header"),
             "provenance": provenance,
-            **{k: v for k, v in summary.items() if k != "header"},
+            **{k: v for k, v in summary.items() if k not in ("header", "provenance")},
         }
-
+        
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
 
     ok_sum = write_json(transform_summary_path(), summary, sort_keys=False)
-    # Optional: include the summary file itself (now that it's been written)
-    try:
-        if transform_summary_path().exists():
-            provenance["outputs"].append(file_meta(transform_summary_path()))
-    except Exception:
-        pass
+
+    # Optional: include transform_summary.json itself (requires a second write)
+    if ok_sum:
+        try:
+            p = transform_summary_path()
+            if p.exists():
+                provenance_outputs.append(file_meta(p))
+                provenance["outputs"] = provenance_outputs
+                summary["provenance"] = provenance
+                ok_sum = write_json(p, summary, sort_keys=False)
+        except Exception:
+            pass
 
     # --- Build a rich stamp mirroring other stages ---
     stamp_doc = dict(current_stamp)  # keep the freshness core intact
@@ -706,13 +744,33 @@ def run_transformer() -> bool:
     pages_fp = exotica_pages_path()
     if pages_fp.exists():
         pmeta = file_meta(pages_fp)
+
+        stats = {}
         if isinstance(pages_info, dict):
-            pmeta.update({
-                "pages_count":      pages_info.get("pages_count"),
-                "redirects_count":  pages_info.get("redirects_count"),
-                "conflicts_count":  pages_info.get("conflicts_count"),
-            })
+            stats = pages_info.get("stats") or {}
+        if not isinstance(stats, dict):
+            stats = {}
+
+        pmeta.update({
+            "pages_count": stats.get("pages_count"),
+            "redirects_count": stats.get("redirects_count"),
+            "conflicts_count": stats.get("conflicts_count"),
+        })
+
         outputs.append(pmeta)
+
+
+        def _len_if_list(x):
+            return len(x) if isinstance(x, list) else None
+
+        if pmeta["pages_count"] is None and isinstance(pages_info, dict):
+            pmeta["pages_count"] = _len_if_list(pages_info.get("pages"))
+        if pmeta["redirects_count"] is None and isinstance(pages_info, dict):
+            pmeta["redirects_count"] = _len_if_list(pages_info.get("redirects"))
+        if pmeta["conflicts_count"] is None and isinstance(pages_info, dict):
+            pmeta["conflicts_count"] = _len_if_list(pages_info.get("conflicts"))
+
+
 
     ts_fp = transform_summary_path()
     if ts_fp.exists():

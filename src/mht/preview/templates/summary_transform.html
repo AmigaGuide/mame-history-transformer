@@ -42,6 +42,139 @@
     </div>
   {% endif %}
 
+  {# ------------------------------------------------------------------ #}
+  {# Provenance (new)                                                   #}
+  {# ------------------------------------------------------------------ #}
+
+  {% if prov_inputs or prov_outputs or upstream %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Provenance</h2>
+
+      {% if prov_inputs %}
+        <h3>Inputs (consumed artefacts)</h3>
+        <table class="search-results">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Modified (UTC)</th>
+              <th>Size (bytes)</th>
+              <th>Records</th>
+              <th>SHA-256</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for x in prov_inputs %}
+              <tr>
+                <td>{{ x.path or x.name or "unknown" }}</td>
+                <td>{{ x.modified_utc or x.zip_member_modified or "unknown" }}</td>
+                <td>{{ x.size_bytes if x.size_bytes is not none else "" }}</td>
+                <td>{{ x.records if x.records is not none else "" }}</td>
+                <td style="font-family:monospace;">{{ x.sha256 or "" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      {% if prov_outputs %}
+        <h3 style="margin-top:1rem;">Outputs (produced artefacts)</h3>
+        <table class="search-results">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Modified (UTC)</th>
+              <th>Size (bytes)</th>
+              <th>Records</th>
+              <th>Pages</th>
+              <th>Redirects</th>
+              <th>Conflicts</th>
+              <th>SHA-256</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for x in prov_outputs %}
+              <tr>
+                <td>{{ x.path or x.name or "unknown" }}</td>
+                <td>{{ x.modified_utc or x.zip_member_modified or "unknown" }}</td>
+                <td>{{ x.size_bytes if x.size_bytes is not none else "" }}</td>
+                <td>{{ x.records if x.records is not none else "" }}</td>
+                <td>{{ x.pages_count if x.pages_count is not none else "" }}</td>
+                <td>{{ x.redirects_count if x.redirects_count is not none else "" }}</td>
+                <td>{{ x.conflicts_count if x.conflicts_count is not none else "" }}</td>
+                <td style="font-family:monospace;">{{ x.sha256 or "" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      {% if upstream %}
+        <h3 style="margin-top:1rem;">Upstream summaries</h3>
+
+        {% for stage_name, doc in upstream.items() %}
+          <div class="summary-block" style="margin-top:0.75rem;">
+            <h4 style="margin-top:0;">{{ stage_name }}</h4>
+
+            {% set uh = doc.header if doc and doc.header is defined else {} %}
+            {% set up = doc.provenance if doc and doc.provenance is defined else {} %}
+            {% set uinputs = up.inputs if up and up.inputs is defined else [] %}
+
+            {% if uh %}
+              <ul>
+                <li>schema_id: {{ uh.schema_id or "unknown" }}</li>
+                <li>schema_version: {{ uh.schema_version or "unknown" }}</li>
+                <li>generated_at: {{ uh.generated_at or "unknown" }}</li>
+              </ul>
+
+              {% if uh.versions %}
+                <strong>Versions</strong>
+                <ul>
+                  {% for k, v in uh.versions.items() %}
+                    <li>{{ k }}: {{ v }}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            {% endif %}
+
+            {% if uinputs %}
+              <strong>Zip inputs</strong>
+              <table class="search-results">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Declared version</th>
+                    <th>Declared date</th>
+                    <th>Zip</th>
+                    <th>Member</th>
+                    <th>Member modified</th>
+                    <th>Encoding</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for i in uinputs %}
+                    <tr>
+                      <td>{{ i.name or "unknown" }}</td>
+                      <td>{{ i.declared_version or i.declared_mame_version or "" }}</td>
+                      <td>{{ i.declared_date or "" }}</td>
+                      <td>{{ i.zip_archive or "" }}</td>
+                      <td>{{ i.zip_member or "" }}</td>
+                      <td>{{ i.zip_member_modified or "" }}</td>
+                      <td>{{ i.encoding or "" }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {# ------------------------------------------------------------------ #}
+  {# Existing sections                                                  #}
+  {# ------------------------------------------------------------------ #}
+
   {% if counts %}
     <div class="summary-block" style="margin-top:1rem;">
       <h2>Counts</h2>

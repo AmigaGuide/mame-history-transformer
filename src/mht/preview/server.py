@@ -21,6 +21,33 @@ from .loaders import load_preview_data
 
 log = setup_logger(__name__)
 
+def _get(d: dict, *path, default=None):
+    cur = d
+    for key in path:
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(key)
+    return cur if cur is not None else default
+
+
+def summary_header(doc: dict) -> dict:
+    return _get(doc, "header", default={}) or {}
+
+
+def summary_provenance(doc: dict) -> dict:
+    return _get(doc, "provenance", default={}) or {}
+
+
+def prov_inputs(doc: dict) -> list[dict]:
+    return _get(doc, "provenance", "inputs", default=[]) or []
+
+
+def prov_outputs(doc: dict) -> list[dict]:
+    return _get(doc, "provenance", "outputs", default=[]) or []
+
+
+def prov_upstream(doc: dict) -> dict:
+    return _get(doc, "provenance", "upstream_summaries", default={}) or {}
 
 def run_preview(port: int | None = None, auto_open: Optional[bool] = None) -> None:
     """
