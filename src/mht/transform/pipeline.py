@@ -275,7 +275,7 @@ def run_transformer() -> bool:
         tool="transformer",
         inputs=stamp_inputs,
         stamps_dir=stamps_dir(),
-    )   
+    )
     if fresh:
         log.info("Transform stage up-to-date (stamp matched) — skipping transform")
         return True
@@ -291,7 +291,7 @@ def run_transformer() -> bool:
     have_overrides = isinstance(overrides, dict) and bool(overrides)
     overrides_applied: list[dict[str, str]] = []
     overrides_stats = {"configured": len(overrides) if isinstance(overrides, dict) else 0, "eligible": 0, "applied": 0}
-   
+
     mame_machines, parent_index, gh_system_ports, ini_classifications = load_stage_inputs()
 
     # Normalise inputs to dicts and bind to names the rest of the file expects
@@ -305,7 +305,7 @@ def run_transformer() -> bool:
     ini_map = inherit_parent_classification_for_clones(ini_raw, parent_index)
 
     gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
-   
+
     if not isinstance(mame, dict) or not isinstance(ini_map, dict) or not isinstance(parent_index, dict):
         log.error("Missing or invalid inputs; aborting transform.")
         return False
@@ -496,15 +496,15 @@ def run_transformer() -> bool:
 
     parents_total, clones_total = universe_parent_clone_counts(mame)
 
-    # --- Build pages + redirects ---    
+    # --- Build pages + redirects ---
     ok_pages, pages_info = write_pages_and_redirects(
         out_map=out_map,
         prefix=WIKI_PREFIX,
         schema_id=SCHEMA_ID_PAGES,
         schema_version=SCHEMA_VER_PAGES,
         output_path=exotica_pages_path(),
-    )    
-    
+    )
+
     ok_out = ok_out_wiki and ok_out_raw and ok_pages
 
     finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
@@ -619,37 +619,37 @@ def run_transformer() -> bool:
     provenance["outputs"] = provenance_outputs
 
     # --- Pages artefact counts for provenance.outputs ---
+    pages_count = None
+    redirects_count = None
+    conflicts_count = None
+
     if isinstance(pages_info, dict):
-        stats = pages_info.get("stats")
+        stats = pages_info.get("stats") or {}
+        pages = pages_info.get("pages")
+        redirects = pages_info.get("redirects")
+        conflicts = pages_info.get("conflicts") or {}
+
         if isinstance(stats, dict):
-            # Prefer explicit stat keys if present
-            pages_count = stats.get("pages_count")
-            redirects_count = stats.get("redirects_count")
-            conflicts_count = stats.get("conflicts_count")
+            pages_count = stats.get("parents_total")
+            redirects_count = stats.get("redirects_total")
 
-        # Fallback to lengths if still unknown
-        def _len_if_sized(x):
-            return len(x) if isinstance(x, (list, dict)) else None
+            page_collisions = stats.get("page_name_collisions")
+            redirect_conflicts = stats.get("redirect_conflicts")
 
-        pages_list = pages_info.get("pages")
-        redirects_list = pages_info.get("redirects")
-        conflicts_list = pages_info.get("conflicts")
+            if isinstance(page_collisions, int) and isinstance(redirect_conflicts, int):
+                conflicts_count = page_collisions + redirect_conflicts
 
-        if pages_count is None:
-            pages_count = _len_if_sized(pages_list)
-        if redirects_count is None:
-            redirects_count = _len_if_sized(redirects_list)
-        if conflicts_count is None:
-            conflicts_count = _len_if_sized(conflicts_list)
+        if pages_count is None and isinstance(pages, dict):
+            pages_count = len(pages)
 
-        # Fallback to lengths if still unknown (works even if stats keys differ)
-        def _len_if_sized(x):
-            return len(x) if isinstance(x, (list, dict)) else None
+        if redirects_count is None and isinstance(redirects, dict):
+            redirects_count = len(redirects)
 
-        pages_count = _len_if_sized(pages_list)
-        redirects_count = _len_if_sized(redirects_list)
-        conflicts_count = _len_if_sized(conflicts_list)
-
+        if conflicts_count is None and isinstance(conflicts, dict):
+            conflicts_count = (
+                len(conflicts.get("page_name_collisions") or [])
+                + len(conflicts.get("redirect_conflicts") or [])
+            )
 
     _add_output_meta(
         exotica_pages_path(),
@@ -688,13 +688,13 @@ def run_transformer() -> bool:
     )
 
     # Ensure consistent top-level ordering: header -> provenance -> rest
-    if isinstance(summary, dict):        
+    if isinstance(summary, dict):
         summary = {
             "header": summary.get("header"),
             "provenance": provenance,
             **{k: v for k, v in summary.items() if k not in ("header", "provenance")},
         }
-        
+
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
 
@@ -744,33 +744,13 @@ def run_transformer() -> bool:
     pages_fp = exotica_pages_path()
     if pages_fp.exists():
         pmeta = file_meta(pages_fp)
-
-        stats = {}
-        if isinstance(pages_info, dict):
-            stats = pages_info.get("stats") or {}
-        if not isinstance(stats, dict):
-            stats = {}
-
         pmeta.update({
-            "pages_count": stats.get("pages_count"),
-            "redirects_count": stats.get("redirects_count"),
-            "conflicts_count": stats.get("conflicts_count"),
+            "pages_count": pages_count,
+            "redirects_count": redirects_count,
+            "conflicts_count": conflicts_count,
         })
 
         outputs.append(pmeta)
-
-
-        def _len_if_list(x):
-            return len(x) if isinstance(x, list) else None
-
-        if pmeta["pages_count"] is None and isinstance(pages_info, dict):
-            pmeta["pages_count"] = _len_if_list(pages_info.get("pages"))
-        if pmeta["redirects_count"] is None and isinstance(pages_info, dict):
-            pmeta["redirects_count"] = _len_if_list(pages_info.get("redirects"))
-        if pmeta["conflicts_count"] is None and isinstance(pages_info, dict):
-            pmeta["conflicts_count"] = _len_if_list(pages_info.get("conflicts"))
-
-
 
     ts_fp = transform_summary_path()
     if ts_fp.exists():

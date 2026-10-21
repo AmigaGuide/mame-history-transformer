@@ -71,7 +71,7 @@ from mht.utils.paths import (
 
     # shared
     DATA_DIR, title_overrides_path,
-    
+
     # legacy global cache path (read-only for migration)
     ENCODINGS_JSON,
 
@@ -218,7 +218,7 @@ def _find_mame_archive_for_manifest(version: Optional[str]) -> Optional[Path]:
         for zp in adir.glob(pat):
             return zp
     return None
-    
+
 def parse_version_loose(s: str) -> Tuple[Tuple[int, ...], Optional[str]]:
     """
     Parse a version string into a numeric core tuple and optional suffix.
@@ -695,7 +695,7 @@ def main() -> None:
 
     stage_fragments.append(mame_stage)
 
-    
+
     # ---------------- HISTORY parse ----------------
     log.info("Beginning History XML parse...")
     history_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
@@ -868,10 +868,15 @@ def main() -> None:
         try:
             with open(pages_fp, encoding="utf-8") as f:
                 pages_doc = json.load(f)
+            pages_stats = pages_doc.get("stats") or {}
+
             tr_stats.update({
-                "wiki_pages_count":     len((pages_doc or {}).get("pages", [])),
-                "wiki_redirects_count": len((pages_doc or {}).get("redirects", [])),
-                "wiki_conflicts_count": len((pages_doc or {}).get("conflicts", [])),
+                "wiki_pages_count": pages_stats.get("parents_total"),
+                "wiki_redirects_count": pages_stats.get("redirects_total"),
+                "wiki_conflicts_count": (
+                    pages_stats.get("page_name_collisions", 0)
+                    + pages_stats.get("redirect_conflicts", 0)
+                ),
             })
         except Exception:
             pass
