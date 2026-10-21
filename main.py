@@ -356,7 +356,7 @@ def get_ini_version(file_path: Path, encoding: str) -> str:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def main() -> None:
+def main() -> int:
     """
     Orchestrate presence checks, encoding detection, version comparison (suffix-tolerant),
     cache persistence, and the invocation of MAME and History parsers. Writes a
@@ -367,7 +367,7 @@ def main() -> None:
     required_paths = check_required_files()
     if not required_paths:
         log.error("Aborting. Required files missing.")
-        return
+        return 1
 
     # Resolve version once for logs/paths
     ver = active_version()
@@ -415,7 +415,7 @@ def main() -> None:
                 hist_zip = p
     if not (mame_zip and hist_zip):
         log.error("Expected staged MAME and History archives in releases/<ver>/archives/")
-        return
+        return 1
 
     canonical_leaves = {
         "mame_xml":    "mame.xml",
@@ -933,6 +933,23 @@ def main() -> None:
         print(f"Error rebuilding releases index: {ex}")
         raise  # Optionally raise the exception to stop the pipeline
 
+    # Report overall pipeline success to the calling process.
+    failed_stages = [
+        stage["stage"]
+        for stage in stage_fragments
+        if not stage.get("ok", False)
+    ]
+
+    if failed_stages:
+        log.error(
+            "Pipeline completed with failed stages: %s",
+            ", ".join(failed_stages),
+        )
+        return 1
+
+    log.info("Pipeline completed successfully.")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

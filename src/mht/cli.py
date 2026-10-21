@@ -216,7 +216,7 @@ def _read_json_safe(p: Path) -> Optional[dict]:
     except Exception:
         pass
     return None
-    
+
 # --------------------------------------------------------------------------------------
 # Status (stamp freshness) per-stage for the ACTIVE release
 # --------------------------------------------------------------------------------------
@@ -275,8 +275,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     print(f"[status] active release = {ver}  (root: {release_root(ver).as_posix()})\n")
 
     for name, cfg in stage_cfg.items():
-        tv = tool_version(tools[name])                
-        
+        tv = tool_version(tools[name])
+
         prev = load_stamp(cfg["stamp"])
         inputs_exist = _coerce_prev_input_paths(prev)
         if not inputs_exist:
@@ -432,12 +432,24 @@ def cmd_preview(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------------------
 
 def cmd_run(_: argparse.Namespace) -> int:
-    import runpy, sys
+    import runpy
+    import sys
+
     repo_root = Path(__file__).resolve().parents[2]
     entry = repo_root / "main.py"
+
     if (repo_root / "src").exists():
         sys.path.insert(0, str(repo_root / "src"))
-    runpy.run_path(str(entry), run_name="__main__")
+
+    try:
+        runpy.run_path(str(entry), run_name="__main__")
+    except SystemExit as exc:
+        if exc.code is None:
+            return 0
+        if isinstance(exc.code, int):
+            return exc.code
+        return 1
+
     return 0
 
 
@@ -487,12 +499,12 @@ def cmd_ingest(args: argparse.Namespace) -> int:
             print(f"  [ERROR] {name}{f' ({reason})' if reason else ''}")
 
     print(f"\nSummary: moved={moved} quarantined={quarantined} skipped={skipped} errors={errors}")
-    
+
     try:
         rebuild_releases_index()
     except Exception as e:
         print(f"(note) could not rebuild releases index: {e}")
-        
+
     return 0 if (errors == 0 and quarantined == 0) else 1
 
 # --------------------------------------------------------------------------------------
@@ -577,7 +589,7 @@ def cmd_releases_info(args: argparse.Namespace) -> int:
     enc = manifest.get("encoding_cache") or {}
     if enc:
         print(f"\nEncodings cache: {enc.get('path')}  sha256={enc.get('sha256')}")
-        
+
     if args.json:
         out = {
             "release": ver,
@@ -844,7 +856,7 @@ def main() -> None:
 
     s_inc_scan   = s_incoming_sub.add_parser("scan", help="List ZIPs in data/incoming")
     s_inc_scan.set_defaults(func=cmd_incoming_scan)
-    
+
     s_inc_adopt  = s_incoming_sub.add_parser("adopt", help="Verify + move/copy a ZIP into a release")
     s_inc_adopt.add_argument("zip", type=Path, help="Path to the ZIP in data/incoming")
     s_inc_adopt.add_argument("--version", required=True, help="Target release version, e.g. 0280")
@@ -915,7 +927,7 @@ def main() -> None:
     s_fetch_dl.add_argument("--overwrite", action="store_true", help="Re-download even if files already exist")
     s_fetch_dl.add_argument("--debug", action="store_true", help="Verbose HTTP probe logging")
     s_fetch_dl.set_defaults(func=cmd_fetch_download)
-    
+
     args = p.parse_args()
 
     # Print active banner for every actual command
