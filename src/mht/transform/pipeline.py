@@ -698,19 +698,9 @@ def run_transformer() -> bool:
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
 
+    # Write the summary once. Its SHA-256 is recorded in the external
+    # transform stamp, avoiding a self-referential hash.
     ok_sum = write_json(transform_summary_path(), summary, sort_keys=False)
-
-    # Optional: include transform_summary.json itself (requires a second write)
-    if ok_sum:
-        try:
-            p = transform_summary_path()
-            if p.exists():
-                provenance_outputs.append(file_meta(p))
-                provenance["outputs"] = provenance_outputs
-                summary["provenance"] = provenance
-                ok_sum = write_json(p, summary, sort_keys=False)
-        except Exception:
-            pass
 
     # --- Build a rich stamp mirroring other stages ---
     stamp_doc = dict(current_stamp)  # keep the freshness core intact
