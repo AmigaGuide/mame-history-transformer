@@ -73,5 +73,7 @@ def test_summary_reports_new_sections():
     summary = json.loads(history_summary_path().read_text(encoding="utf-8"))
     found = summary.get("found", {})
     assert "blocks" in found and "by_type" in found["blocks"]
-    assert "provenance" in summary and "policy_counts" in summary["provenance"]
+    assert "provenance_qc" in summary
+    assert "policy_counts" in summary["provenance_qc"]
+    assert isinstance(summary["provenance_qc"]["policy_counts"], dict)
     assert "headings_qc" in summary and "near_miss_banners" in summary["headings_qc"]
