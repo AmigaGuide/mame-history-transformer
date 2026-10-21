@@ -795,14 +795,26 @@ def main() -> int:
 
     stage_fragments.append(history_stage)
 
-
     # ---------------- TRANSFORM ----------------
-    log.info("Beginning transform...")
     transform_started_utc = datetime.datetime.utcnow().isoformat() + "Z"
     tr_t0 = time.perf_counter()
 
-    # Run the transformer (it will do its own stamp check and save transform.json on success)
-    ok_transform = run_transformer()
+    # Only transform when all required upstream stages succeeded.
+    failed_dependencies = [
+        stage["stage"]
+        for stage in stage_fragments
+        if not stage.get("ok", False)
+    ]
+
+    if failed_dependencies:
+        ok_transform = False
+        log.error(
+            "Transform skipped because upstream stages failed: %s",
+            ", ".join(failed_dependencies),
+        )
+    else:
+        log.info("Beginning transform...")
+        ok_transform = run_transformer()
 
     transform_duration = round(time.perf_counter() - tr_t0, 3)
     transform_finished_utc = datetime.datetime.utcnow().isoformat() + "Z"
@@ -891,6 +903,12 @@ def main() -> int:
         "outputs": tr_outputs,
         "stats": tr_stats,
     }
+
+    if failed_dependencies:
+        transform_stage["errors"] = [
+            "skipped: upstream stage failed: " + stage
+            for stage in failed_dependencies
+        ]
 
     stage_fragments.append(transform_stage)
 
