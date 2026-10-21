@@ -298,7 +298,16 @@ def run_transformer() -> bool:
     overrides_applied: list[dict[str, str]] = []
     overrides_stats = {"configured": len(overrides) if isinstance(overrides, dict) else 0, "eligible": 0, "applied": 0}
 
-    mame_machines, parent_index, gh_system_ports, ini_classifications = load_stage_inputs()
+    try:
+        (
+            mame_machines,
+            parent_index,
+            gh_system_ports,
+            ini_classifications,
+        ) = load_stage_inputs()
+    except ValueError as exc:
+        log.error("Transform aborted: %s", exc)
+        return False
 
     # Normalise inputs to dicts and bind to names the rest of the file expects
     mame       = mame_machines or {}

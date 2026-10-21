@@ -18,16 +18,59 @@ def _path_s(p) -> str:
     """Normalise a Path to a forward-slash string for summaries."""
     return str(p).replace("\\", "/")
 
-def load_stage_inputs() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+
+def _load_required_json(path) -> Dict[str, Any]:
     """
-    Load all inputs required by the transform stage from the active release.
-    Returns (mame_machines, parent_index, gh_system_ports, ini_classifications)
+    Load a required transform input.
+
+    An empty dictionary is valid, but a missing, unreadable
+    or incorrectly structured JSON document is not.
     """
-    mame_machines       = read_json(mame_machines_path()) or {}
-    parent_idx          = read_json(parent_index_path()) or {}
-    gh_ports            = read_json(gh_system_ports_path()) or {}
-    ini_classifications = read_json(ini_classifications_path()) or {}
-    return mame_machines, parent_idx, gh_ports, ini_classifications
+    data = read_json(path)
+
+    if data is None:
+        raise ValueError(
+            f"Required transform input could not be loaded: {path}"
+        )
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Required transform input is not a JSON object: {path}"
+        )
+
+    return data
+
+
+def load_stage_inputs() -> Tuple[
+    Dict[str, Any],
+    Dict[str, Any],
+    Dict[str, Any],
+    Dict[str, Any],
+]:
+    """
+    Load and validate all required transform inputs.
+
+    Returns:
+        (mame_machines, parent_index,
+         gh_system_ports, ini_classifications)
+
+    Raises ValueError if a required input cannot be loaded
+    or does not contain a JSON object.
+    """
+    mame_machines = _load_required_json(mame_machines_path())
+    parent_idx = _load_required_json(parent_index_path())
+    gh_ports = _load_required_json(gh_system_ports_path())
+    ini_classifications = _load_required_json(
+        ini_classifications_path()
+    )
+
+    return (
+        mame_machines,
+        parent_idx,
+        gh_ports,
+        ini_classifications,
+    )
+
 
 def build_inputs_map(*, have_overrides: bool) -> Dict[str, str]:
     """
@@ -47,13 +90,13 @@ def build_inputs_map(*, have_overrides: bool) -> Dict[str, str]:
 def build_outputs_map() -> Dict[str, str]:
     """
     Assemble the 'outputs' block for the transform summary (per-release paths).
-    """    
+    """
     return {
         "exotica_lit_wiki":         _path_s(exotica_wiki_path()),
         "exotica_lit_raw_data":     _path_s(exotica_raw_path()),
         "wiki_pages_and_redirects": _path_s(exotica_pages_path()),
     }
-        
+
 def _xml_input_from_cache(cache: dict[str, Any], leaf: str, kind: str) -> dict[str, Any]:
     rec = cache.get(leaf) or {}
     return {
