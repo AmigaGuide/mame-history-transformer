@@ -123,24 +123,37 @@ def stage_is_fresh(
     tool: str,
     inputs: Iterable[Path],
     stamps_dir: Path | None = None,
+    outputs: Iterable[Path] | None = None,
 ) -> Tuple[bool, Path, dict]:
     """
-    Convenience wrapper for stage stamps (per-release):
-    - Ensures stamps_dir exists.
-    - Builds the current stamp (including tool version and inputs).
-    - Loads the previous stamp and checks freshness.
+    Check whether a processing stage is up to date.
 
-    Returns (is_fresh, stamp_path, current_stamp_dict).
+    A stage is fresh when:
+    - Its saved input digest matches the current digest.
+    - Every explicitly required output file exists.
+
+    Output checks are optional for backwards compatibility.
+
+    Returns (fresh, stamp_path, current_stamp).
     """
-    #(stamps_dir or STAMPS_DIR).mkdir(parents=True, exist_ok=True)
-    #stamp_path = (stamps_dir or STAMPS_DIR) / stamp_filename
     base = stamps_dir or resolve_stamps_dir()
     base.mkdir(parents=True, exist_ok=True)
+
     stamp_path = base / stamp_filename
+
     current = make_stamp(
         schema_id=schema_id,
         tool_version=tool_version(tool),
         inputs=list(inputs),
     )
-    prev = load_stamp(stamp_path)
-    return is_fresh(current, prev), stamp_path, current
+
+    previous = load_stamp(stamp_path)
+    fresh = is_fresh(current, previous)
+
+    if fresh and outputs is not None:
+        fresh = all(
+            Path(output).is_file()
+            for output in outputs
+        )
+
+    return fresh, stamp_path, current

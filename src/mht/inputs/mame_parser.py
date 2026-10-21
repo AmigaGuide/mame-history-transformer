@@ -146,6 +146,11 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
         schema_id="mht.stage.mame",
         tool="mame_parser",
         inputs=[primary_input, enc_path],
+        outputs=[
+            mame_machines_path(),
+            parent_index_path(),
+            mame_summary_path(),
+        ],
     )
     if fresh:
         log.info("MAME stage up-to-date (stamp matched) — skipping rebuild")

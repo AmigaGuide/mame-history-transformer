@@ -275,6 +275,12 @@ def run_transformer() -> bool:
         tool="transformer",
         inputs=stamp_inputs,
         stamps_dir=stamps_dir(),
+        outputs=[
+            exotica_wiki_path(),
+            exotica_raw_path(),
+            exotica_pages_path(),
+            transform_summary_path(),
+        ],
     )
     if fresh:
         log.info("Transform stage up-to-date (stamp matched) — skipping transform")

@@ -162,7 +162,7 @@ def load_ini_classifications(encodings: Dict[str, str],
                 ext["version"] = ini_version_info(text2)  # stream again for header sniff
 
             ext["filename"] = Path(member).name
-            ext["zip_member"] = member            
+            ext["zip_member"] = member
             # ZIP provenance (timezone-less; taken from ZIP member metadata)
             try:
                 zinfo = zf.getinfo(member)
@@ -172,7 +172,7 @@ def load_ini_classifications(encodings: Dict[str, str],
                 ext["zip_member_modified"] = None
 
             ext["zip_archive"] = zip_path.name
-                        
+
             ext["encoding"] = enc
             parsed[key] = ext
 
@@ -230,6 +230,10 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
         schema_id="mht.stage.ini",
         tool="ini_summary",
         inputs=[primary_input, enc_path],
+        outputs=[
+            ini_classifications_path(),
+            ini_summary_path(),
+        ],
     )
 
     if fresh:
@@ -252,7 +256,7 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     ok_summary = write_json(ini_summary_path(), summary, sort_keys=False)
     ok_output  = write_json(ini_classifications_path(), class_map, sort_keys=True)
 
-    if ok_summary and ok_output:           
+    if ok_summary and ok_output:
         # ---- Build a rich stamp while preserving the freshness core from current_stamp
         stamp_doc = dict(current_stamp)  # keep keys stage_is_fresh expects
 
@@ -268,7 +272,7 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
             _ini_input_from_cache(enc_cache_file, leaf_category, kind="ini_category"),
             _ini_input_from_cache(enc_cache_file, leaf_type, kind="ini_type"),
         ]
-                        
+
         # Outputs meta
         out_summary_fp = ini_summary_path()
         out_class_fp   = ini_classifications_path()

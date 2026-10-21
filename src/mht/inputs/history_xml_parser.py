@@ -163,6 +163,11 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         schema_id="mht.stage.history",
         tool="history_parser",
         inputs=[history_zip, enc_path],
+        outputs=[
+            gh_system_ports_path(),
+            gh_system_trivia_path(),
+            history_summary_path(),
+        ],
     )
     if fresh:
         log.info("History stage up-to-date (stamp matched) — skipping rebuild")
@@ -234,7 +239,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                 zip_member_modified = datetime.datetime(*info.date_time).isoformat()
             except Exception:
                 zip_member_modified = None
-                        
+
             if not member:
                 log.error(f"No XML member found inside {history_zip.name}")
                 return False
@@ -295,10 +300,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
                                 # Apply suppressions AND capture line-level provenance
                                 try:
                                     lines_filtered, prov = apply_suppressions(tag, lines, primary, parsing_state)
-                                    
+
                                     if prov.get("line_suppressions"):
                                         parsing_state["debug_non_empty_line_suppressions"] = parsing_state.get("debug_non_empty_line_suppressions", 0) + 1
-                                                                        
+
                                 except Exception as e:
                                     debug_log(f"[history_parser::suppress] {primary}:{sec_name} suppression error: {e}")
                                     lines_filtered, prov = (lines, {"raw_line_indices": list(range(1, len(lines) + 1)), "line_suppressions": {}})
@@ -310,7 +315,7 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
                                 # Raw strings for continuity
                                 raw_sections[tag] = "\n".join(lines_filtered)
-                                
+
                                 # Structured blocks with provenance injected
                                 try:
                                     blocks = process_section_blocks(
