@@ -49,8 +49,7 @@ from mht.utils.titles import (
 )
 from mht.utils.wiki_pages import WIKI_PREFIX, write_pages_and_redirects
 from mht.utils.selection import (
-    build_final_set as _build_final_set,
-    build_eligible_parents_set,
+    build_ports_parent_selection,
     universe_parent_clone_counts,
     inherit_parent_classification_for_clones,
 )
@@ -331,21 +330,34 @@ def run_transformer() -> bool:
         mame_summary_path(), history_summary_path(), ini_summary_path()
     )
 
-    # Compute the final parent set via the central selection helper
-    _result = _build_final_set(mame, ini_map)
+    # Select canonical MAME parents, preserving those with valid GH PORTS.
+    eligible_parents, included_parents, ports_exceptions = (
+        build_ports_parent_selection(
+            mame,
+            ini_map,
+            parent_index,
+            gh_keys_with_ports,
+        )
+    )
 
-    # Support either signature: Set[str] or (eligible_set, included_set, excluded_reasons)
-    if isinstance(_result, tuple) and len(_result) >= 2:
-        eligible_parents, included_parents = _result[0], _result[1]
-        # Optional third return: reasons dict; keep if provided, else preserve existing local dict
-        if len(_result) >= 3 and isinstance(_result[2], dict):
-            excluded_reasons = _result[2]
-        else:
-            excluded_reasons = {"not_game": 0, "not_arcade": 0, "unknown_classification": 0}
-    else:
-        included_parents = set(_result)
-        eligible_parents = build_eligible_parents_set(mame, ini_map)
-        excluded_reasons = {"not_game": 0, "not_arcade": 0, "unknown_classification": 0}
+    excluded_reasons = {
+        "not_game": 0,
+        "not_arcade": 0,
+        "unknown_classification": 0,
+    }
+
+    log.info(
+        "[transform::pipeline] Arcade-eligible parents: %s",
+        f"{len(eligible_parents):,}",
+    )
+    log.info(
+        "[transform::pipeline] PORTS exception parents: %s",
+        f"{len(ports_exceptions):,}",
+    )
+    log.info(
+        "[transform::pipeline] Selected parent candidates: %s",
+        f"{len(included_parents):,}",
+    )
 
     debug_log(f"[transform::pipeline] eligible={len(eligible_parents):,}, included={len(included_parents):,}")
 
@@ -650,9 +662,21 @@ def run_transformer() -> bool:
 
             page_collisions = stats.get("page_name_collisions")
             redirect_conflicts = stats.get("redirect_conflicts")
+            redirect_page_collisions = stats.get("redirect_page_collisions", 0)
 
-            if isinstance(page_collisions, int) and isinstance(redirect_conflicts, int):
-                conflicts_count = page_collisions + redirect_conflicts
+            if all(
+                isinstance(value, int)
+                for value in (
+                    page_collisions,
+                    redirect_conflicts,
+                    redirect_page_collisions,
+                )
+            ):
+                conflicts_count = (
+                    page_collisions
+                    + redirect_conflicts
+                    + redirect_page_collisions
+                )
 
         if pages_count is None and isinstance(pages, dict):
             pages_count = len(pages)
@@ -664,6 +688,7 @@ def run_transformer() -> bool:
             conflicts_count = (
                 len(conflicts.get("page_name_collisions") or [])
                 + len(conflicts.get("redirect_conflicts") or [])
+                + len(conflicts.get("redirect_page_collisions") or [])
             )
 
     _add_output_meta(
@@ -712,6 +737,21 @@ def run_transformer() -> bool:
 
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
+
+    page_stats = (pages_info or {}).get("stats") or {}
+    summary["wiki_navigation"] = {
+        "canonical_pages": page_stats.get("parents_total", 0),
+        "redirects": page_stats.get("redirects_total", 0),
+        "page_name_collisions": page_stats.get("page_name_collisions", 0),
+        "redirect_conflicts": page_stats.get("redirect_conflicts", 0),
+        "redirect_page_collisions": page_stats.get(
+            "redirect_page_collisions", 0
+        ),
+        "conflicts_total": conflicts_count or 0,
+        "disambiguation_candidates": page_stats.get(
+            "redirect_page_collisions", 0
+        ),
+    }
 
     # Write the summary once. Its SHA-256 is recorded in the external
     # transform stamp, avoiding a self-referential hash.

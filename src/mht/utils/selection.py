@@ -203,3 +203,68 @@ def universe_parent_clone_counts(mame: Dict[str, Dict[str, Any]]) -> Tuple[int, 
     parents_total = sum(1 for v in mame.values() if not (v or {}).get("cloneof"))
     clones_total  = sum(1 for v in mame.values() if (v or {}).get("cloneof"))
     return parents_total, clones_total
+
+
+def build_ports_parent_selection(
+    mame: Dict[str, Dict[str, Any]],
+    ini_map: Dict[str, Dict[str, Any]],
+    parent_index: Dict[str, Any],
+    valid_ports: Set[str],
+) -> Tuple[Set[str], Set[str], Set[str]]:
+    """
+    Select canonical MAME parents while preserving GH PORTS coverage.
+
+    Returns:
+        eligible_parents:
+            Parents satisfying the original arcade classification.
+
+        selected_parents:
+            Eligible parents plus parents with valid PORTS,
+            including PORTS belonging only to a clone.
+
+        ports_exceptions:
+            Parents with valid PORTS that do not satisfy the
+            normal arcade classification.
+
+    This function does not merge or deduplicate PORTS records.
+    """
+    eligible_parents = build_eligible_parents_set(
+        mame, ini_map
+    )
+
+    child_to_parent = (
+        (parent_index or {}).get("child_to_parent", {}) or {}
+    )
+
+    ports_parents: Set[str] = set()
+
+    for machine in valid_ports:
+        info = mame.get(machine)
+
+        if not isinstance(info, dict):
+            continue
+
+        parent = (
+            info.get("cloneof")
+            or child_to_parent.get(machine)
+            or machine
+        )
+
+        parent_info = mame.get(parent)
+
+        if not isinstance(parent_info, dict):
+            continue
+
+        if parent_info.get("cloneof"):
+            continue
+
+        ports_parents.add(parent)
+
+    ports_exceptions = ports_parents - eligible_parents
+    selected_parents = eligible_parents | ports_parents
+
+    return (
+        eligible_parents,
+        selected_parents,
+        ports_exceptions,
+    )

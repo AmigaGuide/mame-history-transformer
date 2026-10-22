@@ -229,3 +229,6 @@ findings/tools/For_BuZz/
 !findings/tools/*.json
 !findings/tools/*.py
 !findings/tools/README.md
+
+# Research folder
+research/

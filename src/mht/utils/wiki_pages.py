@@ -60,6 +60,12 @@ def compute_pages_and_redirects(out_map: Dict[str, dict], prefix: str) -> dict:
     redirect_conflicts: List[dict] = []
     sources_seen: Dict[str, str] = {}  # ci-key -> target page
 
+    canonical_owners: Dict[str, List[str]] = {}
+    for page, machines in page_to_machines.items():
+        canonical_owners.setdefault(page.casefold(), []).extend(machines)
+
+    redirect_page_collisions: Dict[str, dict] = {}
+
     for machine, rec in out_map.items():
         target = pages_map[machine]
         wiki_name = rec.get("wiki_page_name") or ""
@@ -76,6 +82,33 @@ def compute_pages_and_redirects(out_map: Dict[str, dict], prefix: str) -> dict:
                 continue
             pref_src = _pref(pretty, prefix)
             key = pref_src.casefold()
+
+            if key in canonical_owners:
+                owners = sorted(set(canonical_owners[key]))
+
+                # The name already identifies its own canonical page.
+                # No redirect or disambiguation is needed in that case.
+                if target.casefold() == key:
+                    continue
+
+                collision = redirect_page_collisions.setdefault(
+                    key,
+                    {
+                        "name": pref_src,
+                        "canonical_machines": owners,
+                        "candidates": [],
+                        "disambiguation_candidate": True,
+                    },
+                )
+
+                candidate = {
+                    "machine": machine,
+                    "target": target,
+                }
+                if candidate not in collision["candidates"]:
+                    collision["candidates"].append(candidate)
+
+                continue
 
             prev = sources_seen.get(key)
             if prev is None:
@@ -100,6 +133,7 @@ def compute_pages_and_redirects(out_map: Dict[str, dict], prefix: str) -> dict:
         "redirects_total":         len(redirects_map_sorted),
         "page_name_collisions":    len(page_name_collisions),
         "redirect_conflicts":      len(redirect_conflicts),
+        "redirect_page_collisions": len(redirect_page_collisions),
     }
 
     return {
@@ -109,6 +143,10 @@ def compute_pages_and_redirects(out_map: Dict[str, dict], prefix: str) -> dict:
         "conflicts": {
             "page_name_collisions": page_name_collisions,
             "redirect_conflicts": redirect_conflicts,
+            "redirect_page_collisions": sorted(
+                redirect_page_collisions.values(),
+                key=lambda item: item["name"].casefold(),
+            ),
         },
         "stats": stats,
     }
