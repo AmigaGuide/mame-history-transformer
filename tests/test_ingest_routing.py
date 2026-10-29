@@ -1,3 +1,6 @@
+from pathlib import Path
+
+
 def _touch_zip(dir, name):
     p = dir / name
     p.write_bytes(b"PK\x03\x04DUMMY")  # minimal local file header; we won't unzip
@@ -16,11 +19,22 @@ def test_ingest_prefers_forced_version_then_filename(monkeypatch, tmp_path):
     # Monkeypatch DATA_DIR and active_version()
     import mht.utils.paths as upaths
     monkeypatch.setattr(upaths, "DATA_DIR", data, raising=False)
-    monkeypatch.setattr(upaths, "active_version", lambda *a, **k: "0280", raising=False)
+    monkeypatch.setattr(
+        upaths,
+        "active_version",
+        lambda version_override=None: version_override or "0280",
+        raising=False,
+    )
 
     # Ensure release helpers work under patched DATA_DIR
     from mht.provenance.archives import import_incoming_archives
     res = import_incoming_archives(incoming=data / "incoming", extract=False, version=None)
+
+    for record in res:
+        destination = Path(record["dest_archive"]).resolve()
+        assert destination.is_relative_to(
+            (tmp_path / "data").resolve()
+        ), f"Archive escaped pytest temporary directory: {destination}"
 
     # Defensive: exactly two results expected
     assert len(res) == 2
@@ -34,5 +48,12 @@ def test_ingest_prefers_forced_version_then_filename(monkeypatch, tmp_path):
     _touch_zip(data / "incoming", "mame0281lx.zip")
 
     res_forced = import_incoming_archives(incoming=data / "incoming", extract=False, version="0282")
+    
+    for record in res_forced:
+        destination = Path(record["dest_archive"]).resolve()
+        assert destination.is_relative_to(
+            data.resolve()
+        ), f"Archive escaped pytest temporary directory: {destination}"    
+    
     assert len(res_forced) == 2
     assert all("/releases/0282/archives/" in (r.get("dest_archive") or "") for r in res_forced)

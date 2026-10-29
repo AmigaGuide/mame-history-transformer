@@ -79,7 +79,7 @@ def import_incoming_archives(
             target_version = _folder_version_from_mame_build(m_build) or active_version()
 
         ensure_release_dirs(target_version)
-        dest_archives_dir = (DATA_DIR / "releases" / target_version / "archives")
+        dest_archives_dir = archives_dir(target_version)
         dest_archives_dir.mkdir(parents=True, exist_ok=True)
         dest_archives = dest_archives_dir / p.name
 
@@ -135,7 +135,7 @@ def _handle_one_archive(
 
     # Stage under releases/<target_version>/archives/ (build path explicitly)
     ensure_release_dirs(target_version)
-    dest_archives_dir = (DATA_DIR / "releases" / target_version / "archives")
+    dest_archives_dir = archives_dir(target_version)
     dest_archives_dir.mkdir(parents=True, exist_ok=True)
     dest_archives = dest_archives_dir / zip_path.name
 
