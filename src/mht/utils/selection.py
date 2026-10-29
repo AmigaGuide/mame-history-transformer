@@ -205,6 +205,52 @@ def universe_parent_clone_counts(mame: Dict[str, Dict[str, Any]]) -> Tuple[int, 
     return parents_total, clones_total
 
 
+def build_ports_parent_set(
+    mame: Dict[str, Dict[str, Any]],
+    parent_index: Dict[str, Any],
+    valid_ports: Set[str],
+) -> Set[str]:
+    """
+    Return canonical MAME parents with valid GH PORTS.
+
+    PORTS may belong to a parent or any of its clones.
+
+    Machine classifications do not affect selection.
+
+    GH identifiers that cannot be resolved to a recognised
+    MAME parent are ignored.
+    """
+    child_to_parent = (
+        (parent_index or {}).get("child_to_parent", {}) or {}
+    )
+
+    ports_parents: Set[str] = set()
+
+    for machine in valid_ports:
+        info = mame.get(machine)
+
+        if not isinstance(info, dict):
+            continue
+
+        parent = (
+            info.get("cloneof")
+            or child_to_parent.get(machine)
+            or machine
+        )
+
+        parent_info = mame.get(parent)
+
+        if not isinstance(parent_info, dict):
+            continue
+
+        if parent_info.get("cloneof"):
+            continue
+
+        ports_parents.add(parent)
+
+    return ports_parents
+
+
 def build_ports_parent_selection(
     mame: Dict[str, Dict[str, Any]],
     ini_map: Dict[str, Dict[str, Any]],

@@ -158,14 +158,16 @@ def build_transform_summary(
         "notes": {
             "ports_attached": True,
             "export_scope": (
-                "Parents are exported only if INI says Arcade/Game AND the parent or any clone has ≥1 valid GH port row (platform present)."
+                "Canonical MAME parents are exported when the parent or at least "
+                "one clone has a valid Gaming History PORTS entry with a platform."
             ),
             "filter_rules": {
-                "game_status_equals": "game",
-                "category_must_include": "Arcade",
-                "ignore_coin_op_games": True,
-                "ignore_type_for_filter": True,
-                "ignore_isbios_isdevice_ismechanical_for_filter": True,
+                "requires_valid_gh_ports": True,
+                "includes_clone_ports": True,
+                "game_status_used_for_selection": False,
+                "machine_category_used_for_selection": False,
+                "machine_type_used_for_selection": False,
+                "mame_flags_used_for_selection": False,
             },
             "title_parsing": {
                 "numbered_fields": True,

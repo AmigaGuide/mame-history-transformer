@@ -49,7 +49,8 @@ from mht.utils.titles import (
 )
 from mht.utils.wiki_pages import WIKI_PREFIX, write_pages_and_redirects
 from mht.utils.selection import (
-    build_ports_parent_selection,
+    build_eligible_parents_set,
+    build_ports_parent_set,
     universe_parent_clone_counts,
     inherit_parent_classification_for_clones,
 )
@@ -330,15 +331,24 @@ def run_transformer() -> bool:
         mame_summary_path(), history_summary_path(), ini_summary_path()
     )
 
-    # Select canonical MAME parents, preserving those with valid GH PORTS.
-    eligible_parents, included_parents, ports_exceptions = (
-        build_ports_parent_selection(
-            mame,
-            ini_map,
-            parent_index,
-            gh_keys_with_ports,
-        )
+    # Identify arcade-eligible parents for diagnostic purposes.
+    # This classification no longer determines PORTS selection.
+    eligible_parents = build_eligible_parents_set(
+        mame,
+        ini_map,
     )
+
+    # Select only canonical MAME parents with valid GH PORTS,
+    # including PORTS supplied exclusively through clones.
+    included_parents = build_ports_parent_set(
+        mame,
+        parent_index,
+        gh_keys_with_ports,
+    )
+
+    # Preserve the existing diagnostic distinction between
+    # arcade-eligible machines and other PORTS-bearing machines.
+    ports_exceptions = included_parents - eligible_parents
 
     excluded_reasons = {
         "not_game": 0,
