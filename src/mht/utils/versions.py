@@ -28,7 +28,7 @@ TOOL_VERSIONS = {
 OUTPUT_SCHEMAS = {
     "wiki":   {"id": "exotica_lit_wiki",                "version": "1.1.0"},
     "raw":    {"id": "exotica_lit_raw_data",            "version": "1.1.2"},
-    "pages":  {"id": "exotica_wiki_pages_and_redirects","version": "1.1.0"},
+    "pages":  {"id": "exotica_wiki_pages_and_redirects","version": "1.1.1"},
 }
 
 
