@@ -18,7 +18,12 @@ __all__ = ["SECTION_PATTERN", "segment_text_sections"]
 
 # ----- dashed headings like "----- PORTS -----" (case-insensitive)
 SECTION_PATTERN = re.compile(r"^-+\s+([A-Z0-9 &]+)\s+-+$", re.IGNORECASE)
-_GH_ID_RE = re.compile(r"id=(\d+)")
+
+_GH_ID_RE = re.compile(
+    r"(?:[?&](?:amp;)?id=|/game/)(\d+)(?=/|[&#\s]|$)",
+    re.IGNORECASE,
+)
+
 
 def _is_near_miss_banner(line: str) -> bool:
     """
@@ -193,7 +198,7 @@ def extract_text_sections(elem: ET.Element, parsing_state: dict, primary: str | 
         sections[current_section].append(line)
 
     return sections
-        
+
 def canonicalise_heading(raw_heading: str) -> tuple[str, dict]:
     """
     Return (canonical_heading, audit_info)
