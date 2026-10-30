@@ -113,7 +113,6 @@ EXCLUDED_ARCADE_CATEGORIES = frozenset({
     "Medal Game",
     "Redemption Game",
     "Slot Machine",
-    "Whac-A-Mole",
 })
 
 # Descriptive GH machine types identifying specialised
