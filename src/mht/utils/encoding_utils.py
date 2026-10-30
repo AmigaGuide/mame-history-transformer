@@ -295,9 +295,19 @@ def detect_encodings_from_archives(
         canonical_leaves["ini_category"]: hist_by_leaf.get(ini_category_leaf),
         canonical_leaves["ini_type"]:     hist_by_leaf.get(ini_type_leaf),
     }
-    missing_inis = [k for k, v in ini_members.items() if not v]
+    missing_inis = [leaf for leaf, member in ini_members.items() if not member]
+
     if missing_inis:
-        raise FileNotFoundError(f"Missing INI(s) in {history_archive.name}: {', '.join(missing_inis)}")
+        log.warning(
+            "Optional Gaming History INI(s) missing from %s: %s",
+            history_archive.name,
+            ", ".join(missing_inis),
+        )
+
+        for leaf in missing_inis:
+            if leaf in out:
+                del out[leaf]
+                changed = True
 
     # ------- Small worker to process a single member with cache short-circuit
 
@@ -346,9 +356,9 @@ def detect_encodings_from_archives(
             # Single chardet pass for BOTH label and confidence
             result = chardet.detect(raw or b"")
             guess = result.get("encoding") or "Unknown"
-            conf  = result.get("confidence")            
+            conf  = result.get("confidence")
             conf_str = f"{conf:.2f}" if conf is not None else "n/a"
-            log.info(f"[detect] chardet: {leaf_key} -> {guess} (confidence {conf_str})")    
+            log.info(f"[detect] chardet: {leaf_key} -> {guess} (confidence {conf_str})")
             #log.info(f"[detect] chardet: {leaf_key} → {guess} (confidence {conf:.2f} if not None)")
             detected_via = "chardet"
 
@@ -400,7 +410,15 @@ def detect_encodings_from_archives(
     out[hist_leaf] = process(history_archive, hist_xml_member, hist_leaf, is_xml=True)
 
     for leaf, member in ini_members.items():
-        out[leaf] = process(history_archive, member, leaf, is_xml=False)
+        if member is None:
+            continue
+
+        out[leaf] = process(
+            history_archive,
+            member,
+            leaf,
+            is_xml=False,
+        )
 
     # ---- Human-friendly summary line so you can see the final decisions at a glance
     def _fmt(rec: dict | None) -> str:

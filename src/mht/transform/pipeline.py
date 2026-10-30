@@ -28,6 +28,7 @@ from mht.utils.versions import SCHEMA_IDS, schema_version, output_schema
 from mht.utils.paths import (
     # release-aware dirs/files
     ensure_release_dirs,
+    archives_dir,
     title_overrides_path,
     mame_summary_path, history_summary_path, ini_summary_path, transform_summary_path,
     mame_machines_path, parent_index_path, gh_system_ports_path, ini_classifications_path,
@@ -81,6 +82,7 @@ from mht.utils.redirects import (
     dedupe_ci_preserve_order as _dedupe_ci_preserve_order,
 )
 from mht.utils.transform_io import load_stage_inputs, build_inputs_map, build_outputs_map
+from mht.utils.snaps import find_snaps_archive, load_release_snaps
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -269,6 +271,11 @@ def run_transformer() -> bool:
         title_overrides_path(),
     ]
 
+    # Track the release-specific SNAPS archive as a transform input.
+    snaps_archive = find_snaps_archive(archives_dir())
+    if snaps_archive is not None:
+        stamp_inputs.append(snaps_archive)
+
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "transform.json",
         schema_id="mht.stage.transform",
@@ -318,6 +325,19 @@ def run_transformer() -> bool:
     # For transform-time classification, let clones inherit their parent's
     # INI row when the parent exists in ini_raw but the clone does not.
     ini_map = inherit_parent_classification_for_clones(ini_raw, parent_index)
+
+    # Load release-matched SNAPS classifications without changing selection.
+    snaps_map = load_release_snaps(archives_dir())
+    if snaps_map is None:
+        log.warning(
+            "[transform::snaps] No SNAPS archive found for this release."
+        )
+        snaps_map = {}
+    else:
+        log.info(
+            "[transform::snaps] Loaded %s SNAPS classifications.",
+            f"{len(snaps_map):,}",
+        )
 
     gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
 
@@ -622,6 +642,15 @@ def run_transformer() -> bool:
         except Exception:
             provenance_inputs.append({"path": p.as_posix() if isinstance(p, Path) else str(p), "error": "stat-failed"})
 
+    # Record the SNAPS source archive independently of JSON inputs.
+    if snaps_archive is not None:
+        provenance_inputs.append({
+            **file_meta(snaps_archive),
+            "kind": "snaps_catlist_archive",
+            "zip_member": "CatVer/catlist.ini",
+            "classifications": len(snaps_map),
+        })
+
     upstream_summaries = {
         "mame": _read_summary_compact(mame_summary_path()),
         "history": _read_summary_compact(history_summary_path()),
@@ -747,6 +776,27 @@ def run_transformer() -> bool:
 
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
+
+    # SNAPS coverage is diagnostic only at this stage.
+    snaps_covered_parents = included_parents_set & snaps_map.keys()
+    snaps_arcade_parents = {
+        name
+        for name in snaps_covered_parents
+        if snaps_map[name].get("group") == "Arcade"
+    }
+
+    summary["snaps_coverage"] = {
+        "classifications_total": len(snaps_map),
+        "ports_parents_total": len(included_parents_set),
+        "ports_parents_classified": len(snaps_covered_parents),
+        "ports_parents_missing": len(
+            included_parents_set - snaps_map.keys()
+        ),
+        "ports_parents_in_arcade_group": len(snaps_arcade_parents),
+        "ports_parents_in_non_arcade_group": len(
+            snaps_covered_parents - snaps_arcade_parents
+        ),
+    }
 
     page_stats = (pages_info or {}).get("stats") or {}
     summary["wiki_navigation"] = {

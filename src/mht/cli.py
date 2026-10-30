@@ -44,6 +44,8 @@ from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filenam
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
 from mht.preview.server import run_preview
+from mht.preview.server import run_preview
+from mht.utils.snaps import find_snaps_archive
 
 
 def _print_active_banner() -> None:
@@ -235,6 +237,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     # Prefer staged ZIPs (ZIP-first world); fall back to legacy extracted files if present
     mame_zip    = _find_archive_for(ver, "mame")
     history_zip = _find_archive_for(ver, "history")
+    snaps_zip   = find_snaps_archive(archives_dir(ver))
 
     # Build per-stage inputs exactly like the runners now do
     enc_cache = encodings_cache_path(ver)
@@ -266,6 +269,7 @@ def cmd_status(args: argparse.Namespace) -> int:
                 history_summary_path(ver),
                 ini_summary_path(ver),
                 title_overrides_path(),
+                snaps_zip,
             ]),
             "stamp": stamps_dir(ver) / "transform.json",
         },

@@ -14,6 +14,36 @@ from pathlib import Path
 from zipfile import ZipFile
 
 
+def find_snaps_archive(archive_dir: str | Path) -> Path | None:
+    """
+    Find the SNAPS ZIP in a release's archives directory.
+
+    Returns None when no matching archive is available.
+    """
+    directory = Path(archive_dir)
+
+    if not directory.is_dir():
+        return None
+
+    matches = sorted(
+        (
+            path
+            for path in directory.iterdir()
+            if path.is_file()
+            and path.suffix.lower() == ".zip"
+            and path.name.lower().startswith("ps_")
+        ),
+        key=lambda path: path.name.lower(),
+    )
+
+    if len(matches) > 1:
+        raise ValueError(
+            f"Multiple SNAPS archives found in {directory}"
+        )
+
+    return matches[0] if matches else None
+
+
 MATURE_SUFFIX = " * Mature *"
 
 
@@ -102,6 +132,37 @@ def load_catlist(
         )
 
     return parse_catlist(content)
+
+
+def load_release_snaps(
+    archive_dir: str | Path,
+) -> dict[str, dict[str, str]] | None:
+    """
+    Load SNAPS CatList classifications from a release archive.
+
+    Returns None when no SNAPS archive is available.
+    Raises ValueError if the archive has no unique CatList.
+    """
+    archive_path = find_snaps_archive(archive_dir)
+
+    if archive_path is None:
+        return None
+
+    with ZipFile(archive_path) as archive:
+        members = [
+            name
+            for name in archive.namelist()
+            if name.lower().endswith("/catlist.ini")
+            or name.lower() == "catlist.ini"
+        ]
+
+    if len(members) != 1:
+        raise ValueError(
+            f"Expected one CatList in {archive_path.name}; "
+            f"found {len(members)}"
+        )
+
+    return load_catlist(archive_path, members[0])
 
 
 # Categories describing machines outside the normal arcade
