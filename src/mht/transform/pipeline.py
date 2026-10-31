@@ -82,7 +82,11 @@ from mht.utils.redirects import (
     dedupe_ci_preserve_order as _dedupe_ci_preserve_order,
 )
 from mht.utils.transform_io import load_stage_inputs, build_inputs_map, build_outputs_map
-from mht.utils.snaps import find_snaps_archive, load_release_snaps
+from mht.utils.snaps import (
+    find_snaps_archive,
+    load_release_snaps,
+    partition_ports_parents,
+)
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -271,10 +275,22 @@ def run_transformer() -> bool:
         title_overrides_path(),
     ]
 
-    # Track the release-specific SNAPS archive as a transform input.
-    snaps_archive = find_snaps_archive(archives_dir())
-    if snaps_archive is not None:
-        stamp_inputs.append(snaps_archive)
+    # SNAPS classifications are required for wiki publication.
+    # Refuse to transform if the release archive is unavailable.
+    try:
+        snaps_archive = find_snaps_archive(archives_dir())
+    except ValueError as exc:
+        log.error("[transform::snaps] %s", exc)
+        return False
+
+    if snaps_archive is None:
+        log.error(
+            "[transform::snaps] Required SNAPS archive missing "
+            "for the active release. Transformation aborted."
+        )
+        return False
+
+    stamp_inputs.append(snaps_archive)
 
     fresh, stamp_path, current_stamp = stage_is_fresh(
         "transform.json",
@@ -326,18 +342,24 @@ def run_transformer() -> bool:
     # INI row when the parent exists in ini_raw but the clone does not.
     ini_map = inherit_parent_classification_for_clones(ini_raw, parent_index)
 
-    # Load release-matched SNAPS classifications without changing selection.
-    snaps_map = load_release_snaps(archives_dir())
-    if snaps_map is None:
-        log.warning(
-            "[transform::snaps] No SNAPS archive found for this release."
+    # Load classifications before generating any output files.
+    try:
+        snaps_map = load_release_snaps(archives_dir())
+    except (OSError, ValueError, KeyError) as exc:
+        log.error("[transform::snaps] Failed to load CatList: %s", exc)
+        return False
+
+    if not snaps_map:
+        log.error(
+            "[transform::snaps] CatList contains no classifications. "
+            "Transformation aborted."
         )
-        snaps_map = {}
-    else:
-        log.info(
-            "[transform::snaps] Loaded %s SNAPS classifications.",
-            f"{len(snaps_map):,}",
-        )
+        return False
+
+    log.info(
+        "[transform::snaps] Loaded %s SNAPS classifications.",
+        f"{len(snaps_map):,}",
+    )
 
     gh_keys_with_ports = _gh_keys_with_any_valid_ports(gh_ports)
 
@@ -524,9 +546,30 @@ def run_transformer() -> bool:
         out_map[name] = record
 
     log.info(
-        "[transform::pipeline] Assembled %s parent records (out of %s eligible).",
+        "[transform::pipeline] Assembled %s parent records (out of %s selected).",
         f"{len(out_map):,}",
         f"{len(included_parents):,}",
+    )
+
+    # Preserve all assembled PORTS-bearing parents in raw output.
+    # Publish only those meeting the arcade eligibility rules.
+    publishable_parents, deferred_parents = partition_ports_parents(
+        set(out_map),
+        mame,
+        ini_raw,
+        snaps_map,
+    )
+
+    published_map = {
+        machine: record
+        for machine, record in out_map.items()
+        if machine in publishable_parents
+    }
+
+    log.info(
+        "[transform::pipeline] Publication: %s publishable, %s deferred.",
+        f"{len(published_map):,}",
+        f"{len(deferred_parents):,}",
     )
 
     wiki_header = build_summary_header(
@@ -536,7 +579,7 @@ def run_transformer() -> bool:
     )
     wiki_doc = {
         "header": wiki_header,
-        "games": {m: _project_for_wiki(rec) for m, rec in out_map.items()},
+        "games": {m: _project_for_wiki(rec) for m, rec in published_map.items()},
     }
     ok_out_wiki = write_json(exotica_wiki_path(), wiki_doc, sort_keys=False)
 
@@ -555,7 +598,7 @@ def run_transformer() -> bool:
 
     # --- Build pages + redirects ---
     ok_pages, pages_info = write_pages_and_redirects(
-        out_map=out_map,
+        out_map=published_map,
         prefix=WIKI_PREFIX,
         schema_id=SCHEMA_ID_PAGES,
         schema_version=SCHEMA_VER_PAGES,
@@ -776,6 +819,40 @@ def run_transformer() -> bool:
 
     summary["selection"] = selection_telemetry
     summary["displays_shape"] = displays_shape_telemetry
+
+    # Publication is separate from PORTS preservation.
+    publication_reasons = {}
+    for reason in deferred_parents.values():
+        publication_reasons[reason] = (
+            publication_reasons.get(reason, 0) + 1
+        )
+
+    summary["publication"] = {
+        "raw_parents": len(out_map),
+        "published_parents": len(published_map),
+        "deferred_parents": len(deferred_parents),
+        "deferred_by_reason": dict(
+            sorted(publication_reasons.items())
+        ),
+        "deferred_machine_reasons": dict(
+            sorted(deferred_parents.items())
+        ),
+    }
+
+    summary["notes"]["publication_scope"] = {
+        "final_included": (
+            "Legacy count of assembled PORTS-bearing parent records "
+            "preserved in the raw dataset, not published wiki pages."
+        ),
+        "published_parents": (
+            "Canonical parent records satisfying the release-specific "
+            "SNAPS and Gaming History arcade eligibility rules."
+        ),
+        "deferred_parents": (
+            "PORTS-bearing parents retained in raw data but excluded "
+            "from wiki publication, with reasons recorded separately."
+        ),
+    }
 
     # SNAPS coverage is diagnostic only at this stage.
     snaps_covered_parents = included_parents_set & snaps_map.keys()

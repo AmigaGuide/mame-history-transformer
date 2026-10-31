@@ -295,3 +295,38 @@ def build_snaps_eligible_parents(
             snaps_classifications,
         ) == "eligible"
     }
+
+
+def partition_ports_parents(
+    ports_parents: set[str],
+    mame: dict,
+    gh_classifications: dict,
+    snaps_classifications: dict,
+) -> tuple[set[str], dict[str, str]]:
+    """
+    Partition PORTS-bearing parents by publication eligibility.
+
+    All PORTS-bearing parents remain eligible for raw-data
+    preservation, regardless of their publication status.
+
+    Returns:
+        publishable: canonical parents eligible for wiki output
+        deferred: parent name -> eligibility reason
+    """
+    publishable = set()
+    deferred = {}
+
+    for machine in sorted(ports_parents):
+        reason = snaps_eligibility_reason(
+            machine,
+            mame,
+            gh_classifications,
+            snaps_classifications,
+        )
+
+        if reason == "eligible":
+            publishable.add(machine)
+        else:
+            deferred[machine] = reason
+
+    return publishable, deferred
