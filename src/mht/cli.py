@@ -762,6 +762,109 @@ def cmd_fetch_check(args: argparse.Namespace) -> int:
         print("Note: MAME is out but GH not yet; no download per policy.")
     return 0
 
+
+def cmd_fetch_snaps(args: argparse.Namespace) -> int:
+    """Download a release-matched SNAPS archive into data/incoming."""
+    from mht.provenance.fetch import probe_snaps, snaps_download
+
+    try:
+        source = probe_snaps(args.version, debug=args.debug)
+    except ValueError as exc:
+        print(f"SNAPS source discovery failed: {exc}")
+        return 1
+
+    if source is None:
+        print(
+            f"No release-matched SNAPS archive advertised "
+            f"for {args.version}."
+        )
+        return 1
+
+    print(f"Release : {source.release}")
+    print(f"Package : {source.package_type}")
+    print(f"Filename: {source.filename}")
+    print(f"Source  : {source.url}")
+
+    # Check whether this release already has usable SNAPS data.
+    from mht.utils.snaps import find_snaps_archive
+    from mht.provenance.snaps_sources import SnapsSource
+    from mht.provenance.snaps_validation import validate_snaps_archive
+
+    try:
+        staged = find_snaps_archive(archives_dir(source.release))
+    except ValueError as exc:
+        print(f"SNAPS archive conflict: {exc}")
+        return 1
+
+    if staged is not None:
+        staged_source = SnapsSource(
+            release=source.release,
+            package_type=(
+                "catver"
+                if staged.name.lower().startswith("ps_catver_")
+                else "supportfiles"
+            ),
+            filename=staged.name,
+            url="",
+        )
+
+        try:
+            existing = validate_snaps_archive(
+                staged,
+                staged_source,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"Existing SNAPS archive is invalid: {exc}")
+            print("No download performed. Review the staged archive.")
+            return 1
+
+        print(
+            f"\nSNAPS already staged: {staged.as_posix()}"
+        )
+        print(
+            f"Classifications: {existing['classifications']:,}"
+        )
+        print("No download required.")
+        return 0
+
+    if not args.yes:
+        response = input(
+            "\nDownload this SNAPS archive? [y/N] "
+        ).strip().lower()
+
+        if response not in {"y", "yes"}:
+            print("Aborted.")
+            return 1
+
+    result = snaps_download(
+        source,
+        overwrite=args.overwrite,
+        debug=args.debug,
+    )
+
+    if not result.get("ok"):
+        print(
+            f"SNAPS download failed: "
+            f"{result.get('error', 'unknown error')}"
+        )
+        return 1
+
+    print(f"\nResult: {result.get('note')}")
+    print(f"Path: {result['path']}")
+
+    provenance = result.get("provenance") or {}
+    if provenance:
+        print(
+            f"CatList: {provenance.get('catlist_member')}"
+        )
+        print(
+            f"Classifications: "
+            f"{provenance.get('classifications'):,}"
+        )
+
+    return 0
+
+
 def cmd_fetch_download(args: argparse.Namespace) -> int:
     from mht.provenance.fetch import probe_latest, perform_downloads
 
@@ -913,7 +1016,7 @@ def main() -> None:
     s_ingest.set_defaults(func=cmd_ingest)
 
     # fetch
-    s_fetch = sub.add_parser("fetch", help="Check and download upstream MAME/GH zips into data/incoming")
+    s_fetch = sub.add_parser("fetch", help="Check and download upstream MAME, GH and SNAPS archives")
     s_fetch_sub = s_fetch.add_subparsers(dest="subcmd", required=False)
     s_fetch.set_defaults(func=cmd_fetch_root, _fetch_parser=s_fetch)
 
@@ -931,6 +1034,32 @@ def main() -> None:
     s_fetch_dl.add_argument("--overwrite", action="store_true", help="Re-download even if files already exist")
     s_fetch_dl.add_argument("--debug", action="store_true", help="Verbose HTTP probe logging")
     s_fetch_dl.set_defaults(func=cmd_fetch_download)
+
+    s_fetch_snaps = s_fetch_sub.add_parser(
+        "snaps",
+        help="Download release-specific progetto-SNAPS classifications",
+    )
+    s_fetch_snaps.add_argument(
+        "--version", "-v",
+        required=True,
+        help="MAME release, for example 0289",
+    )
+    s_fetch_snaps.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip download confirmation",
+    )
+    s_fetch_snaps.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing archive only after validation",
+    )
+    s_fetch_snaps.add_argument(
+        "--debug",
+        action="store_true",
+        help="Verbose discovery and download logging",
+    )
+    s_fetch_snaps.set_defaults(func=cmd_fetch_snaps)
 
     args = p.parse_args()
 

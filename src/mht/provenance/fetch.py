@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from tempfile import TemporaryDirectory
 from pathlib import Path
 from typing import Optional, Dict, Any
 import requests
@@ -8,6 +9,14 @@ import requests
 from mht.utils.paths import DATA_DIR
 from mht.utils.logger import debug_log
 from mht.utils.io import sha256_file
+from mht.provenance.snaps_sources import (
+    CATVER_URL,
+    SUPPORT_URL,
+    SnapsSource,
+    resolve_snaps_source,
+)
+from mht.provenance.snaps_validation import validate_snaps_archive
+
 
 INCOMING_DIR = DATA_DIR / "incoming"
 INCOMING_DIR.mkdir(parents=True, exist_ok=True)
@@ -127,6 +136,46 @@ def _probe_gh(next_core: str, *, debug: bool = False) -> Optional[Dict[str, str]
             return {"url": url, "suffix": suffix}
     return None
 
+
+def probe_snaps(
+    release: str,
+    *,
+    timeout: float = 20.0,
+    debug: bool = False,
+):
+    """
+    Discover an advertised, release-matched SNAPS archive.
+
+    Does not download any ZIP files. Returns None when no
+    matching source is advertised or the pages cannot be read.
+    """
+    pages = {}
+
+    for name, url in (
+        ("support", SUPPORT_URL),
+        ("catver", CATVER_URL),
+    ):
+        if debug:
+            debug_log(f"[fetch::snaps] GET {url}")
+
+        try:
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            pages[name] = response.text
+        except requests.RequestException as exc:
+            if debug:
+                debug_log(
+                    f"[fetch::snaps] Failed to read {name}: {exc}"
+                )
+            pages[name] = ""
+
+    return resolve_snaps_source(
+        release,
+        support_html=pages["support"],
+        catver_html=pages["catver"],
+    )
+
+
 # ---------------------------
 # Planning
 # ---------------------------
@@ -184,6 +233,89 @@ def probe_latest(*, use_cache: bool = True, debug: bool = False) -> FetchPlan:
 # ---------------------------
 # Downloads
 # ---------------------------
+
+def snaps_download(
+    source: SnapsSource,
+    *,
+    destination_dir: Path | None = None,
+    overwrite: bool = False,
+    debug: bool = False,
+) -> Dict[str, Any]:
+    """
+    Download and validate a release-specific SNAPS archive.
+
+    The destination is modified only after successful validation.
+    Existing archives are preserved unless overwrite is requested.
+    """
+    destination_dir = Path(destination_dir or INCOMING_DIR)
+    destination = destination_dir / source.filename
+
+    if destination.exists() and not overwrite:
+        try:
+            provenance = validate_snaps_archive(
+                destination,
+                source,
+            )
+        except (OSError, ValueError) as exc:
+            return {
+                "ok": False,
+                "path": destination.as_posix(),
+                "reason": "invalid_existing_archive",
+                "error": f"{type(exc).__name__}: {exc}",
+                "note": "existing archive preserved; use overwrite to replace",
+            }
+
+        return {
+            "ok": True,
+            "path": destination.as_posix(),
+            "reason": "exists",
+            "note": "existing validated archive not overwritten",
+            "size": destination.stat().st_size,
+            "sha256": sha256_file(destination),
+            "provenance": provenance,
+        }
+
+    try:
+        with TemporaryDirectory(prefix="mht-snaps-") as temp:
+            temporary = Path(temp) / source.filename
+
+            result = download_zip(
+                source.url,
+                temporary,
+                debug=debug,
+            )
+
+            if not result.get("ok"):
+                return {
+                    "ok": False,
+                    "path": destination.as_posix(),
+                    "error": result.get("error", "download failed"),
+                }
+
+            provenance = validate_snaps_archive(
+                temporary,
+                source,
+            )
+
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            temporary.replace(destination)
+
+            return {
+                "ok": True,
+                "path": destination.as_posix(),
+                "size": destination.stat().st_size,
+                "sha256": sha256_file(destination),
+                "note": "downloaded and validated",
+                "provenance": provenance,
+            }
+
+    except (OSError, ValueError) as exc:
+        return {
+            "ok": False,
+            "path": destination.as_posix(),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
 
 def mame_download(url: str, dest: Path, *, overwrite: bool = False, debug: bool = False) -> Dict[str, Any]:
     if dest.exists() and not overwrite:

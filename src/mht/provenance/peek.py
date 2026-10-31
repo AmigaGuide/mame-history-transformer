@@ -511,6 +511,15 @@ def derive_mame_version_hint_from_filename(name: str | Path) -> Optional[str]:
     """
     s = Path(name).name.lower()
 
+    # progetto-SNAPS archives use the MAME release's
+    # three-digit version without the leading zero.
+    m = re.fullmatch(
+        r"ps_(?:supportfiles|catver)_(\d{3})\.zip",
+        s,
+    )
+    if m:
+        return f"0{m.group(1)}"
+
     # Prefer explicit tokens “mame” or “history” followed by 3–4 digits
     m = re.search(r"(?:mame|history)[-_]?0?(\d{3,4})(?!\d)", s)
     if m:

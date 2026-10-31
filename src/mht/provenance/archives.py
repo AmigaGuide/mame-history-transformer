@@ -17,6 +17,9 @@ from mht.utils.paths import (
     incoming_dir as incoming_dir_path,
 )
 from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
+from mht.provenance.snaps_sources import SnapsSource
+from mht.provenance.snaps_validation import validate_snaps_archive
+from mht.utils.snaps import find_snaps_archive
 from mht.utils.strings import digits_score
 
 
@@ -26,6 +29,110 @@ log = setup_logger()
 # ---------------------------
 # Public high-level functions
 # ---------------------------
+
+def _stage_snaps_archive(
+    source_path: Path,
+    release: str,
+) -> Dict[str, Any]:
+    """
+    Validate and stage a SNAPS archive for its MAME release.
+
+    Never overwrite an existing archive or introduce a
+    second competing SNAPS classification archive.
+    """
+    name = source_path.name
+    package_type = (
+        "catver" if name.lower().startswith("ps_catver_")
+        else "supportfiles"
+    )
+
+    source = SnapsSource(
+        release=release,
+        package_type=package_type,
+        filename=name,
+        url="",
+    )
+
+    info = {
+        "name": name,
+        "path": source_path.as_posix(),
+        "version": release,
+    }
+
+    try:
+        provenance = validate_snaps_archive(
+            source_path,
+            source,
+        )
+    except (OSError, ValueError) as exc:
+        return {
+            **info,
+            "action": "rejected",
+            "reason": "invalid_snaps_archive",
+            "error": str(exc),
+        }
+
+    destination_dir = archives_dir(release)
+
+    try:
+        existing = find_snaps_archive(destination_dir)
+    except ValueError as exc:
+        return {
+            **info,
+            "action": "rejected",
+            "reason": "ambiguous_existing_snaps",
+            "error": str(exc),
+        }
+
+    if existing is not None:
+        existing_type = (
+            "catver"
+            if existing.name.lower().startswith("ps_catver_")
+            else "supportfiles"
+        )
+
+        existing_source = SnapsSource(
+            release=release,
+            package_type=existing_type,
+            filename=existing.name,
+            url="",
+        )
+
+        try:
+            existing_validation = validate_snaps_archive(
+                existing,
+                existing_source,
+            )
+        except (OSError, ValueError) as exc:
+            return {
+                **info,
+                "action": "rejected",
+                "reason": "invalid_existing_snaps",
+                "dest_archive": existing.as_posix(),
+                "error": str(exc),
+            }
+
+        return {
+            **info,
+            "action": "skipped",
+            "reason": "snaps_already_staged",
+            "dest_archive": existing.as_posix(),
+            "validation": existing_validation,
+        }
+
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / name
+
+    shutil.move(str(source_path), str(destination))
+
+    return {
+        **info,
+        "action": "moved",
+        "reason": "",
+        "dest_archive": destination.as_posix(),
+        "validation": provenance,
+    }
+
 
 def import_incoming_archives(
     *,
@@ -64,6 +171,41 @@ def import_incoming_archives(
             "reason": "",
             "version": None,
         }
+
+        # SNAPS releases must come from their own filenames,
+        # not from the active release or a forced version.
+        lower_name = p.name.lower()
+        is_snaps = (
+            lower_name.startswith("ps_catver_")
+            or lower_name.startswith("ps_supportfiles_")
+        )
+
+        if is_snaps:
+            target_version = derive_mame_version_hint_from_filename(
+                p.name
+            )
+
+            if target_version is None:
+                info.update({
+                    "action": "rejected",
+                    "reason": "unrecognised_snaps_version",
+                })
+                results.append(info)
+                continue
+
+            if version is not None and version != target_version:
+                info.update({
+                    "action": "rejected",
+                    "reason": "snaps_release_mismatch",
+                    "version": target_version,
+                })
+                results.append(info)
+                continue
+
+            results.append(
+                _stage_snaps_archive(p, target_version)
+            )
+            continue
 
         # Resolve version: forced → filename hint → peek → active
         target_version = version or derive_mame_version_hint_from_filename(p.name)
