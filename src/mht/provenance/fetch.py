@@ -18,8 +18,14 @@ from mht.provenance.snaps_sources import (
 from mht.provenance.snaps_validation import validate_snaps_archive
 from mht.provenance.acquisition import (
     build_acquisition_event,
+    inspect_archive_metadata,
+    load_pending_acquisition_event,
     pending_acquisition_path,
     save_pending_acquisition_event,
+    verify_archive_integrity,
+)
+from mht.provenance.peek import (
+    derive_mame_version_hint_from_filename,
 )
 
 INCOMING_DIR = DATA_DIR / "incoming"
@@ -341,19 +347,256 @@ def snaps_download(
         }
 
 
-def mame_download(url: str, dest: Path, *, overwrite: bool = False, debug: bool = False) -> Dict[str, Any]:
-    if dest.exists() and not overwrite:
-        if debug:
-            debug_log(f"[fetch] SKIP exists: {dest.as_posix()}")
-        return {"ok": True, "path": dest.as_posix(), "reason": "exists", "note": "already in data/incoming; not re-downloaded"}
-    return download_zip(url, dest, debug=debug)
+def _verify_existing_download(
+    destination: Path,
+) -> Dict[str, Any]:
+    """
+    Verify an existing MAME or Gaming History ZIP before reuse.
 
-def gh_download(url: str, dest: Path, *, overwrite: bool = False, debug: bool = False) -> Dict[str, Any]:
+    Never modifies the archive or creates acquisition evidence.
+    """
+    destination = Path(destination)
+
+    release = derive_mame_version_hint_from_filename(
+        destination.name
+    )
+
+    if release is None:
+        return {
+            "ok": False,
+            "reason": "unrecognised_release",
+            "error": "Cannot determine archive release",
+        }
+
+    inspection = inspect_archive_metadata(
+        destination,
+        release,
+    )
+
+    comparison = inspection.get("comparison") or {}
+
+    if (
+        inspection.get("error")
+        or comparison.get("status") != "match"
+    ):
+        return {
+            "ok": False,
+            "reason": "invalid_existing_archive",
+            "error": "Embedded release verification failed",
+            "inspection": inspection,
+        }
+
+    integrity = verify_archive_integrity(destination)
+
+    if integrity["status"] != "passed":
+        return {
+            "ok": False,
+            "reason": "invalid_existing_archive",
+            "error": "Existing ZIP integrity verification failed",
+            "integrity": integrity,
+        }
+
+    # An existing ZIP may have genuine pending download
+    # provenance. Validate it before accepting the archive.
+    # No pending record is also legitimate for older imports.
+    try:
+        pending_event = load_pending_acquisition_event(
+            destination
+        )
+    except (OSError, ValueError) as exc:
+        return {
+            "ok": False,
+            "reason": "invalid_pending_acquisition",
+            "path": destination.as_posix(),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    return {
+        "ok": True,
+        "reason": "exists",
+        "path": destination.as_posix(),
+        "size": destination.stat().st_size,
+        "sha256": sha256_file(destination),
+        "inspection": inspection,
+        "integrity": integrity,
+        "pending_acquisition": pending_event,
+    }
+
+
+def _download_verified_archive(
+    url: str,
+    destination: Path,
+    *,
+    debug: bool = False,
+) -> Dict[str, Any]:
+    """
+    Download and verify a MAME or Gaming History archive.
+
+    Validate in a temporary directory before replacing the
+    destination. Preserve existing files on download or
+    verification failure.
+    """
+    destination = Path(destination)
+
+    release = derive_mame_version_hint_from_filename(
+        destination.name
+    )
+
+    if release is None:
+        return {
+            "ok": False,
+            "path": destination.as_posix(),
+            "error": "Cannot determine archive release",
+        }
+
+    try:
+        with TemporaryDirectory(prefix="mht-acquisition-") as temp:
+            temporary = Path(temp) / destination.name
+
+            result = download_zip(
+                url,
+                temporary,
+                debug=debug,
+            )
+
+            if not result.get("ok"):
+                return {
+                    "ok": False,
+                    "path": destination.as_posix(),
+                    "error": result.get(
+                        "error", "Download failed"
+                    ),
+                }
+
+            inspection = inspect_archive_metadata(
+                temporary,
+                release,
+            )
+
+            if (
+                inspection["error"] is not None
+                or inspection["comparison"] is None
+                or inspection["comparison"]["status"] != "match"
+            ):
+                return {
+                    "ok": False,
+                    "path": destination.as_posix(),
+                    "error": "Embedded archive release verification failed",
+                    "inspection": inspection,
+                }
+
+            integrity = verify_archive_integrity(temporary)
+
+            if integrity["status"] != "passed":
+                return {
+                    "ok": False,
+                    "path": destination.as_posix(),
+                    "error": "ZIP integrity verification failed",
+                    "integrity": integrity,
+                }
+
+            event = build_acquisition_event(
+                temporary,
+                url,
+                release,
+            )
+
+            save_pending_acquisition_event(
+                temporary,
+                event,
+            )
+
+            destination.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            temporary.replace(destination)
+
+            pending_acquisition_path(temporary).replace(
+                pending_acquisition_path(destination)
+            )
+
+            return {
+                "ok": True,
+                "path": destination.as_posix(),
+                "size": destination.stat().st_size,
+                "sha256": sha256_file(destination),
+                "note": "downloaded and verified",
+                "inspection": inspection,
+                "integrity": integrity,
+                "acquisition_event": event,
+            }
+
+    except (OSError, ValueError) as exc:
+        return {
+            "ok": False,
+            "path": destination.as_posix(),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def mame_download(
+    url: str,
+    dest: Path,
+    *,
+    overwrite: bool = False,
+    debug: bool = False,
+) -> Dict[str, Any]:
+    dest = Path(dest)
+
     if dest.exists() and not overwrite:
-        if debug:
-            debug_log(f"[fetch] SKIP exists: {dest.as_posix()}")
-        return {"ok": True, "path": dest.as_posix(), "reason": "exists", "note": "already in data/incoming; not re-downloaded"}
-    return download_zip(url, dest, debug=debug)
+        result = _verify_existing_download(dest)
+
+        if not result["ok"]:
+            return {
+                **result,
+                "path": dest.as_posix(),
+                "note": "existing archive preserved; use overwrite to replace",
+            }
+
+        return {
+            **result,
+            "note": "existing verified archive not re-downloaded",
+        }
+
+    return _download_verified_archive(
+        url,
+        dest,
+        debug=debug,
+    )
+
+
+def gh_download(
+    url: str,
+    dest: Path,
+    *,
+    overwrite: bool = False,
+    debug: bool = False,
+) -> Dict[str, Any]:
+    dest = Path(dest)
+
+    if dest.exists() and not overwrite:
+        result = _verify_existing_download(dest)
+
+        if not result["ok"]:
+            return {
+                **result,
+                "path": dest.as_posix(),
+                "note": "existing archive preserved; use overwrite to replace",
+            }
+
+        return {
+            **result,
+            "note": "existing verified archive not re-downloaded",
+        }
+
+    return _download_verified_archive(
+        url,
+        dest,
+        debug=debug,
+    )
+
 
 def _core_no_dot(core: str) -> str:
     # for GH naming; core like '282' already has no dot
@@ -377,35 +620,85 @@ def perform_downloads(
     mame_url  = plan.mame.get("url") or ""
     mame_name = f"mame{plan.next_key}lx.zip"
     mame_dest = INCOMING_DIR / mame_name
-    if mame_dest.exists() and not overwrite:
+    r1 = mame_download(
+        mame_url,
+        mame_dest,
+        overwrite=overwrite,
+    )
+
+    if r1.get("reason") == "exists" and r1.get("ok"):
         results["skipped"].append({
-            "name": mame_name, "path": mame_dest.as_posix(),
-            "reason": "exists", "note": "already in data/incoming; not re-downloaded"
+            "name": mame_name,
+            **r1,
         })
     else:
-        r1 = mame_download(mame_url, mame_dest, overwrite=overwrite)
-        results["downloads"].append({"name": mame_name, **r1})
+        results["downloads"].append({
+            "name": mame_name,
+            **r1,
+        })
 
     # GH (preserve suffix if any)
     gh_url   = plan.gh.get("url") or ""
     gh_suf   = plan.gh.get("suffix") or ""
     gh_name  = f"history{_core_no_dot(plan.next_core)}{gh_suf}.zip"
     gh_dest  = INCOMING_DIR / gh_name
-    if gh_dest.exists() and not overwrite:
+    r2 = gh_download(
+        gh_url,
+        gh_dest,
+        overwrite=overwrite,
+    )
+
+    if r2.get("reason") == "exists" and r2.get("ok"):
         results["skipped"].append({
-            "name": gh_name, "path": gh_dest.as_posix(),
-            "reason": "exists", "note": "already in data/incoming; not re-downloaded"
+            "name": gh_name,
+            **r2,
         })
     else:
-        r2 = gh_download(gh_url, gh_dest, overwrite=overwrite)
-        results["downloads"].append({"name": gh_name, **r2})
+        results["downloads"].append({
+            "name": gh_name,
+            **r2,
+        })
 
     if ingest:
-        try:
-            from mht.provenance.archives import import_incoming_archives
-            _ = import_incoming_archives(incoming=INCOMING_DIR, extract=False, version=None)
-            results["ingest"] = "done"
-        except Exception as e:
-            results["ingest"] = f"error: {e}"
+        failed_downloads = [
+            item
+            for item in results["downloads"]
+            if not item.get("ok")
+        ]
+
+        if failed_downloads:
+            results["ingest"] = "blocked"
+            results["ingest_reason"] = (
+                "One or more archive downloads or validations failed"
+            )
+        else:
+            try:
+                from mht.provenance.archives import (
+                    import_incoming_archives,
+                )
+
+                ingestion_results = import_incoming_archives(
+                    incoming=INCOMING_DIR,
+                    extract=False,
+                    version=None,
+                )
+
+                results["ingest_results"] = ingestion_results
+
+                unsuccessful = [
+                    item
+                    for item in ingestion_results
+                    if item.get("action") not in ("moved", "skipped")
+                ]
+
+                if unsuccessful:
+                    results["ingest"] = "error"
+                else:
+                    results["ingest"] = "done"
+
+            except Exception as exc:
+                results["ingest"] = (
+                    f"error: {type(exc).__name__}: {exc}"
+                )
 
     return results

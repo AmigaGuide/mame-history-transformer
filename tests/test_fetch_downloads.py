@@ -1,3 +1,6 @@
+from zipfile import ZipFile
+
+
 def test_perform_downloads_skips_existing(monkeypatch, tmp_path):
     data = tmp_path / "data"; (data / "incoming").mkdir(parents=True)
 
@@ -21,14 +24,41 @@ def test_perform_downloads_skips_existing(monkeypatch, tmp_path):
     gh_name   = f"history{gh_core}.zip"
 
     # Seed existing files with those exact names
-    (data / "incoming" / mame_name).write_bytes(b"exists")
-    (data / "incoming" / gh_name).write_bytes(b"exists")
+    with ZipFile(data / "incoming" / mame_name, "w") as archive:
+        archive.writestr(
+            "mame0282.xml",
+            '<mame build="0.282 (mame0282)" mameconfig="10"/>',
+        )
 
-    # Stub network fns so we never hit the net
-    monkeypatch.setattr(fetch, "mame_download",
-                        lambda url, dest: {"ok": True, "path": str(dest), "size": 1, "sha256": "x", "note": "downloaded"})
-    monkeypatch.setattr(fetch, "gh_download",
-                        lambda url, dest: {"ok": True, "path": str(dest), "size": 1, "sha256": "y", "note": "downloaded"})
+    with ZipFile(data / "incoming" / gh_name, "w") as archive:
+        archive.writestr(
+            "history/history.xml",
+            '<history version="2.82" date="2026-01-01"/>',
+        )
+
+    # Stub network functions so we never hit the network.
+    # Simulate the wrappers recognising verified existing archives.
+    monkeypatch.setattr(
+        fetch,
+        "mame_download",
+        lambda url, dest, *, overwrite=False: {
+            "ok": True,
+            "path": str(dest),
+            "reason": "exists",
+            "note": "existing verified archive",
+        },
+    )
+
+    monkeypatch.setattr(
+        fetch,
+        "gh_download",
+        lambda url, dest, *, overwrite=False: {
+            "ok": True,
+            "path": str(dest),
+            "reason": "exists",
+            "note": "existing verified archive",
+        },
+    )
 
     res = fetch.perform_downloads(plan, ingest=False, overwrite=False)
 

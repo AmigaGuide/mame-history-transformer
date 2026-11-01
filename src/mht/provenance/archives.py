@@ -21,7 +21,9 @@ from mht.provenance.snaps_sources import SnapsSource
 from mht.provenance.snaps_validation import validate_snaps_archive
 from mht.provenance.acquisition import (
     finalise_staged_acquisition,
+    identify_archive_source,
     load_pending_acquisition_event,
+    pending_acquisition_path,
 )
 from mht.utils.snaps import find_snaps_archive
 from mht.utils.strings import digits_score
@@ -201,8 +203,13 @@ def import_incoming_archives(
         log.info("No incoming dir found at %s", incoming_dir.as_posix())
         return results
 
-    # Only consider *.zip (case-insensitive) using glob for reliability
-    zips = sorted(incoming_dir.glob("*.zip")) + sorted(incoming_dir.glob("*.ZIP"))
+    # Discover each ZIP exactly once, regardless of extension case.
+    zips = sorted(
+        p
+        for p in incoming_dir.iterdir()
+        if p.is_file() and p.suffix.lower() == ".zip"
+    )
+
     for p in zips:
         if not p.is_file():
             continue
@@ -263,12 +270,77 @@ def import_incoming_archives(
             m_build = (meta.get("mame_xml_probe") or {}).get("mame_build")
             target_version = _folder_version_from_mame_build(m_build) or active_version()
 
-        ensure_release_dirs(target_version)
-        dest_archives_dir = archives_dir(target_version)
-        dest_archives_dir.mkdir(parents=True, exist_ok=True)
-        dest_archives = dest_archives_dir / p.name
+        # Recognised downloaded archives with pending provenance
+        # require exact filenames and verified handover.
+        provider = identify_archive_source(p.name)
+        has_pending = pending_acquisition_path(p).exists()
 
-        _safe_move(p, dest_archives)
+        if provider in ("mame", "gaming_history") and has_pending:
+            filename_release = derive_mame_version_hint_from_filename(
+                p.name
+            )
+
+            if filename_release != target_version:
+                info.update({
+                    "action": "rejected",
+                    "reason": "acquisition_release_mismatch",
+                    "version": target_version,
+                })
+                results.append(info)
+                continue
+
+            try:
+                load_pending_acquisition_event(p)
+            except (OSError, ValueError) as exc:
+                info.update({
+                    "action": "rejected",
+                    "reason": "invalid_pending_acquisition",
+                    "error": str(exc),
+                })
+                results.append(info)
+                continue
+
+            ensure_release_dirs(target_version)
+            dest_archives = archives_dir(target_version) / p.name
+
+            staged_result = _stage_provenance_archive(
+                p,
+                dest_archives,
+            )
+
+            if staged_result["action"] != "moved":
+                info.update(staged_result)
+                info["version"] = target_version
+                results.append(info)
+                continue
+
+            try:
+                manifest = finalise_staged_acquisition(
+                    p,
+                    dest_archives,
+                    target_version,
+                )
+            except (OSError, ValueError) as exc:
+                info.update({
+                    "action": "error",
+                    "reason": "acquisition_provenance_pending",
+                    "version": target_version,
+                    "dest_archive": dest_archives.as_posix(),
+                    "error": str(exc),
+                })
+                results.append(info)
+                continue
+
+            info["acquisition_manifest"] = manifest.as_posix()
+
+        else:
+            # Preserve the existing legacy/manual archive path.
+            ensure_release_dirs(target_version)
+            dest_archives_dir = archives_dir(target_version)
+            dest_archives_dir.mkdir(parents=True, exist_ok=True)
+            dest_archives = dest_archives_dir / p.name
+
+            _safe_move(p, dest_archives)
 
         info.update({
             "action": "moved",
@@ -479,6 +551,67 @@ def _safe_move(src: Path, dst: Path) -> Path:
         n += 1
     shutil.move(str(src), str(final))
     return final
+
+
+def _stage_provenance_archive(
+    source: Path,
+    destination: Path,
+) -> Dict[str, Any]:
+    """
+    Stage a provenance-aware archive without renaming it.
+
+    Never overwrite an existing destination or silently
+    change the filename associated with acquisition evidence.
+
+    This helper moves only the ZIP. Pending acquisition
+    handover is handled separately.
+    """
+    source = Path(source)
+    destination = Path(destination)
+
+    if not source.is_file():
+        return {
+            "action": "error",
+            "reason": "source_archive_missing",
+        }
+
+    if source.name != destination.name:
+        return {
+            "action": "rejected",
+            "reason": "archive_filename_mismatch",
+        }
+
+    if destination.exists():
+        return {
+            "action": "skipped",
+            "reason": "archive_already_staged",
+            "dest_archive": destination.as_posix(),
+        }
+
+    try:
+        destination.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        shutil.move(
+            str(source),
+            str(destination),
+        )
+
+    except OSError as exc:
+        return {
+            "action": "error",
+            "reason": "archive_staging_failed",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    return {
+        "action": "moved",
+        "reason": "",
+        "dest_archive": destination.as_posix(),
+    }
+
 
 # --- Incoming helpers ---------------------------------------------------------
 def list_incoming_archives(incoming_dir: Path | None = None) -> list[Path]:
