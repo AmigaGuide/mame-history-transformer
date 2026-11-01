@@ -49,7 +49,11 @@ def prov_outputs(doc: dict) -> list[dict]:
 def prov_upstream(doc: dict) -> dict:
     return _get(doc, "provenance", "upstream_summaries", default={}) or {}
 
-def run_preview(port: int | None = None, auto_open: Optional[bool] = None) -> None:
+def run_preview(
+    port: int | None = None,
+    auto_open: Optional[bool] = None,
+    version: str | None = None,
+) -> None:
     """
     Start the web preview server for the active release.
 
@@ -66,12 +70,12 @@ def run_preview(port: int | None = None, auto_open: Optional[bool] = None) -> No
         auto_open = WEB_PREVIEW_AUTO_OPEN
 
     try:
-        preview_data = load_preview_data()
+        preview_data = load_preview_data(version=version)
     except Exception as exc:  # noqa: BLE001
         log.error("Cannot start web preview: %s", exc)
         return
 
-    app = create_app(preview_data)
+    app = create_app(preview_data, version=version)
 
     url = f"http://127.0.0.1:{port}/"
     log.info("Starting MHT web preview on %s", url)

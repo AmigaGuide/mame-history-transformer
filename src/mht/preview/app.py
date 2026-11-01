@@ -30,13 +30,17 @@ from .summary_contexts import (
 )
 
 
-def create_app(preview_data: PreviewData) -> Flask:
+def create_app(
+    preview_data: PreviewData,
+    version: str | None = None,
+) -> Flask:
     """
     Create and configure the Flask application for the web preview.
 
     The caller is responsible for loading PreviewData first so we can load once
     and run with the Flask reloader disabled.
     """
+    version = active_version(version)
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).with_name("templates")),
@@ -59,7 +63,6 @@ def create_app(preview_data: PreviewData) -> Flask:
     @app.route("/")
     def home() -> str:
         pd = preview_data
-        version = active_version()
 
         t_hdr = as_dict(pd.transform_summary.get("header"))
 

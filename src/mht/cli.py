@@ -425,7 +425,7 @@ def cmd_preview(args: argparse.Namespace) -> int:
     mame_machines.json for the active version, plus transform_summary.json.
     """
     try:
-        run_preview()  # server.py will use WEB_PREVIEW_PORT / WEB_PREVIEW_AUTO_OPEN
+        run_preview(version=args.version)
         return 0
     except KeyboardInterrupt:
         print("\nPreview server stopped by user.")
@@ -1099,7 +1099,11 @@ def main() -> None:
     # preview
     s_preview = sub.add_parser(
         "preview",
-        help="Launch a local read-only web preview for the active release",
+        help="Launch a local read-only web preview for a release",
+    )
+    s_preview.add_argument(
+        "--version", "-v",
+        help="Release to preview (default: active release)",
     )
     s_preview.set_defaults(func=cmd_preview)
 

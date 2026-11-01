@@ -111,22 +111,28 @@ def normalise_trivia_root(doc: JsonDict) -> JsonDict:
     return doc
 
 
-def load_preview_data() -> PreviewData:
+def load_preview_data(version: str | None = None) -> PreviewData:
     """
     Load all JSON artefacts required for the preview server.
 
     Raises clear exceptions if anything is missing or malformed.
     """
-    wiki_path = exotica_wiki_path()
-    mame_path = mame_machines_path()
-    trivia_path = find_trivia_path()
 
-    mame_sum_path = mame_parsing_summary_path()
-    hist_sum_path = history_parsing_summary_path()
-    ini_sum_path = ini_parsing_summary_path()
-    xform_sum_path = transform_summary_path()
+    # Resolve the release once, using the active version by default.
+    version = active_version(version)
 
-    log.info("Web preview loading artefacts from active release %s", active_version())
+    wiki_path = exotica_wiki_path(version)
+    mame_path = mame_machines_path(version)
+    trivia_path = gh_system_trivia_path(version)
+
+    # All parsing summaries belong to the selected release.
+    summaries = outputs_dir(version).parent / "summaries"
+    mame_sum_path = summaries / "mame_parsing_summary.json"
+    hist_sum_path = summaries / "history_parsing_summary.json"
+    ini_sum_path = summaries / "ini_parsing_summary.json"
+    xform_sum_path = transform_summary_path(version)
+
+    log.info("Web preview loading artefacts from release %s", version)
     log.info("  wiki:      %s", wiki_path.as_posix())
     log.info("  mame:      %s", mame_path.as_posix())
     log.info("  trivia:    %s", trivia_path.as_posix())
