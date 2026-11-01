@@ -461,6 +461,91 @@ def cmd_run(_: argparse.Namespace) -> int:
 # ingest archives from data/incoming/
 # --------------------------------------------------------------------------------------
 
+def cmd_acquisition_manifest(args: argparse.Namespace) -> int:
+    """
+    Verify release archives and write their acquisition manifest.
+    """
+    from mht.provenance.acquisition import (
+        save_acquisition_manifest,
+    )
+
+    release = args.version
+
+    try:
+        destination = save_acquisition_manifest(release)
+    except (OSError, ValueError) as exc:
+        print(f"Acquisition manifest failed: {exc}")
+        return 1
+
+    print(f"Acquisition manifest written: {destination}")
+    return 0
+
+
+def cmd_acquisition_audit(args: argparse.Namespace) -> int:
+    """
+    Audit existing release archives without modifying files.
+    """
+    from mht.provenance.acquisition import (
+        audit_release_archives,
+    )
+
+    release = args.version
+
+    try:
+        records = audit_release_archives(
+            release,
+            check_integrity=True,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"Acquisition audit failed: {exc}")
+        return 1
+
+    print(f"\nAcquisition audit - MAME {release}")
+
+    if not records:
+        print("No ZIP archives found for this release.")
+        return 1
+
+    failures = 0
+
+    for record in records:
+        filename = record["filename"]
+        status = record["verification_status"]
+        integrity = record["integrity_verification"]
+        metadata = record["embedded_metadata"]
+
+        print(f"\n  Archive: {filename}")
+        print(f"  Provider: {record['source_type']}")
+        print(f"  Verification: {status}")
+        print(f"  SHA-256: {record['sha256']}")
+        print(
+            f"  Embedded version: "
+            f"{metadata.get('embedded_version') or '(unknown)'}"
+        )
+        print(
+            f"  Embedded date: "
+            f"{metadata.get('embedded_date') or '(not recorded)'}"
+        )
+        print(
+            f"  ZIP integrity: {integrity['status']}"
+        )
+
+        if status != "verified":
+            failures += 1
+            if metadata.get("error"):
+                print(f"  Error: {metadata['error']}")
+            if integrity.get("error"):
+                print(f"  Error: {integrity['error']}")
+
+    print(
+        f"\nSummary: {len(records)} archive(s), "
+        f"{len(records) - failures} verified, "
+        f"{failures} requiring attention"
+    )
+
+    return 1 if failures else 0
+
+
 def cmd_ingest(args: argparse.Namespace) -> int:
     if getattr(args, "recover", False):
         from mht.provenance.acquisition import (
@@ -1081,6 +1166,49 @@ def main() -> None:
         help="Finalise pending acquisitions already staged for --version",
     )
     s_ingest.set_defaults(func=cmd_ingest)
+
+    # acquisition
+    s_acquisition = sub.add_parser(
+        "acquisition",
+        help="Inspect upstream archive acquisition provenance",
+    )
+
+    s_acquisition_sub = s_acquisition.add_subparsers(
+        dest="acquisition_command",
+        required=True,
+    )
+
+    s_acquisition_audit = s_acquisition_sub.add_parser(
+        "audit",
+        help="Verify existing release archives without modifying them",
+    )
+
+    s_acquisition_audit.add_argument(
+        "--version",
+        "-v",
+        required=True,
+        help="MAME release to audit (e.g. 0289)",
+    )
+
+    s_acquisition_manifest = s_acquisition_sub.add_parser(
+        "manifest",
+        help="Verify release archives and write an acquisition manifest",
+    )
+
+    s_acquisition_manifest.add_argument(
+        "--version",
+        "-v",
+        required=True,
+        help="MAME release to record (e.g. 0289)",
+    )
+
+    s_acquisition_manifest.set_defaults(
+        func=cmd_acquisition_manifest,
+    )
+
+    s_acquisition_audit.set_defaults(
+        func=cmd_acquisition_audit,
+    )
 
     # fetch
     s_fetch = sub.add_parser("fetch", help="Check and download upstream MAME, GH and SNAPS archives")

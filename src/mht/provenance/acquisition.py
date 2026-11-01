@@ -946,7 +946,7 @@ def recover_stranded_acquisitions(
         else archives_dir(release)
     )
 
-    if not incoming.is_dir() or not directory.is_dir():
+    if not incoming.is_dir():
         return []
 
     results: list[dict[str, Any]] = []
@@ -966,8 +966,19 @@ def recover_stranded_acquisitions(
         if original.exists():
             continue
 
-        # Only recover an archive we can locate exactly.
+        # The incoming ZIP has gone, but no matching staged ZIP
+        # exists. Preserve the JSON and report it for investigation.
         if not staged.is_file():
+            results.append({
+                "filename": filename,
+                "release": release,
+                "action": "error",
+                "reason": "orphaned_pending_acquisition",
+                "error": (
+                    "Pending acquisition record has no matching "
+                    "ZIP in incoming or release archives"
+                ),
+            })
             continue
 
         try:

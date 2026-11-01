@@ -101,3 +101,68 @@ def test_incoming_archive_prevents_recovery(tmp_path):
     assert pending_acquisition_path(original).exists()
     assert staged.exists()
     assert not (directory.parent / "acquisition_manifest.json").exists()
+
+
+def test_orphaned_pending_event_is_reported(tmp_path):
+    incoming, directory, original, staged, event = (
+        prepare_stranded(tmp_path)
+    )
+
+    # Simulate the staged ZIP disappearing after transfer.
+    staged.unlink()
+
+    results = recover_stranded_acquisitions(
+        "0289",
+        incoming_directory=incoming,
+        archive_directory=directory,
+    )
+
+    assert len(results) == 1
+    assert results[0]["action"] == "error"
+    assert (
+        results[0]["reason"]
+        == "orphaned_pending_acquisition"
+    )
+    assert "no matching ZIP" in results[0]["error"]
+
+    # Preserve the original evidence for investigation.
+    assert pending_acquisition_path(original).exists()
+    assert not (
+        directory.parent / "acquisition_manifest.json"
+    ).exists()
+
+
+def test_orphan_detected_without_release_directory(tmp_path):
+    incoming, directory, original, staged, event = (
+        prepare_stranded(tmp_path)
+    )
+
+    staged.unlink()
+    directory.rmdir()
+
+    results = recover_stranded_acquisitions(
+        "0289",
+        incoming_directory=incoming,
+        archive_directory=directory,
+    )
+
+    assert len(results) == 1
+    assert results[0]["reason"] == "orphaned_pending_acquisition"
+    assert pending_acquisition_path(original).exists()
+
+
+def test_unrelated_release_ignores_pending_event(tmp_path):
+    incoming, directory, original, staged, event = (
+        prepare_stranded(tmp_path)
+    )
+
+    staged.unlink()
+
+    results = recover_stranded_acquisitions(
+        "0288",
+        incoming_directory=incoming,
+        archive_directory=directory,
+    )
+
+    assert results == []
+    assert pending_acquisition_path(original).exists()
