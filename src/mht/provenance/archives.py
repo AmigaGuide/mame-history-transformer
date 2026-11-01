@@ -340,7 +340,9 @@ def import_incoming_archives(
             dest_archives_dir.mkdir(parents=True, exist_ok=True)
             dest_archives = dest_archives_dir / p.name
 
-            _safe_move(p, dest_archives)
+            # The destination may be renamed to avoid a collision.
+            # Retain the actual path for reporting and extraction.
+            dest_archives = _safe_move(p, dest_archives)
 
         info.update({
             "action": "moved",
