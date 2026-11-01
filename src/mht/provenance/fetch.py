@@ -16,7 +16,11 @@ from mht.provenance.snaps_sources import (
     resolve_snaps_source,
 )
 from mht.provenance.snaps_validation import validate_snaps_archive
-
+from mht.provenance.acquisition import (
+    build_acquisition_event,
+    pending_acquisition_path,
+    save_pending_acquisition_event,
+)
 
 INCOMING_DIR = DATA_DIR / "incoming"
 INCOMING_DIR.mkdir(parents=True, exist_ok=True)
@@ -297,8 +301,27 @@ def snaps_download(
                 source,
             )
 
+            # Record the genuine acquisition before staging the ZIP.
+            # The temporary archive retains its original filename.
+            event = build_acquisition_event(
+                temporary,
+                source.url,
+                source.release,
+            )
+            save_pending_acquisition_event(
+                temporary,
+                event,
+            )
+
             destination_dir.mkdir(parents=True, exist_ok=True)
+
+            # Replace the ZIP first, then install its matching event.
+            # If interrupted between these operations, the pending
+            # event's SHA-256 check will detect a stale sidecar.
             temporary.replace(destination)
+            pending_acquisition_path(temporary).replace(
+                pending_acquisition_path(destination)
+            )
 
             return {
                 "ok": True,
@@ -307,6 +330,7 @@ def snaps_download(
                 "sha256": sha256_file(destination),
                 "note": "downloaded and validated",
                 "provenance": provenance,
+                "acquisition_event": event,
             }
 
     except (OSError, ValueError) as exc:

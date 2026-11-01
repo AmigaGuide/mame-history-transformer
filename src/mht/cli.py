@@ -462,6 +462,68 @@ def cmd_run(_: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------------------
 
 def cmd_ingest(args: argparse.Namespace) -> int:
+    if getattr(args, "recover", False):
+        from mht.provenance.acquisition import (
+            recover_staged_acquisitions,
+            recover_stranded_acquisitions,
+        )
+
+        if not args.version:
+            print("Recovery requires --version to identify a release.")
+            return 2
+
+        release = args.version
+        incoming = (
+            Path(args.incoming)
+            if args.incoming
+            else DATA_DIR / "incoming"
+        )
+
+        try:
+            # Recover records left behind when their ZIP moved.
+            stranded_results = recover_stranded_acquisitions(
+                release,
+                incoming_directory=incoming,
+            )
+
+            # Recover records already beside staged ZIPs.
+            staged_results = recover_staged_acquisitions(
+                release,
+            )
+
+            results = stranded_results + staged_results
+
+        except (OSError, ValueError) as exc:
+            print(f"Acquisition recovery failed: {exc}")
+            return 1
+
+        if not results:
+            print(f"No pending staged acquisitions for {release}.")
+            return 0
+
+        recovered = errors = 0
+
+        for item in results:
+            filename = item["filename"]
+
+            if item["action"] == "recovered":
+                recovered += 1
+                print(f"  [RECOVERED] {filename}")
+                print(
+                    f"    Manifest: {item['acquisition_manifest']}"
+                )
+            else:
+                errors += 1
+                print(f"  [ERROR] {filename}")
+                print(f"    {item.get('error', 'Unknown error')}")
+
+        print(
+            f"\nRecovery summary: "
+            f"recovered={recovered} errors={errors}"
+        )
+
+        return 1 if errors else 0
+
     if import_incoming_archives is None:
         print("The 'ingest' command requires mht.provenance.archives.import_incoming_archives to be present.")
         return 2
@@ -1013,6 +1075,11 @@ def main() -> None:
     )
     s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
     s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
+    s_ingest.add_argument(
+        "--recover",
+        action="store_true",
+        help="Finalise pending acquisitions already staged for --version",
+    )
     s_ingest.set_defaults(func=cmd_ingest)
 
     # fetch

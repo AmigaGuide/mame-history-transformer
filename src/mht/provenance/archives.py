@@ -19,6 +19,10 @@ from mht.utils.paths import (
 from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filename
 from mht.provenance.snaps_sources import SnapsSource
 from mht.provenance.snaps_validation import validate_snaps_archive
+from mht.provenance.acquisition import (
+    finalise_staged_acquisition,
+    load_pending_acquisition_event,
+)
 from mht.utils.snaps import find_snaps_archive
 from mht.utils.strings import digits_score
 
@@ -69,6 +73,19 @@ def _stage_snaps_archive(
             **info,
             "action": "rejected",
             "reason": "invalid_snaps_archive",
+            "error": str(exc),
+        }
+
+    # Verify pending download provenance before moving the archive.
+    try:
+        pending_event = load_pending_acquisition_event(
+            source_path
+        )
+    except (OSError, ValueError) as exc:
+        return {
+            **info,
+            "action": "rejected",
+            "reason": "invalid_pending_acquisition",
             "error": str(exc),
         }
 
@@ -124,6 +141,32 @@ def _stage_snaps_archive(
     destination = destination_dir / name
 
     shutil.move(str(source_path), str(destination))
+
+    if pending_event is not None:
+        try:
+            manifest = finalise_staged_acquisition(
+                source_path,
+                destination,
+                release,
+            )
+
+        except (OSError, ValueError) as exc:
+            return {
+                **info,
+                "action": "error",
+                "reason": "acquisition_provenance_pending",
+                "dest_archive": destination.as_posix(),
+                "error": str(exc),
+            }
+
+        return {
+            **info,
+            "action": "moved",
+            "reason": "",
+            "dest_archive": destination.as_posix(),
+            "validation": provenance,
+            "acquisition_manifest": manifest.as_posix(),
+        }
 
     return {
         **info,
