@@ -276,7 +276,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     }
 
     any_stale = False
-    print(f"[status] active release = {ver}  (root: {release_root(ver).as_posix()})\n")
+    print(f"[status] selected release = {ver}  (root: {release_root(ver).as_posix()})\n")
 
     for name, cfg in stage_cfg.items():
         tv = tool_version(tools[name])
