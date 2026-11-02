@@ -25,7 +25,10 @@
                 {% for block in overview_blocks %}
                     {% set kind = block.kind or block.type %}
 
-                    {% if kind == "bullet_list" %}
+                    {% if kind == "subheading" %}
+                        <h3>{{ block.text }}</h3>
+
+                    {% elif kind == "bullet_list" %}
                         {% set items = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
                         <ul>
                             {% for item in items %}
@@ -80,7 +83,10 @@
                 {% for block in section.blocks %}
                     {% set kind = block.kind or block.type %}
 
-                    {% if kind == "bullet_list" %}
+                    {% if kind == "subheading" %}
+                        <h3>{{ block.text }}</h3>
+
+                    {% elif kind == "bullet_list" %}
                         {% set items = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
                         <ul>
                             {% for item in items %}
