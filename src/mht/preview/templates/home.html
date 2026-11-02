@@ -27,6 +27,15 @@
         Tip: use the search box in the header to find a game by its MAME shortname.
     </p>
 
+    {% if first_machine %}
+        <p>
+            <strong>Browse games:</strong>
+            Start with
+            <a href="{{ url_for('game', machine=first_machine) }}">{{ first_game_name }} ({{ first_machine }})</a>
+            and use Previous / Next to navigate.
+        </p>
+    {% endif %}
+
     <div class="summary-block" style="margin-top:1rem;">
         <div class="overview-grid">
 

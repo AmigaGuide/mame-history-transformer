@@ -110,6 +110,11 @@ def create_app(
             "home.html",
             version=version,
             total_games=len(pd.wiki_games),
+            first_machine=pd.machine_order[0] if pd.machine_order else None,
+            first_game_name=(
+                pd.wiki_games[pd.machine_order[0]].get("wiki_page_name")
+                or pd.machine_order[0]
+            ) if pd.machine_order else None,
             summary=pd.transform_summary,
             run=run,
             sources=sources,
