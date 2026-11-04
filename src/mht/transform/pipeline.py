@@ -87,6 +87,12 @@ from mht.utils.snaps import (
     load_release_snaps,
     partition_ports_parents,
 )
+from mht.transform.snaps_genres import (
+    GENRE_DESCRIPTIONS_PATH,
+    load_approved_genres,
+    validate_published_genres,
+)
+
 
 log = setup_logger(log_level=LOG_LEVEL)
 
@@ -273,6 +279,7 @@ def run_transformer() -> bool:
         history_summary_path(),
         ini_summary_path(),
         title_overrides_path(),
+        GENRE_DESCRIPTIONS_PATH,
     ]
 
     # SNAPS classifications are required for wiki publication.
@@ -566,6 +573,24 @@ def run_transformer() -> bool:
         mame,
         ini_raw,
         snaps_map,
+    )
+
+    # Require reviewed wording for every game selected for LiT publication.
+    # Abort before writing any outputs if the vocabulary is incomplete.
+    try:
+        approved_genres = load_approved_genres()
+        validate_published_genres(
+            publishable_parents,
+            snaps_map,
+            approved_genres,
+        )
+    except ValueError as exc:
+        log.error("[transform::snaps] %s", exc)
+        return False
+
+    log.info(
+        "[transform::snaps] Approved genre coverage: %s publishable games.",
+        f"{len(publishable_parents):,}",
     )
 
     published_map = {
