@@ -1,0 +1,806 @@
+[
+    {
+        "group": "Arcade",
+        "category": "Arcade",
+        "subcategory": "Pinball",
+        "phrase": "a pinball arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Ball & Paddle",
+        "subcategory": "Breakout",
+        "phrase": "a brick-breaking arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Motorbike",
+        "phrase": "a motorcycle racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "2D",
+        "phrase": "a side-scrolling combat action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Drop",
+        "phrase": "a falling-piece puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "2.5D",
+        "phrase": "a belt-scrolling beat 'em up arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "3D",
+        "phrase": "a 3D combat action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "Field",
+        "phrase": "an arena-based action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "Misc.",
+        "phrase": "a combat-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "Vertical",
+        "phrase": "a vertically scrolling combat action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Race",
+        "phrase": "a racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Race (chase view)",
+        "phrase": "a chase-view racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Race (chase view) Bike",
+        "phrase": "a bike racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Race 1st Person",
+        "phrase": "a first-person racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Race Track",
+        "phrase": "a top-down racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Collect",
+        "phrase": "a maze-based collecting arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Collect & Put",
+        "phrase": "a collect-and-deliver maze action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Digging",
+        "phrase": "a maze-based digging arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Driving",
+        "phrase": "a maze-based driving arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Fighter",
+        "phrase": "a maze-based action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "MultiGame",
+        "subcategory": "Compilation",
+        "phrase": "an arcade game compilation"
+    },
+    {
+        "group": "Arcade",
+        "category": "MultiGame",
+        "subcategory": "Mini-Games",
+        "phrase": "a multi-challenge arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Multiplay",
+        "subcategory": "Compilation",
+        "phrase": "an arcade game compilation"
+    },
+    {
+        "group": "Arcade",
+        "category": "Multiplay",
+        "subcategory": "Mini-Games",
+        "phrase": "an arcade video game featuring multiple mini-games"
+    },
+    {
+        "group": "Arcade",
+        "category": "Platform",
+        "subcategory": "Run Jump",
+        "phrase": "a platform action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Platform",
+        "subcategory": "Run, Jump & Scrolling",
+        "phrase": "a scrolling platform action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Platform",
+        "subcategory": "Fighter",
+        "phrase": "a platform combat action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Platform",
+        "subcategory": "Fighter Scrolling",
+        "phrase": "a scrolling platform combat action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Platform",
+        "subcategory": "Shooter",
+        "phrase": "a platform shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Platform",
+        "subcategory": "Shooter Scrolling",
+        "phrase": "a scrolling platform shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Misc.",
+        "phrase": "a puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Outline",
+        "phrase": "an area-enclosing puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Reconstruction",
+        "phrase": "an image-reconstruction puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Sliding",
+        "phrase": "a sliding-tile puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Toss",
+        "phrase": "a toss-and-match puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Cards",
+        "phrase": "a card-based puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Match",
+        "phrase": "a matching puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Puzzle",
+        "subcategory": "Maze",
+        "phrase": "a maze-based puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "1st Person",
+        "phrase": "a first-person shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "3rd Person",
+        "phrase": "a third-person shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Balloon Popping",
+        "phrase": "a balloon-popping action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Command",
+        "phrase": "a defensive shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Driving",
+        "phrase": "a vehicular shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Driving (chase view)",
+        "phrase": "a chase-view vehicular shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Driving 1st Person",
+        "phrase": "a first-person vehicular shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Driving Diagonal",
+        "phrase": "an isometric vehicular shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Driving Horizontal",
+        "phrase": "a side-scrolling vehicular shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Driving Vertical",
+        "phrase": "a vertically scrolling vehicular shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Field",
+        "phrase": "a multidirectional shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Flying",
+        "phrase": "a flight-based shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Flying (chase view)",
+        "phrase": "a chase-view flight shooting arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Flying 1st Person",
+        "phrase": "a first-person flight-based shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Flying Diagonal",
+        "phrase": "an isometric scrolling shooter arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Flying Horizontal",
+        "phrase": "a horizontally scrolling shooter arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Flying Vertical",
+        "phrase": "a vertically scrolling shooter arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Gallery",
+        "phrase": "a fixed-screen shooter arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Gun",
+        "phrase": "a light-gun shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Misc.",
+        "phrase": "a shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Misc. Horizontal",
+        "phrase": "a side-scrolling shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Misc. Vertical",
+        "phrase": "a vertically scrolling shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Tank Driving",
+        "phrase": "a tank combat arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Versus",
+        "phrase": "a competitive shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Shooter",
+        "subcategory": "Walking",
+        "phrase": "an on-foot shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Ball Guide",
+        "phrase": "an obstacle-course navigation arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Blocks",
+        "phrase": "a block-based puzzle arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Cross",
+        "phrase": "an obstacle-crossing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Defeat Enemies",
+        "phrase": "a maze-based combat arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Escape",
+        "phrase": "a maze navigation arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Integrate",
+        "phrase": "a repair-based action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Move and Sort",
+        "phrase": "a block-pushing action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Outline",
+        "phrase": "an area-enclosing action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Paint",
+        "phrase": "a maze-painting arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Shooter Large",
+        "phrase": "a maze-based shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Shooter Small",
+        "phrase": "a maze-based shooting action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Maze",
+        "subcategory": "Surround",
+        "phrase": "a trail-avoidance action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Baseball",
+        "phrase": "a baseball arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Basketball",
+        "phrase": "a basketball arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Bowling",
+        "phrase": "a bowling arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Boxing",
+        "phrase": "a boxing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Dodgeball",
+        "phrase": "a dodgeball arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Fishing",
+        "phrase": "a fishing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Football",
+        "phrase": "an American football arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Golf",
+        "phrase": "a golf arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Hockey",
+        "phrase": "a hockey arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Horse Racing",
+        "phrase": "a horse racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Misc.",
+        "phrase": "a sports-themed arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Multiplay",
+        "phrase": "a multi-sport arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Ping Pong",
+        "phrase": "a table tennis arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Pool",
+        "phrase": "a pool-themed arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Rugby Football",
+        "phrase": "a rugby arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Skateboarding",
+        "phrase": "a skateboarding arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Skiing",
+        "phrase": "a skiing-themed arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "SkyDiving",
+        "phrase": "a skydiving arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Soccer",
+        "phrase": "a soccer-themed arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Sumo",
+        "phrase": "a sumo wrestling arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Swimming",
+        "phrase": "a swimming-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Tennis",
+        "phrase": "a tennis arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Track & Field",
+        "phrase": "an athletics-themed arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Volleyball",
+        "phrase": "a volleyball arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Sports",
+        "subcategory": "Wrestling",
+        "phrase": "a professional wrestling arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Cards",
+        "phrase": "a card-playing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Hanafuda",
+        "phrase": "a hanafuda arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Mahjong",
+        "phrase": "a mahjong arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Misc.",
+        "phrase": "a tabletop strategy arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Othello - Reversi",
+        "phrase": "a Reversi arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Renju",
+        "phrase": "a five-in-a-row strategy arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Shanghai",
+        "phrase": "a mahjong-tile matching arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Tabletop",
+        "subcategory": "Shougi",
+        "phrase": "a shogi arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Ball & Paddle",
+        "subcategory": "Jump and Touch",
+        "phrase": "a bouncing-themed arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Climbing",
+        "subcategory": "Building",
+        "phrase": "a climbing-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Climbing",
+        "subcategory": "Tree - Plant",
+        "phrase": "a climbing-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "1st Person",
+        "phrase": "a first-person driving arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Ambulance Guide",
+        "phrase": "an ambulance driving arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Boat",
+        "phrase": "a watercraft-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Guide and Collect",
+        "phrase": "a collecting-based driving arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Guide and Shoot",
+        "phrase": "an interactive driving action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Landing",
+        "phrase": "a spacecraft landing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Misc.",
+        "phrase": "a driving-themed arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Driving",
+        "subcategory": "Truck Guide",
+        "phrase": "a truck driving arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "Versus",
+        "phrase": "a competitive fighting arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Fighter",
+        "subcategory": "Versus Co-op",
+        "phrase": "a cooperative combat arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Music Game",
+        "subcategory": "Dance",
+        "phrase": "a rhythm-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Music Game",
+        "subcategory": "Instruments",
+        "phrase": "a rhythm-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Quiz",
+        "subcategory": "Questions in English",
+        "phrase": "a quiz-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Quiz",
+        "subcategory": "Questions in Japanese",
+        "phrase": "a quiz-based arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Ball & Paddle",
+        "subcategory": "Breakout",
+        "phrase": "a brick-breaking arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Ball & Paddle",
+        "subcategory": "Pong",
+        "phrase": "a table tennis arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Driving",
+        "subcategory": "Demolition Derby",
+        "phrase": "a vehicle-collision arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Driving",
+        "subcategory": "Motorbike",
+        "phrase": "a motorcycle action arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Driving",
+        "subcategory": "Race Track",
+        "phrase": "a top-down racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Maze",
+        "subcategory": "Shooter Small",
+        "phrase": "a maze-based tank combat arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Shooter",
+        "subcategory": "Versus",
+        "phrase": "a competitive shooting arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "TTL * Sports",
+        "subcategory": "Horse Racing",
+        "phrase": "a horse racing arcade video game"
+    },
+    {
+        "group": "Arcade",
+        "category": "Whac-A-Mole",
+        "subcategory": "Hammer",
+        "phrase": "a whac-a-mole-style arcade video game"
+    }
+]
