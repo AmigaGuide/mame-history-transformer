@@ -134,7 +134,7 @@ def build_transform_summary(
         "final_included": final_included,
         "parents_with_clones": parents_with_clones,
         "total_clones_linked": total_clones_linked,
-        "parents_without_clones": max(0, len(eligible_parents) - parents_with_clones),
+        "parents_without_clones": final_included - parents_with_clones,
         "parents_with_any_media": parents_with_any_media,
         "media_label_counts": dict(sorted((media_label_counts or {}).items(), key=lambda kv: kv[0].casefold())),
         "audio": {

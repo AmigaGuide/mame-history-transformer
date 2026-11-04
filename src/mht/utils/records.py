@@ -227,7 +227,7 @@ def build_parent_record(
         "controls_display": controls_display,
         "game_status": game_status,
         "category":    category,
-        "type":        type_,        
+        "type":        type_,
         "isbios": _truthy_flag(minfo.get("isbios")),
         "isdevice": _truthy_flag(minfo.get("isdevice")),
         "ismechanical": _truthy_flag(minfo.get("ismechanical")),
@@ -282,6 +282,8 @@ def project_for_raw(machine: str, rec: dict) -> dict:
     if rec.get("displays"): out["displays"] = rec["displays"]
     if rec.get("controls"): out["controls"] = rec["controls"]
     if rec.get("ports"): out["ports"] = rec["ports"]
+    if rec.get("snaps_classification"):
+        out["snaps_classification"] = rec["snaps_classification"]
     for k in ("game_status", "category", "type", "isbios", "isdevice", "ismechanical", "requires_samples"):
         if k in rec: out[k] = rec[k]
     if rec.get("gh_ids"): out["gh_ids"] = rec["gh_ids"]

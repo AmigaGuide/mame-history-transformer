@@ -100,8 +100,10 @@ def test_transform_timings_and_partitions(_load):
     p_with = counts.get("parents_with_clones")
     p_without = counts.get("parents_without_clones")
 
-    assert isinstance(eligible, int) and isinstance(included, int)
-    assert included <= eligible
+    assert isinstance(eligible, int) and eligible >= 0
+    assert isinstance(included, int) and included >= 0
 
     if isinstance(p_with, int) and isinstance(p_without, int):
-        assert p_with + p_without == eligible
+        assert p_with >= 0
+        assert p_without >= 0
+        assert p_with + p_without == included

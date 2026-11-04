@@ -21,13 +21,13 @@ TOOL_VERSIONS = {
     "mame_parser":    "1.0.44",
     "history_parser": "1.1.20",
     "ini_summary":    "1.0.28",
-    "transformer":    "1.0.57",
+    "transformer":    "1.0.59",
 }
 
 # ===== Output dataset schemas (centralise the IDs + versions your transformer emits) =====
 OUTPUT_SCHEMAS = {
     "wiki":   {"id": "exotica_lit_wiki",                "version": "1.1.0"},
-    "raw":    {"id": "exotica_lit_raw_data",            "version": "1.1.2"},
+    "raw":    {"id": "exotica_lit_raw_data",            "version": "1.2.0"},
     "pages":  {"id": "exotica_wiki_pages_and_redirects","version": "1.1.1"},
 }
 

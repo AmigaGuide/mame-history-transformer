@@ -477,6 +477,14 @@ def run_transformer() -> bool:
         if not record:
             continue
 
+        snaps_classification = snaps_map.get(name)
+        if isinstance(snaps_classification, dict):
+            record["snaps_classification"] = {
+                "group": snaps_classification["group"],
+                "category": snaps_classification["category"],
+                "subcategory": snaps_classification["subcategory"],
+            }
+
         assembled_count += 1
         maybe_log_progress(
             log,
