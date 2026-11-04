@@ -160,19 +160,7 @@ def create_app(
         mame_info = pd.mame_machines.get(machine) or {}
         raw_description = mame_info.get("description") or ""
 
-        year = rec.get("year")
-        manufacturer = rec.get("manufacturer")
-
-        opening_parts: List[str] = [f"{wiki_page_name} is an arcade video game"]
-        if year and manufacturer:
-            opening_parts.append(f"published in {year} by {manufacturer}.")
-        elif year:
-            opening_parts.append(f"published in {year}.")
-        elif manufacturer:
-            opening_parts.append(f"published by {manufacturer}.")
-        else:
-            opening_parts.append(".")
-        opening_sentence = " ".join(opening_parts)
+        opening_sentence = rec.get("opening_sentence")
 
         trivia = pd.trivia_by_machine.get(machine) or {}
 
