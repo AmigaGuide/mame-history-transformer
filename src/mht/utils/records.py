@@ -254,6 +254,8 @@ def build_parent_record(
 def project_for_wiki(rec: dict) -> dict:
     out = {}
     if rec.get("wiki_page_name"): out["wiki_page_name"] = rec["wiki_page_name"]
+    if rec.get("opening_sentence"):
+        out["opening_sentence"] = rec["opening_sentence"]
     out["wiki_redirects"] = rec.get("wiki_redirects", [])
     if rec.get("year") is not None: out["year"] = rec["year"]
     if rec.get("manufacturer") is not None: out["manufacturer"] = rec["manufacturer"]

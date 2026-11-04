@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "urn:exotica:schema:exotica_lit_wiki:1.1.0",
+    "$id": "urn:exotica:schema:exotica_lit_wiki:1.2.0",
     "title": "ExoticA Lost in Translation - Wiki Data",
     "description": "Schema for the condensed LiT output used to generate wiki pages.",
     "type": "object",
@@ -26,7 +26,7 @@
                 },
                 "schema_version": {
                     "type": "string",
-                    "const": "1.1.0"
+                    "const": "1.2.0"
                 },
                 "generated_at": {
                     "type": "string",
@@ -69,6 +69,7 @@
                     "additionalProperties": false,
                     "required": [
                         "wiki_page_name",
+                        "opening_sentence",
                         "wiki_redirects",
                         "year",
                         "manufacturer",
@@ -82,6 +83,10 @@
                     ],
                     "properties": {
                         "wiki_page_name": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "opening_sentence": {
                             "type": "string",
                             "minLength": 1
                         },

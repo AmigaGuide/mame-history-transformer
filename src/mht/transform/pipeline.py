@@ -92,6 +92,8 @@ from mht.transform.snaps_genres import (
     load_approved_genres,
     validate_published_genres,
 )
+from mht.transform.opening_sentences import build_opening_sentence
+from mht.utils.media import normalise_device_list_to_media
 
 
 log = setup_logger(log_level=LOG_LEVEL)
@@ -598,6 +600,45 @@ def run_transformer() -> bool:
         for machine, record in out_map.items()
         if machine in publishable_parents
     }
+
+    # Construct complete wiki introductions from approved gameplay wording
+    # and MAME technical metadata, before writing any output files.
+    try:
+        for machine, record in published_map.items():
+            classification = record["snaps_classification"]
+            key = (
+                classification["group"],
+                classification["category"],
+                classification["subcategory"],
+            )
+
+            genre_phrase = approved_genres[key]
+            media = normalise_device_list_to_media(
+                record.get("disk_regions")
+            )
+
+            display_groups = (
+                (record.get("displays") or {}).get("groups") or []
+            )
+            vector = any(
+                (group.get("type") or "").casefold() == "vector"
+                for group in display_groups
+            )
+
+            record["opening_sentence"] = build_opening_sentence(
+                title=record["wiki_page_name"],
+                genre_phrase=genre_phrase,
+                year=record.get("year"),
+                manufacturer=record.get("manufacturer"),
+                laserdisc="LaserDisc" in media,
+                vector=vector,
+            )
+    except (KeyError, TypeError, ValueError) as exc:
+        log.error(
+            "[transform::opening] Cannot construct wiki introduction: %s",
+            exc,
+        )
+        return False
 
     log.info(
         "[transform::pipeline] Publication: %s publishable, %s deferred.",
