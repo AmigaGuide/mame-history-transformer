@@ -1,316 +1,338 @@
 {
-  "notes": [
-    "puckman: overview → six paragraph blocks and one numbered list of intermissions; the 'Three intermissions are present:' paragraph is a preamble for the list.",
-    "technical → one large cabinet-description paragraph kept; four label-style lines (CPU/sound/players/control) suppressed.",
-    "trivia → large mixed section: release history, naming, export releases list, Toru Iwatani quote, pizza/character lore, two subheadings with quotes, split-screen bug explanation with numbered list, Galaxian prize, ghost name count note, Galaxian board compatibility, and multiple 'official record' paragraphs.",
-    "updates → attract-mode paragraph, three sets of ghost name lists (JP default, JP alternate, NA), an 'ADDITIONAL NOTES' preamble, and a Japan Set 2 revision list.",
-    "scoring → 11 simple pairs (Dot … Key).",
-    "tips and tricks → long bullet list of strategy hints plus a 'Ghosts' Movements' subheading followed by numbered AI breakdown and two trailing paragraphs.",
-    "series → full numbered list of 23 Pac-series entries.",
-    "staff → three simple 'pair_colon' entries."
-  ],
-  "expectations": {
-    "sections": {
-      "overview": {
-        "blocks": [
-          {
-            "type": "paragraph",
-            "text_contains": "Puckman is the seminal and hugely influential arcade game"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Power pills are situated in each corner"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "240 dots and 4 power pills"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "bonus fruit or prize item"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Three intermissions are present",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "red ghost chases Puckman across the screen and off the side"
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "red ghost is again chasing Puckman"
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "red ghost chases Puckman across the screen once more"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "No intermission is present"
-          }
-        ],
-        "forbid_section_text": [
-          "Arcade Video game published",
-          "Puckman (c) 1980 Namco."
-        ]
-      },
-
-      "technical": {
-        "blocks": [
-          {
-            "type": "paragraph",
-            "text_contains": "The original Namco Puckman Upright model came in a white cabinet"
-          }
-        ],
-        "forbid_section_text": [
-          "Main CPU : Zilog Z80 (@ 3.072 Mhz)",
-          "Sound Chips : Namco 3-channel WSG",
-          "Players : 2",
-          "Control : 4-way joystick"
-        ]
-      },
-
-      "trivia": {
-        "blocks": [
-          {
-            "type": "paragraph",
-            "text_contains": "first released on May 22, 1980 in the Japanese arcade market"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "originally known in Japan as Puckman"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Export releases:",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "bullet_list",
-            "text_contains": "Pac-Man [Model 932]"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Toru Iwatani, author and designer of Puckman",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "bullet_list",
-            "value_contains": "Puckman's character is difficult to explain even to the Japanese"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Puckman was, quite literally, conceived at lunchtime"
-          },
-          {
-            "type": "subheading",
-            "text_contains": "A place in video game history"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Pac-Man is the most universally known arcade game"
-          },
-          {
-            "type": "subheading",
-            "text_contains": "The great 25-cent escape"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "People expect to see Pac-Man when they come into the museum"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "After all these years, the challenge of Pac-Man still remains"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "You can also get into some really fun jams"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "After the 255th level, Puckman/Pac-Man presents the player with the infamous 'split-screen' level",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "it increases the last round number by one"
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "finally, it fills the bottom bar with the correct fruits"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "In particular, if the round number is smaller than 8"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "256 = 255+1 becomes 00 for the CPU"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "game thinks to be in one of the first 7 levels"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Fixing the original code (either through a cheat in emulation"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "The alien spaceship 'Galaxian' makes an appearance as the prize"
-          },
-          {
-			"type": "paragraph",
-            "text_contains": "there are 23 different name/nickname combinations for the ghosts in Puckman/Pac-Man"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "'Galaxian' boards will run in Pac-Man machines"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Billy Mitchell, Rick Fothergill, Chris Ayra, Tim Balderramos and Donald Hayes all hold the official record"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Chris Ayra holds the official record for the fastest time to get a perfect game"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Ron Corcoran holds the official record for this game on 'Speedup' settings"
-          }
-        ]
-      },
-
-      "updates": {
-        "blocks": [		
-			{
-			  "type": "paragraph",
-			  "text_contains": "The default name/nickname combinations for the ghosts in the original Japanese version are"
-			},
-
-			{
-			  "type": "pair",
-			  "label_contains": "Oikake - \"Akabei\"",
-			  "value_contains": "Chaser - \"Red Guy\""
-			},
-			{
-			  "type": "pair",
-			  "label_contains": "Machibuse - \"Pinky\"",
-			  "value_contains": "Ambusher - \"Pink Guy\""
-			},
-			{
-			  "type": "paragraph",
-			  "text_contains": "The Japanese version also has a DIP switch for alternate name/nickname combinations for the ghosts"
-			},
-			{
-			  "type": "pair",
-			  "label_contains": "Urchin",
-			  "value_contains": "\"Macky\""
-			},
-			{
-			  "type": "pair",
-			  "label_contains": "Romp",
-			  "value_contains": "\"Micky\""
-			},
-			{
-			  "type": "paragraph",
-			  "text_contains": "The name/nickname combinations for the ghosts in the North American version are"
-			},
-			{
-			  "type": "pair",
-			  "label_contains": "Shadow",
-			  "value_contains": "\"Blinky\""
-			},
-			{
-			  "type": "pair",
-			  "label_contains": "Pokey",
-			  "value_contains": "\"Clyde\""
-			},
-			{
-			  "type": "paragraph",
-			  "text_contains": "Unlike the Japanese version, the American version has no DIP switch"
-			},
-			{
-			  "type": "paragraph",
-			  "text_contains": "ADDITIONAL NOTES"
-			},
-			{
-			  "type": "paragraph",
-			  "text_contains": "In a later revision (\"Japan Set 2\" in Mame):"
-			},
-			{
-			  "type": "bullet_list",
-			  "item_contains": "At the top of the title screen"
-			}					
-        ]
-      },
-
-      "scoring": {
-        "blocks": [
-          { "type": "pair", "label_contains": "Dot", "value_contains": "10" },
-          { "type": "pair", "label_contains": "Peach", "value_contains": "500" },
-          { "type": "pair", "label_contains": "Key", "value_contains": "5,000" }
-        ]
-      },
-
-      "tips and tricks": {
-        "blocks": [
-          { "type": "bullet_list", "text_contains": "number of lives Puckman starts with depends on the 'Lives' dip switch setting" },
-          { "type": "bullet_list", "text_contains": "Stall Puckman from entering the tunnel" },
-          { "type": "bullet_list", "text_contains": "Right above the ghost pen, there are two paths leading upward" },
-          {
-            "type": "subheading",
-            "text_contains": "Ghosts' Movements"
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "red ghost tends to patrol the top-right corner of the maze"
-          },
-          {
-            "type": "numbered_list",
-            "text_contains": "orange ghost tends to patrol the bottom-left corner of the maze"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Ghosts alternate these two different behaviors (hiding and hunting)"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "as soon as a certain number of dots has been cleared from the maze"
-          }
-        ]
-      },
-
-      "series": {
-        "blocks": [
-          { "type": "numbered_list", "text_contains": "Puckman (1980, ARC)" },
-          { "type": "numbered_list", "text_contains": "Pac-Man Arrangement (2005, PSP)" },
-          { "type": "numbered_list", "text_contains": "Pac-World 2 (2014, 3DS, Wii U, PS3)" }
-        ]
-      },
-
-      "staff": {
-        "blocks": [
-          {
-            "type": "pair",
-            "label_contains": "Designed by",
-            "value_contains": "Toru Iwatani"
-          },
-          {
-            "type": "pair",
-            "label_contains": "Programmed by",
-            "value_contains": "Hideyuki"
-          },
-          {
-            "type": "pair",
-            "label_contains": "Music",
-            "value_contains": "Toshio Kai"
-          }
-        ]
-      }
+    "notes": [
+        "puckman: overview → six paragraph blocks and one numbered list of intermissions; the 'Three intermissions are present:' paragraph is a preamble for the list.",
+        "technical → one large cabinet-description paragraph kept; four label-style lines (CPU/sound/players/control) suppressed.",
+        "trivia → large mixed section: release history, naming, export releases list, Toru Iwatani quote, pizza/character lore, two subheadings with quotes, split-screen bug explanation with numbered list, Galaxian prize, ghost name count note, Galaxian board compatibility, and multiple 'official record' paragraphs.",
+        "updates → attract-mode paragraph, three sets of ghost name lists (JP default, JP alternate, NA), an 'ADDITIONAL NOTES' preamble, and a Japan Set 2 revision list.",
+        "scoring → 11 simple pairs (Dot … Key).",
+        "tips and tricks → long bullet list of strategy hints plus a 'Ghosts' Movements' subheading followed by numbered AI breakdown and two trailing paragraphs.",
+        "series → full numbered list of 23 Pac-series entries.",
+        "staff → three simple 'pair_colon' entries."
+    ],
+    "expectations": {
+        "sections": {
+            "overview": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Puckman is the seminal and hugely influential arcade game"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Power pills are situated in each corner"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "240 dots and 4 power pills"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "bonus fruit or prize item"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Three intermissions are present",
+                        "meta_preamble_for_list": true
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "red ghost chases Puckman across the screen and off the side"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "red ghost is again chasing Puckman"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "red ghost chases Puckman across the screen once more"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "No intermission is present"
+                    }
+                ],
+                "forbid_section_text": [
+                    "Arcade Video game published",
+                    "Puckman (c) 1980 Namco."
+                ]
+            },
+            "technical": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The original Namco Puckman Upright model came in a white cabinet"
+                    }
+                ],
+                "forbid_section_text": [
+                    "Main CPU : Zilog Z80 (@ 3.072 Mhz)",
+                    "Sound Chips : Namco 3-channel WSG",
+                    "Players : 2",
+                    "Control : 4-way joystick"
+                ]
+            },
+            "trivia": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "first released on May 22, 1980 in the Japanese arcade market"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "originally known in Japan as Puckman"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Export releases:",
+                        "meta_preamble_for_list": true
+                    },
+                    {
+                        "type": "bullet_list",
+                        "text_contains": "Pac-Man [Model 932]"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Toru Iwatani, author and designer of Puckman",
+                        "meta_preamble_for_list": true
+                    },
+                    {
+                        "type": "bullet_list",
+                        "value_contains": "Puckman's character is difficult to explain even to the Japanese"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Puckman was, quite literally, conceived at lunchtime"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "A place in video game history"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Pac-Man is the most universally known arcade game"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "The great 25-cent escape"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "People expect to see Pac-Man when they come into the museum"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "After all these years, the challenge of Pac-Man still remains"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "You can also get into some really fun jams"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "After the 255th level, Puckman/Pac-Man presents the player with the infamous 'split-screen' level",
+                        "meta_preamble_for_list": true
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "it increases the last round number by one"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "finally, it fills the bottom bar with the correct fruits"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "In particular, if the round number is smaller than 8"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "256 = 255+1 becomes 00 for the CPU"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "game thinks to be in one of the first 7 levels"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Fixing the original code (either through a cheat in emulation"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The alien spaceship 'Galaxian' makes an appearance as the prize"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "there are 23 different name/nickname combinations for the ghosts in Puckman/Pac-Man"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "'Galaxian' boards will run in Pac-Man machines"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Billy Mitchell, Rick Fothergill, Chris Ayra, Tim Balderramos and Donald Hayes all hold the official record"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Chris Ayra holds the official record for the fastest time to get a perfect game"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Ron Corcoran holds the official record for this game on 'Speedup' settings"
+                    }
+                ]
+            },
+            "updates": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The default name/nickname combinations for the ghosts in the original Japanese version are"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Oikake - \"Akabei\"",
+                        "value_contains": "Chaser - \"Red Guy\""
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Machibuse - \"Pinky\"",
+                        "value_contains": "Ambusher - \"Pink Guy\""
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The Japanese version also has a DIP switch for alternate name/nickname combinations for the ghosts"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Urchin",
+                        "value_contains": "\"Macky\""
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Romp",
+                        "value_contains": "\"Micky\""
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The name/nickname combinations for the ghosts in the North American version are"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Shadow",
+                        "value_contains": "\"Blinky\""
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Pokey",
+                        "value_contains": "\"Clyde\""
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Unlike the Japanese version, the American version has no DIP switch"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "ADDITIONAL NOTES"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "In a later revision (\"Japan Set 2\" in Mame):"
+                    },
+                    {
+                        "type": "bullet_list",
+                        "item_contains": "At the top of the title screen"
+                    }
+                ]
+            },
+            "scoring": {
+                "blocks": [
+                    {
+                        "type": "pair",
+                        "label_contains": "Dot",
+                        "value_contains": "10"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Peach",
+                        "value_contains": "500"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Key",
+                        "value_contains": "5,000"
+                    }
+                ]
+            },
+            "tips and tricks": {
+                "blocks": [
+                    {
+                        "type": "bullet_list",
+                        "text_contains": "number of lives Puckman starts with depends on the 'Lives' dip switch setting"
+                    },
+                    {
+                        "type": "bullet_list",
+                        "text_contains": "Stall Puckman from entering the tunnel"
+                    },
+                    {
+                        "type": "bullet_list",
+                        "text_contains": "Right above the ghost pen, there are two paths leading upward"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Ghosts' Movements"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "red ghost tends to patrol the top-right corner of the maze"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "orange ghost tends to patrol the bottom-left corner of the maze"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Ghosts alternate these two different behaviors (hiding and hunting)"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "as soon as a certain number of dots has been cleared from the maze"
+                    }
+                ]
+            },
+            "series": {
+                "blocks": [
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "Puckman (1980, ARC)"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "Pac-Man Arrangement (2005, PSP)"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": "Pac-World 2 (2014, 3DS, Wii U, PS3)"
+                    }
+                ]
+            },
+            "staff": {
+                "blocks": [
+                    {
+                        "type": "pair",
+                        "label_contains": "Designed by",
+                        "value_contains": "Toru Iwatani"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Programmed by",
+                        "value_contains": "Hideyuki"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Music",
+                        "value_contains": "Toshio Kai"
+                    }
+                ]
+            }
+        }
     }
-  }
 }

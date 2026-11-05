@@ -1,147 +1,182 @@
 {
-  "notes": [
-    "005: overview → 8 distinct paragraphs after suppressing the first two boilerplate lines.",
-    "technical → three paragraphs (with 'Cabinet dimensions :' acting as a preamble for the following pair run), then two pairs (Upright/Cocktail), then a final paragraph. Players/Control/Buttons label lines are suppressed.",
-    "trivia → 4 one-line paragraphs.",
-    "scoring → paragraphs and pairs; 'Entering a building with' and 'Shooting down' act as preambles for the runs of pairs that follow.",
-    "tips and tricks → three paragraphs (the long opening line is treated as a paragraph, not a pair)."
-  ],
-  "expectations": {
-    "sections": {
-      "overview": {
-        "blocks": [
-          { "type": "paragraph", "text_contains": "Agent 005 brings new cash collections" },
-          { "type": "paragraph", "text_contains": "RasterScan Convert" },
-          { "type": "paragraph", "text_contains": "Put Agent 005 on your side" },
-          { "type": "paragraph", "text_contains": "The chase is on" },
-          { "type": "paragraph", "text_contains": "Inside a warehouse" },
-          { "type": "paragraph", "text_contains": "Slip into a skate rink" },
-          { "type": "paragraph", "text_contains": "The final flight fight" },
-          { "type": "paragraph", "text_contains": "It's free-wheeling fun" }
-        ],
-        "forbid_section_text": [
-          "Arcade Video game published",
-          "005 (c) 1981 Sega."
-        ]
-      },
-
-      "technical": {
-        "blocks": [
-          {
-            "type": "paragraph",
-            "text_contains": "Runs on the Sega G80 raster hardware"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Cabinet dimensions",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "pair",
-            "label_contains": "Upright",
-            "value_contains": "Weight"
-          },
-          {
-            "type": "pair",
-            "label_contains": "Cocktail",
-            "value_contains": "Weight"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "generic Sega wood grain panel cabinet"
-          }
-        ],
-        "forbid_section_text": [
-          "Players :",
-          "Control :",
-          "Buttons :"
-        ]
-      },
-
-      "trivia": {
-        "blocks": [
-          { "type": "paragraph", "text_contains": "released in October 1981 in Japan" },
-          { "type": "paragraph", "text_contains": "pronounced 'double O five'" },
-          { "type": "paragraph", "text_contains": "Original 005 PCBs are very rare" },
-          { "type": "paragraph", "text_contains": "Dwayne Richard holds the record" }
-        ]
-      },
-
-      "scoring": {
-        "blocks": [
-          {
-            "type": "pair",
-            "label_contains": "Attache delivered",
-            "value_contains": "points"
-          },
-          {
-            "type": "pair",
-            "label_contains": "Guard knocked out",
-            "value_contains": "points"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Entering a building with",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "pair",
-            "label_contains": "No stun gas",
-            "value_contains": "points"
-          },
-          {
-            "type": "pair",
-            "label_contains": "One stun gas",
-            "value_contains": "points"
-          },
-          {
-            "type": "pair",
-            "label_contains": "Two stun gas",
-            "value_contains": "points"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Shooting down",
-            "meta_preamble_for_list": true
-          },
-          {
-            "type": "pair",
-            "label_contains": "Shrubbery",
-            "value_contains": "points"
-          },
-          {
-            "type": "pair",
-            "label_contains": "Balloon Bomb",
-            "value_contains": "points"
-          },
-          {
-            "type": "pair",
-            "label_contains": "Enemy helicopter",
-            "value_contains": "points"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "no. of brief cases delivered"
-          }
-        ]
-      },
-
-      "tips and tricks": {
-        "blocks": [
-          {
-            "type": "paragraph",
-            "text_contains": "Agent 005's mission"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Armed with a stun gun to ward off pursuing guards"
-          },
-          {
-            "type": "paragraph",
-            "text_contains": "Now in possession of two attache cases"
-          }
-        ]
-      }
+    "notes": [
+        "005: overview → 8 distinct paragraphs after suppressing the first two boilerplate lines.",
+        "technical contains four descriptive paragraphs covering the cabinet, G80 hardware, artwork and cabinet dimensions, followed by Upright and Cocktail dimension pairs. Players/Control/Buttons lines are suppressed.",
+        "trivia → 4 one-line paragraphs.",
+        "scoring → paragraphs and pairs; 'Entering a building with' and 'Shooting down' act as preambles for the runs of pairs that follow.",
+        "tips and tricks → three paragraphs (the long opening line is treated as a paragraph, not a pair)."
+    ],
+    "expectations": {
+        "sections": {
+            "overview": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Agent 005 brings new cash collections"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "RasterScan Convert"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Put Agent 005 on your side"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The chase is on"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Inside a warehouse"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Slip into a skate rink"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The final flight fight"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "It's free-wheeling fun"
+                    }
+                ],
+                "forbid_section_text": [
+                    "Arcade Video game published",
+                    "005 (c) 1981 Sega."
+                ]
+            },
+            "technical": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "005 was supplied in Sega's standard woodgrain G80 cabinet"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The game runs on Sega's G80 hardware platform"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The marquee features the game's \"005\" logo"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Cabinet dimensions:"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Upright",
+                        "value_contains": "Weight"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Cocktail",
+                        "value_contains": "Weight"
+                    }
+                ],
+                "forbid_section_text": [
+                    "Players :",
+                    "Control :",
+                    "Buttons :"
+                ]
+            },
+            "trivia": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "released in October 1981 in Japan"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "pronounced 'double O five'"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Original 005 PCBs are very rare"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Dwayne Richard holds the record"
+                    }
+                ]
+            },
+            "scoring": {
+                "blocks": [
+                    {
+                        "type": "pair",
+                        "label_contains": "Attache delivered",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Guard knocked out",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Entering a building with",
+                        "meta_preamble_for_list": true
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "No stun gas",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "One stun gas",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Two stun gas",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Shooting down",
+                        "meta_preamble_for_list": true
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Shrubbery",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Balloon Bomb",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Enemy helicopter",
+                        "value_contains": "points"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "no. of brief cases delivered"
+                    }
+                ]
+            },
+            "tips and tricks": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Agent 005's mission"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Armed with a stun gun to ward off pursuing guards"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Now in possession of two attache cases"
+                    }
+                ]
+            }
+        }
     }
-  }
 }

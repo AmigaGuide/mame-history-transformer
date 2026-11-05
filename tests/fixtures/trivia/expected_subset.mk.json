@@ -1,0 +1,54 @@
+{
+    "notes": [
+        "mk: scoring contains individual move/value pairs.",
+        "Character names separate groups of special moves.",
+        "staff contains role/person pairs.",
+        "Asterisk-prefixed Basic Move and Bonus Points headings require further classification review."
+    ],
+    "expectations": {
+        "sections": {
+            "scoring": {
+                "blocks": [
+                    {
+                        "type": "pair",
+                        "label_contains": "High Punch",
+                        "value_contains": "500 points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "High Kick",
+                        "value_contains": "2,000 points"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "JOHNNY CAGE"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Green Ball",
+                        "value_contains": "2,000 points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Breaking Diamond",
+                        "value_contains": "2,000,000 points"
+                    }
+                ]
+            },
+            "staff": {
+                "blocks": [
+                    {
+                        "type": "pair",
+                        "label_contains": "Design and software",
+                        "value_contains": "Ed Boon"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Design and graphics",
+                        "value_contains": "John Tobias"
+                    }
+                ]
+            }
+        }
+    }
+}
