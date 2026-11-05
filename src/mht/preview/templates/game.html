@@ -59,11 +59,13 @@
 
             {% if mame_titles_display %}
                 <h2>MAME titles</h2>
-                <pre class="ports-block">
-{% for line in mame_titles_display %}
-{{ line }}
-{% endfor %}
-                </pre>
+                <div class="ports-block ports-list">
+                    <ul>
+                        {% for line in mame_titles_display %}
+                            <li>{{ line }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
             {% endif %}
 
             {# Remaining trivia sections (overview already removed on the server) #}
