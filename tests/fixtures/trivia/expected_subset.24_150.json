@@ -1,0 +1,47 @@
+{
+    "notes": [
+        "24_150: updates contains version headings introduced by an asterisk, followed by hyphen-prefixed change lists.",
+        "Each version heading should be classified as a subheading, with its associated changes preserved as bullet_list blocks.",
+        "This fixture protects a general Updates formatting convention rather than game-specific parsing behaviour."
+    ],
+    "expectations": {
+        "sections": {
+            "updates": {
+                "blocks": [
+                    {
+                        "type": "subheading",
+                        "text_contains": "1.50 (May 5, 2010)"
+                    },
+                    {
+                        "type": "bullet_list",
+                        "text_contains": "The left ramp and the sniper post"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "1.44 (September 2, 2009)"
+                    },
+                    {
+                        "type": "bullet_list",
+                        "text_contains": "persistent style auditing"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "1.40 (March 9, 2009)"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "1.30 (March 4, 2009)"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "1.20 (February 27, 2009)"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "1.10 (February 24, 2009)"
+                    }
+                ]
+            }
+        }
+    }
+}

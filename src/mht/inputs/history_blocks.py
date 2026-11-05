@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Any
 import hashlib
 
 __all__ = [
-    "process_section_blocks", 
+    "process_section_blocks",
     "classify_section_blocks",
     "attach_list_preambles",
     "flag_suspect_hard_wraps",
@@ -265,10 +265,10 @@ def _is_structural_line(line: str) -> bool:
     if _SUBHEADING_RE.match(line):
         return True
     if _NEAR_MISS_BANNER_RE.match(line):
-        return True        
+        return True
     # use the same top-level separator logic as pair splitting
     if _split_pair_line(line) is not None:
-        return True        
+        return True
     return False
 
 def _inc_count(ps: Dict, kind: str) -> None:
@@ -424,7 +424,7 @@ def process_section_blocks(
             flush_list()
             filtered_idx += 1
             continue
-        
+
         # subheading: "* Something :" (star + text + colon) → treat as subheading,
         # and check this BEFORE generic bullet detection.
         if _SUBHEADING_RE.match(ln):
@@ -478,6 +478,37 @@ def process_section_blocks(
             _inc_count(parsing_state, "subheading")
             filtered_idx += 1
             continue
+
+        # Updates: an asterisk-prefixed heading followed immediately
+        # by hyphen-prefixed changes introduces a revision group.
+        if tag == "updates" and re.match(r"^\s*\*\s+\S", ln):
+            next_idx = filtered_idx + 1
+
+            if (
+                next_idx < len(lines)
+                and re.match(r"^\s*-\s+\S", lines[next_idx] or "")
+            ):
+                flush_para("paragraph_default")
+                flush_list()
+
+                text = re.sub(r"^\s*\*\s+", "", ln, count=1).strip()
+
+                meta = _make_meta(
+                    detectors=["subheading_updates_star_dash"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=text,
+                )
+
+                blocks.append({
+                    "type": "subheading",
+                    "text": text,
+                    "meta": meta,
+                })
+
+                _inc_count(parsing_state, "subheading")
+                filtered_idx += 1
+                continue
 
         # bullets
         if _BULLET_RE.match(ln):
