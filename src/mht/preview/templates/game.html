@@ -44,20 +44,10 @@
                             {% endfor %}
                         </ol>
 
-                    {% elif kind == "pair" or kind == "pairs" %}
-                        {% set pairs = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
+                    {% elif kind == "pair" %}
                         <dl>
-                            {% for pair in pairs %}
-                                {% if pair is mapping %}
-                                    {% set label = pair.get("label") %}
-                                    {% set value = pair.get("value") %}
-                                {% else %}
-                                    {% set label = pair.label if pair.label is defined else "" %}
-                                    {% set value = pair.value if pair.value is defined else "" %}
-                                {% endif %}
-                                <dt>{{ label }}</dt>
-                                <dd>{{ value }}</dd>
-                            {% endfor %}
+                            <dt>{{ block.label }}</dt>
+                            <dd>{{ block.value }}</dd>
                         </dl>
 
                     {% else %}
@@ -102,20 +92,10 @@
                             {% endfor %}
                         </ol>
 
-                    {% elif kind == "pair" or kind == "pairs" %}
-                        {% set pairs = block["items"] if ("items" in block and block["items"] is sequence) else [] %}
+                    {% elif kind == "pair" %}
                         <dl>
-                            {% for pair in pairs %}
-                                {% if pair is mapping %}
-                                    {% set label = pair.get("label") %}
-                                    {% set value = pair.get("value") %}
-                                {% else %}
-                                    {% set label = pair.label if pair.label is defined else "" %}
-                                    {% set value = pair.value if pair.value is defined else "" %}
-                                {% endif %}
-                                <dt>{{ label }}</dt>
-                                <dd>{{ value }}</dd>
-                            {% endfor %}
+                            <dt>{{ block.label }}</dt>
+                            <dd>{{ block.value }}</dd>
                         </dl>
 
                     {% else %}
