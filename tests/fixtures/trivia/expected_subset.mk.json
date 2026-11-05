@@ -1,19 +1,23 @@
 {
-    "notes": [
-        "mk: scoring contains individual move/value pairs.",
-        "Character names separate groups of special moves.",
-        "staff contains role/person pairs.",
-        "Asterisk-prefixed Basic Move and Bonus Points headings require further classification review."
-    ],
+	"notes": [
+		"mk: scoring contains individual move/value pairs.",
+		"Character names separate groups of special moves.",
+		"staff contains role/person pairs.",
+		"Basic Move and Bonus Points are recognised as scoring subheadings despite missing trailing colons."
+	],
     "expectations": {
         "sections": {
-            "scoring": {
-                "blocks": [
-                    {
-                        "type": "pair",
-                        "label_contains": "High Punch",
-                        "value_contains": "500 points"
-                    },
+			"scoring": {
+				"blocks": [
+					{
+						"type": "subheading",
+						"text_contains": "Basic Move"
+					},
+					{
+						"type": "pair",
+						"label_contains": "High Punch",
+						"value_contains": "500 points"
+					},
                     {
                         "type": "pair",
                         "label_contains": "High Kick",
@@ -28,11 +32,15 @@
                         "label_contains": "Green Ball",
                         "value_contains": "2,000 points"
                     },
-                    {
-                        "type": "pair",
-                        "label_contains": "Breaking Diamond",
-                        "value_contains": "2,000,000 points"
-                    }
+					{
+						"type": "subheading",
+						"text_contains": "Bonus Points"
+					},
+					{
+						"type": "pair",
+						"label_contains": "Breaking Diamond",
+						"value_contains": "2,000,000 points"
+					}
                 ]
             },
             "staff": {

@@ -1,0 +1,38 @@
+{
+    "notes": [
+        "rampage: scoring begins with a descriptive paragraph followed by the asterisk-prefixed ITEMS heading.",
+        "ITEMS is classified as a subheading because it immediately introduces multiple scoring pairs.",
+        "The scoring pairs retain their labels and values."
+    ],
+    "expectations": {
+        "sections": {
+            "scoring": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Scoring in this game is relatively complicated"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "ITEMS"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Bag of loot",
+                        "value_contains": "100-500 points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Boater",
+                        "value_contains": "750 points"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Building destroyed",
+                        "value_contains": "2,500 points"
+                    }
+                ]
+            }
+        }
+    }
+}

@@ -510,6 +510,57 @@ def process_section_blocks(
                 filtered_idx += 1
                 continue
 
+        # Scoring: an asterisk-prefixed category followed immediately
+        # by at least two label/value pairs introduces a scoring group.
+        if (
+            tag == "scoring"
+            and _BULLET_RE.match(ln)
+            and ln.lstrip().startswith("* ")
+            and not ln.rstrip().endswith(":")
+        ):
+            next_idx = filtered_idx + 1
+
+            if next_idx + 1 < len(lines):
+                next_line = lines[next_idx] or ""
+                following_line = lines[next_idx + 1] or ""
+
+                first_pair = (
+                    _PAIR_COLON_RE.match(next_line)
+                    or _PAIR_DASH_RE.match(next_line)
+                )
+                second_pair = (
+                    _PAIR_COLON_RE.match(following_line)
+                    or _PAIR_DASH_RE.match(following_line)
+                )
+
+                if first_pair and second_pair:
+                    flush_para("paragraph_default")
+                    flush_list()
+
+                    text = re.sub(
+                        r"^\s*\*\s+",
+                        "",
+                        ln,
+                        count=1,
+                    ).strip()
+
+                    meta = _make_meta(
+                        detectors=["subheading_scoring_pairs"],
+                        f_start=filtered_idx,
+                        f_end=filtered_idx,
+                        text=text,
+                    )
+
+                    blocks.append({
+                        "type": "subheading",
+                        "text": text,
+                        "meta": meta,
+                    })
+
+                    _inc_count(parsing_state, "subheading")
+                    filtered_idx += 1
+                    continue
+
         # bullets
         if _BULLET_RE.match(ln):
             flush_para("paragraph_default")
