@@ -371,24 +371,46 @@ def process_section_blocks(
             "text_hash": _short_hash(text or ""),
         }
 
-    # list accumulation state
+    # List accumulation state.
+    #
+    # A list item may span several physical GH source lines.
+    # Track its actual line range rather than deriving that range
+    # from the number of accumulated list items.
     list_acc: List[str] = []
     list_kind: Optional[str] = None
+    list_start_idx: Optional[int] = None
+    list_last_idx: Optional[int] = None
 
     def flush_list():
-        nonlocal list_acc, list_kind
+        nonlocal list_acc, list_kind, list_start_idx, list_last_idx
+
         if list_kind and list_acc:
-            start = filtered_idx - len(list_acc)
-            end   = filtered_idx - 1
+            assert list_start_idx is not None
+            assert list_last_idx is not None
+
             meta = _make_meta(
-                detectors=[ "bullet_asterisk" if list_kind == "bullet_list" else "numbered_1)" ],
-                f_start=start, f_end=end,
-                text="\n".join(list_acc)
+                detectors=[
+                    "bullet_asterisk"
+                    if list_kind == "bullet_list"
+                    else "numbered_1)"
+                ],
+                f_start=list_start_idx,
+                f_end=list_last_idx,
+                text="\n".join(list_acc),
             )
-            blocks.append({ "type": list_kind, "items": list_acc[:], "meta": meta })
+
+            blocks.append({
+                "type": list_kind,
+                "items": list_acc[:],
+                "meta": meta,
+            })
+
             _inc_count(parsing_state, list_kind)
+
         list_acc = []
         list_kind = None
+        list_start_idx = None
+        list_last_idx = None
 
     # paragraph accumulator for normal mode
     para_acc: List[str] = []
@@ -564,19 +586,36 @@ def process_section_blocks(
         # bullets
         if _BULLET_RE.match(ln):
             flush_para("paragraph_default")
+
             if list_kind not in (None, "bullet_list"):
                 flush_list()
+
+            if list_start_idx is None:
+                list_start_idx = filtered_idx
+
             list_kind = "bullet_list"
-            item = re.sub(r"^\s*[\*\-]\s+", "", ln, count=1).strip()
+            item = re.sub(
+                r"^\s*[\*\-]\s+",
+                "",
+                ln,
+                count=1,
+            ).strip()
+
             list_acc.append(item)
+            list_last_idx = filtered_idx
             filtered_idx += 1
             continue
 
         # numbered
         if _NUMBERED_RE.match(ln):
             flush_para("paragraph_default")
+
             if list_kind not in (None, "numbered_list"):
                 flush_list()
+
+            if list_start_idx is None:
+                list_start_idx = filtered_idx
+
             list_kind = "numbered_list"
             item = re.sub(
                 r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+",
@@ -584,7 +623,9 @@ def process_section_blocks(
                 ln,
                 count=1,
             ).strip()
+
             list_acc.append(item)
+            list_last_idx = filtered_idx
             filtered_idx += 1
             continue
 
@@ -610,6 +651,39 @@ def process_section_blocks(
                     "meta": meta,
                 })
                 _inc_count(parsing_state, "pair")
+                filtered_idx += 1
+                continue
+
+        # GH sometimes contains hard-wrapped bullet text copied from
+        # documents with fixed line widths.
+        #
+        # Join an unmarked line to the preceding bullet only when:
+        # - It immediately follows the preceding list line.
+        # - The preceding item lacks sentence-ending punctuation.
+        # - The continuation begins with a lowercase character.
+        #
+        # This conservative rule avoids absorbing ordinary paragraphs,
+        # explicit subheadings and separately marked list entries.
+        # Ambiguous cases remain separate for subsequent review.
+        if (
+            list_kind == "bullet_list"
+            and list_acc
+            and list_last_idx == filtered_idx - 1
+        ):
+            previous_item = list_acc[-1].rstrip()
+            continuation = ln.strip()
+
+            if (
+                previous_item
+                and continuation
+                and not previous_item.endswith((".", "!", "?", ":"))
+                and continuation[0].islower()
+            ):
+                list_acc[-1] = (
+                    f"{previous_item} {continuation}"
+                )
+
+                list_last_idx = filtered_idx
                 filtered_idx += 1
                 continue
 
