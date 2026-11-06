@@ -1,0 +1,57 @@
+{
+    "notes": [
+        "Super Breakout: Overview introduces three named game modes.",
+        "Each marked game mode contains a title and initial description separated by a colon.",
+        "Recognise the three titles as subheadings and their descriptions as paragraphs.",
+        "Capitalise the initial description without modifying the original GH source.",
+        "Preserve the additional descriptive paragraphs in their original order."
+    ],
+    "expectations": {
+        "sections": {
+            "overview": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The three available Super Breakout modes are the following:"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Double Breakout"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Before serving the ball, the Double Breakout playfield"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Two paddles are displayed at the bottom"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Cavity Breakout"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Before serving the ball, the Cavity Breakout playfield"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "One paddle is provided in this game"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Progressive Breakout"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Before serving the ball, the Progressive Breakout playfield"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The brick walls move or 'scroll'"
+                    }
+                ]
+            }
+        }
+    }
+}

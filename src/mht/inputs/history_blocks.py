@@ -429,6 +429,98 @@ def process_section_blocks(
         para_acc = []
         para_start_idx = None
 
+    # Identify repeated Overview topic groups before classification.
+    #
+    # GH sometimes introduces several named topics with a paragraph
+    # ending in a colon. Each marked topic contains its title and
+    # initial description on one line, followed by unmarked prose.
+    #
+    # Require at least two consecutive topic groups. An isolated
+    # colon-bearing bullet is not sufficient evidence of a heading.
+    overview_named_topic_lines = set()
+
+    if tag == "overview":
+        topic_pattern = re.compile(
+            r"^\s*\*\s+([^:]{1,60}?)\s*:\s+(\S.*)$"
+        )
+
+        for intro_idx, intro_line in enumerate(lines):
+            intro_text = (intro_line or "").strip()
+
+            if (
+                not intro_text.endswith(":")
+                or intro_text.startswith(("*", "-"))
+            ):
+                continue
+
+            group_indices = []
+            next_idx = intro_idx + 1
+
+            # Topic groups must be separated from their introduction.
+            while (
+                next_idx < len(lines)
+                and _BLANK_RE.match(lines[next_idx] or "")
+            ):
+                next_idx += 1
+
+            if next_idx == intro_idx + 1:
+                continue
+
+            while next_idx < len(lines):
+                match = topic_pattern.match(lines[next_idx] or "")
+
+                if not match:
+                    break
+
+                title = match.group(1).strip()
+
+                if len(title.split()) > 9:
+                    break
+
+                description_idx = next_idx + 1
+
+                # Require at least one separate descriptive line.
+                if (
+                    description_idx >= len(lines)
+                    or _is_structural_line(lines[description_idx] or "")
+                    or _BLANK_RE.match(lines[description_idx] or "")
+                ):
+                    break
+
+                # Find the end of this topic's descriptive group.
+                while description_idx < len(lines):
+                    following = lines[description_idx] or ""
+
+                    if (
+                        _BLANK_RE.match(following)
+                        or _is_structural_line(following)
+                    ):
+                        break
+
+                    description_idx += 1
+
+                group_indices.append(next_idx)
+
+                # The next topic must follow a blank-line boundary.
+                if (
+                    description_idx >= len(lines)
+                    or not _BLANK_RE.match(
+                        lines[description_idx] or ""
+                    )
+                ):
+                    break
+
+                next_idx = description_idx
+
+                while (
+                    next_idx < len(lines)
+                    and _BLANK_RE.match(lines[next_idx] or "")
+                ):
+                    next_idx += 1
+
+            if len(group_indices) >= 2:
+                overview_named_topic_lines.update(group_indices)
+
     # --- main loop over filtered lines
     for line in lines:
         ln = (line or "")
@@ -582,6 +674,59 @@ def process_section_blocks(
                     _inc_count(parsing_state, "subheading")
                     filtered_idx += 1
                     continue
+
+        # Overview named topics: a repeated group may put its title
+        # and initial description on the same marked source line.
+        #
+        # Only lines selected by the structural pre-pass qualify.
+        # Preserve provenance for both resulting blocks, since they
+        # originate from the same physical source line.
+        if tag == "overview" and filtered_idx in overview_named_topic_lines:
+            match = topic_pattern.match(ln)
+
+            if match:
+                title = match.group(1).strip()
+                description = match.group(2).strip()
+
+                # Normalise only the first character of the extracted
+                # description; sections_raw retains the original text.
+                description = description[0].upper() + description[1:]
+
+                flush_para("paragraph_default")
+                flush_list()
+
+                heading_meta = _make_meta(
+                    detectors=["subheading_overview_named_topic"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=title,
+                )
+
+                blocks.append({
+                    "type": "subheading",
+                    "text": title,
+                    "meta": heading_meta,
+                })
+
+                _inc_count(parsing_state, "subheading")
+
+                paragraph_meta = _make_meta(
+                    detectors=["paragraph_overview_named_topic"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=description,
+                )
+
+                blocks.append({
+                    "type": "paragraph",
+                    "text": description,
+                    "meta": paragraph_meta,
+                })
+
+                _inc_count(parsing_state, "paragraph")
+
+                filtered_idx += 1
+                continue
 
         # Overview: GH sometimes uses an asterisk to mark a short
         # heading followed by one or more descriptive source lines.
