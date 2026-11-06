@@ -583,6 +583,98 @@ def process_section_blocks(
                     filtered_idx += 1
                     continue
 
+        # Overview: GH sometimes uses an asterisk to mark a short
+        # heading followed by one or more descriptive source lines.
+        #
+        # Unlike explicit colon headings, these headings may have no
+        # terminal punctuation or may end with a full stop.
+        #
+        # Require paragraph-style separation and a short title to
+        # distinguish this convention from ordinary narrative bullets.
+        # Look ahead to the next blank line without consuming the
+        # description, allowing normal paragraph classification to
+        # preserve the original content and provenance.
+        if (
+            tag == "overview"
+            and ln.lstrip().startswith("* ")
+            and _BULLET_RE.match(ln)
+        ):
+            title = re.sub(
+                r"^\s*\*\s+",
+                "",
+                ln,
+                count=1,
+            ).strip()
+
+            previous_blank = (
+                filtered_idx == 0
+                or _BLANK_RE.match(lines[filtered_idx - 1] or "")
+            )
+
+            description_lines = []
+            next_idx = filtered_idx + 1
+
+            while next_idx < len(lines):
+                following = (lines[next_idx] or "").strip()
+
+                if not following:
+                    break
+
+                # A new marked or structural entry is not part of
+                # the heading's descriptive paragraph.
+                if (
+                    following.startswith(("*", "-"))
+                    or _NUMBERED_RE.match(following)
+                    or _ALL_HYPHENS_RE.match(following)
+                ):
+                    break
+
+                description_lines.append(following)
+                next_idx += 1
+
+            description = " ".join(description_lines)
+
+            short_title = (
+                len(title) <= 60
+                and len(title.split()) <= 9
+            )
+
+            has_description = (
+                bool(description_lines)
+                and len(description_lines[0]) > len(title)
+            )
+
+            separated_after = (
+                next_idx == len(lines)
+                or _BLANK_RE.match(lines[next_idx] or "")
+            )
+
+            if (
+                previous_blank
+                and short_title
+                and has_description
+                and separated_after
+            ):
+                flush_para("paragraph_default")
+                flush_list()
+
+                meta = _make_meta(
+                    detectors=["subheading_overview_description"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=title,
+                )
+
+                blocks.append({
+                    "type": "subheading",
+                    "text": title,
+                    "meta": meta,
+                })
+
+                _inc_count(parsing_state, "subheading")
+                filtered_idx += 1
+                continue
+
         # bullets
         if _BULLET_RE.match(ln):
             flush_para("paragraph_default")

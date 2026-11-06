@@ -1,0 +1,44 @@
+{
+    "notes": [
+        "720: Overview contains asterisk-prefixed headings followed by descriptive paragraphs.",
+        "Implicit headings may have no terminal punctuation or end with a full stop.",
+        "The headings remain separate from their descriptions.",
+        "The Overview-specific classifier must recognise all four examples without converting their descriptions into bullets."
+    ],
+    "expectations": {
+        "sections": {
+            "overview": {
+                "blocks": [
+                    {
+                        "type": "subheading",
+                        "text_contains": "Unique Action and Game Format."
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "New Controls"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Players controls consist of a rotary controller"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "More Visual and Audio Entertainment."
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "higher-resolution monitor"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Operator Features"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "comprehensive self-test and statistics package"
+                    }
+                ]
+            }
+        }
+    }
+}
