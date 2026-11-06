@@ -1,0 +1,32 @@
+{
+    "notes": [
+        "Toobin': Scoring begins with a preamble introducing five scoring methods.",
+        "All five marked scoring methods belong to one uninterrupted bullet list.",
+        "Unmarked explanations following Passing through Gates and Score Multiplier remain within their respective list items.",
+        "The original descriptions and explanations are preserved without introducing new block types."
+    ],
+    "expectations": {
+        "sections": {
+            "scoring": {
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text_contains": "The player can score points by"
+                    },
+                    {
+                        "type": "bullet_list",
+                        "items_contain": [
+                            "Time of Travel",
+                            "Passing through Gates",
+                            "If a players swishes a gate",
+                            "Score Multiplier",
+                            "Every point the player scores is multiplied",
+                            "Treasures",
+                            "Warp"
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}

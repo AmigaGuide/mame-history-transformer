@@ -746,6 +746,35 @@ def process_section_blocks(
                 filtered_idx += 1
                 continue
 
+        # GH Scoring sections can contain an uninterrupted list whose
+        # individual items have additional unmarked explanations.
+        #
+        # Unlike a hard wrap, the marked item may already end with
+        # complete sentence punctuation. Preserve the explanation
+        # separately within the item using a newline.
+        #
+        # Requiring another marked item immediately afterwards avoids
+        # changing ordinary bullet-plus-paragraph endings. Restrict
+        # this initial rule to Scoring until other sections have been
+        # assessed for headings and nested structures.
+        if (
+            tag == "scoring"
+            and list_kind == "bullet_list"
+            and list_acc
+            and list_last_idx == filtered_idx - 1
+            and filtered_idx + 1 < len(lines)
+            and _BULLET_RE.match(lines[filtered_idx + 1] or "")
+            and not _is_structural_line(ln)
+            and not ln.strip().endswith(":")
+        ):
+            list_acc[-1] = (
+                f"{list_acc[-1]}\n{ln.strip()}"
+            )
+
+            list_last_idx = filtered_idx
+            filtered_idx += 1
+            continue
+
         # GH sometimes contains hard-wrapped bullet text copied from
         # documents with fixed line widths.
         #
