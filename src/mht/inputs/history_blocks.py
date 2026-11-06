@@ -618,13 +618,27 @@ def process_section_blocks(
             flush_list()
             text = ln.strip()
             if text:
-                meta = _make_meta(detectors=["paragraph_per_line"], f_start=filtered_idx, f_end=filtered_idx, text=text)
-                blocks.append({ "type": "paragraph", "text": text, "meta": meta })
+                meta = _make_meta(
+                    detectors=["paragraph_per_line"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=text,
+                )
+                blocks.append({
+                    "type": "paragraph",
+                    "text": text,
+                    "meta": meta,
+                })
                 _inc_count(parsing_state, "paragraph")
             filtered_idx += 1
         else:
+            # Close any preceding list before accumulating paragraph text.
+            # This preserves source order and accurate list provenance.
+            flush_list()
+
             if para_start_idx is None:
                 para_start_idx = filtered_idx
+
             para_acc.append(ln)
             filtered_idx += 1
 
