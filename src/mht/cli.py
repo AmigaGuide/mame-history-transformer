@@ -7,7 +7,7 @@ from typing import Iterable, Optional
 import datetime
 
 from mht.utils.versions import tool_version
-from mht.utils.stamps import make_stamp, load_stamp, is_fresh
+from mht.utils.stamps import stage_is_fresh
 from mht.utils.paths import (
     # repo/data roots
     DATA_DIR,
@@ -31,6 +31,7 @@ from mht.utils.paths import (
     ini_summary_path,
     transform_summary_path,
     exotica_wiki_path,
+    exotica_raw_path,
     exotica_pages_path,
     # shared lookups
     title_overrides_path,
@@ -44,8 +45,8 @@ from mht.provenance.peek import peek_path, derive_mame_version_hint_from_filenam
 from mht.provenance.archives import import_incoming_archives, list_incoming_archives, verify_and_stage_zip
 from mht.provenance.releases_index import rebuild_releases_index
 from mht.preview.server import run_preview
-from mht.preview.server import run_preview
 from mht.utils.snaps import find_snaps_archive
+from mht.transform.snaps_genres import GENRE_DESCRIPTIONS_PATH
 
 
 def _print_active_banner() -> None:
@@ -223,96 +224,129 @@ def _read_json_safe(p: Path) -> Optional[dict]:
 # Status (stamp freshness) per-stage for the ACTIVE release
 # --------------------------------------------------------------------------------------
 
+def _evaluate_stage(
+    *,
+    name: str,
+    schema_id: str,
+    tool: str,
+    inputs: list[Path],
+    outputs: list[Path],
+    version: str,
+    missing_source: bool = False,
+    optional_inputs: tuple[Path, ...] = (),
+) -> dict:
+    """Use the same digest/output check as the actual pipeline stages."""
+    fresh, stamp_path, _ = stage_is_fresh(
+        f"{name}.json",
+        schema_id=schema_id,
+        tool=tool,
+        inputs=inputs,
+        stamps_dir=stamps_dir(version),
+        outputs=outputs,
+    )
+    missing_inputs = [
+        str(path) for path in inputs
+        if not path.is_file() and path not in optional_inputs
+    ]
+    missing_outputs = [str(path) for path in outputs if not path.is_file()]
+    has_stamp = stamp_path.is_file()
+    return {
+        "fresh": bool(fresh and not missing_source and not missing_inputs),
+        "tool": tool,
+        "tool_version": tool_version(tool),
+        "stamp_present": has_stamp,
+        "missing_source": missing_source,
+        "missing_inputs": missing_inputs,
+        "missing_outputs": missing_outputs,
+    }
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     ver = _ver_or_active(args.version)
     ensure_release_dirs(ver)
-
-    tools = {
-        "ini":        "ini_summary",
-        "mame":       "mame_parser",
-        "history":    "history_parser",
-        "transform":  "transformer",
-    }
-
-    # Prefer staged ZIPs (ZIP-first world); fall back to legacy extracted files if present
-    mame_zip    = _find_archive_for(ver, "mame")
-    history_zip = _find_archive_for(ver, "history")
-    snaps_zip   = find_snaps_archive(archives_dir(ver))
-
-    # Build per-stage inputs exactly like the runners now do
+    archive = archives_dir(ver)
     enc_cache = encodings_cache_path(ver)
 
-    stage_cfg = {
+    # Mirror the source-selection rules used by the current stage runners.
+    # INI/History are ZIP-only; MAME can fall back to an extracted XML.
+    history_zip = _find_archive_for(ver, "history")
+    mame_zip = _find_archive_for(ver, "mame")
+    mame_source = mame_zip if mame_zip is not None else mame_xml_path(ver)
+
+    # The transformer rejects a release without an available SNAPS ZIP.
+    try:
+        snaps_zip = find_snaps_archive(archive)
+    except ValueError:
+        snaps_zip = None
+
+    transform_inputs = [
+        mame_machines_path(ver),
+        ini_classifications_path(ver),
+        parent_index_path(ver),
+        gh_system_ports_path(ver),
+        mame_summary_path(ver),
+        history_summary_path(ver),
+        ini_summary_path(ver),
+        title_overrides_path(),
+        GENRE_DESCRIPTIONS_PATH,
+    ]
+    if snaps_zip is not None:
+        transform_inputs.append(snaps_zip)
+
+    # Required output paths match the stage_is_fresh calls in the runners.
+    configs = {
         "ini": {
-            "schema_id": "mht.stage.ini",
-            "inputs": _exists_list_safe([history_zip, enc_cache]),
-            "stamp": stamps_dir(ver) / "ini.json",
+            "tool": "ini_summary", "inputs": [history_zip, enc_cache] if history_zip else [enc_cache],
+            "outputs": [ini_classifications_path(ver), ini_summary_path(ver)],
+            "missing_source": history_zip is None,
         },
         "mame": {
-            "schema_id": "mht.stage.mame",
-            "inputs": _exists_list_safe([mame_zip, enc_cache]) or _exists_list_safe([mame_xml_path(ver), enc_cache]),
-            "stamp": stamps_dir(ver) / "mame.json",
+            "tool": "mame_parser", "inputs": [mame_source, enc_cache],
+            "outputs": [mame_machines_path(ver), parent_index_path(ver), mame_summary_path(ver)],
+            "missing_source": False,
         },
         "history": {
-            "schema_id": "mht.stage.history",
-            "inputs": _exists_list_safe([history_zip, enc_cache]) or _exists_list_safe([history_xml_path(ver), enc_cache]),
-            "stamp": stamps_dir(ver) / "history.json",
+            "tool": "history_parser", "inputs": [history_zip, enc_cache] if history_zip else [enc_cache],
+            "outputs": [gh_system_ports_path(ver), gh_system_trivia_path(ver), history_summary_path(ver)],
+            "missing_source": history_zip is None,
         },
         "transform": {
-            "schema_id": "mht.stage.transform",
-            "inputs": _exists_list_safe([
-                mame_machines_path(ver),
-                ini_classifications_path(ver),
-                parent_index_path(ver),
-                gh_system_ports_path(ver),
-                mame_summary_path(ver),
-                history_summary_path(ver),
-                ini_summary_path(ver),
-                title_overrides_path(),
-                snaps_zip,
-            ]),
-            "stamp": stamps_dir(ver) / "transform.json",
+            "tool": "transformer", "inputs": transform_inputs,
+            "outputs": [exotica_wiki_path(ver), exotica_raw_path(ver), exotica_pages_path(ver), transform_summary_path(ver)],
+            "missing_source": snaps_zip is None,
+            "optional_inputs": (title_overrides_path(),),
         },
     }
-
-    any_stale = False
-    print(f"[status] selected release = {ver}  (root: {release_root(ver).as_posix()})\n")
-
-    for name, cfg in stage_cfg.items():
-        tv = tool_version(tools[name])
-
-        prev = load_stamp(cfg["stamp"])
-        inputs_exist = _coerce_prev_input_paths(prev)
-        if not inputs_exist:
-            inputs_exist = cfg["inputs"]  # fall back to discovery only if no stamp inputs
-
-        current = make_stamp(cfg["schema_id"], tv, inputs=inputs_exist)
-        fresh = is_fresh(current, prev)
-
-        note = []
-        if not inputs_exist:
-            note.append("no inputs found")
-        if prev is None:
-            note.append("no stamp")
-
-        suffix = f" ({'; '.join(note)})" if note else ""
-        print(f"{name:10} : {'fresh' if fresh else 'stale'}{suffix}  (tool={tools[name]} v{tv})")
-
-        if not fresh:
-            any_stale = True
+    results = {
+        name: _evaluate_stage(
+            name=name,
+            schema_id=f"mht.stage.{name}",
+            version=ver,
+            **config,
+        )
+        for name, config in configs.items()
+    }
 
     if args.json:
-        payload = {
-            "release": ver,
-            "stages": {
-                k: {"fresh": is_fresh(make_stamp(cfg["schema_id"], tool_version(tools[k]), inputs=cfg["inputs"]), load_stamp(cfg["stamp"]))}
-                for k, cfg in stage_cfg.items()
-            }
-        }
-        _print_json(payload)
-        return 0 if not any(not v["fresh"] for v in payload["stages"].values()) else 1
+        _print_json({"release": ver, "stages": results})
+    else:
+        print(f"[status] selected release = {ver}  (root: {release_root(ver).as_posix()})\n")
+        for name, result in results.items():
+            notes = []
+            if not result["stamp_present"]:
+                notes.append("no stamp")
+            if result["missing_source"]:
+                notes.append("required source archive missing")
+            if result["missing_inputs"]:
+                notes.append(f"{len(result['missing_inputs'])} missing input(s)")
+            if result["missing_outputs"]:
+                notes.append(f"{len(result['missing_outputs'])} missing output(s)")
+            note = f" ({'; '.join(notes)})" if notes else ""
+            state = "fresh" if result["fresh"] else "stale"
+            print(f"{name:10} : {state}{note}  (tool={result['tool']} v{result['tool_version']})")
 
-    return 0 if not any_stale else 1
+    return 0 if all(result["fresh"] for result in results.values()) else 1
+
 
 # --------------------------------------------------------------------------------------
 # Clean (per-release)
@@ -1263,7 +1297,7 @@ def main() -> None:
     args = p.parse_args()
 
     # Print active banner for every actual command
-    if args.func is not cmd_root:
+    if args.func is not cmd_root and not (args.cmd == "status" and args.json):
         _print_active_banner()
 
     raise SystemExit(args.func(args))
