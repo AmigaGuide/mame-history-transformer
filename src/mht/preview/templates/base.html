@@ -268,6 +268,33 @@
                 margin: 0.2rem 0 0 1.5rem;
             }
 
+            /* Catalogue controls and pagination */
+            .catalogue-controls {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.75rem;
+                align-items: end;
+                margin: 1rem 0;
+            }
+
+            .catalogue-controls label {
+                display: flex;
+                flex-direction: column;
+                gap: 0.2rem;
+            }
+
+            .catalogue-controls input,
+            .catalogue-controls select {
+                padding: 0.3rem;
+            }
+
+            .catalogue-pages {
+                display: flex;
+                gap: 1rem;
+                align-items: center;
+                margin: 1rem 0;
+            }
+
             /* Dark theme overrides */
 
             body.theme-dark {
@@ -351,6 +378,7 @@
                 </div>
 
                 <div class="nav-right">
+                    <a href="{{ url_for('catalogue') }}">Catalogue</a>
                     <button type="button" id="theme-toggle">Dark mode</button>
 
                     <form action="{{ url_for('search') }}" method="get" class="search-form">

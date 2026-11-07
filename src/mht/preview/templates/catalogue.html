@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Catalogue - MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp; <strong>Catalogue</strong>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>Preview catalogue</h1>
+  <p class="muted">
+    Browse published ExoticA entries alongside GH Trivia-only records.
+    A GH record indicates presence in the parsed Trivia file, not necessarily
+    that every section contains classified content.
+  </p>
+
+  <form action="{{ url_for('catalogue') }}" method="get" class="catalogue-controls">
+    <label>
+      MAME name or description
+      <input type="search" name="q" value="{{ query }}" placeholder="Search catalogue">
+    </label>
+    <label>
+      Publication status
+      <select name="status">
+        <option value="all"{% if status == 'all' %} selected{% endif %}>All</option>
+        <option value="published"{% if status == 'published' %} selected{% endif %}>Published</option>
+        <option value="trivia-only"{% if status == 'trivia-only' %} selected{% endif %}>Trivia-only</option>
+      </select>
+    </label>
+    <label>
+      GH Trivia record
+      <select name="trivia">
+        <option value="any"{% if trivia == 'any' %} selected{% endif %}>Any</option>
+        <option value="yes"{% if trivia == 'yes' %} selected{% endif %}>Present</option>
+        <option value="no"{% if trivia == 'no' %} selected{% endif %}>Absent</option>
+      </select>
+    </label>
+    <button type="submit">Apply filters</button>
+  </form>
+
+  <p class="muted">
+    {{ total_results }} matching entr{{ 'y' if total_results == 1 else 'ies' }}.
+    Page {{ page }} of {{ page_count }}.
+  </p>
+
+  {% if results %}
+    <div class="search-results">
+      <table>
+        <thead><tr>
+          <th>MAME name</th><th>Description</th><th>Year</th>
+          <th>Manufacturer</th><th>Publication</th><th>GH record</th>
+        </tr></thead>
+        <tbody>
+        {% for row in results %}
+          <tr>
+            <td><a href="{{ url_for('game', machine=row.machine) }}">{{ row.machine }}</a></td>
+            <td>{{ row.description }}</td>
+            <td>{{ row.year or '' }}</td>
+            <td>{{ row.manufacturer or '' }}</td>
+            <td>{{ 'Published' if row.published else 'Trivia-only' }}</td>
+            <td>{{ 'Present' if row.has_gh_record else 'Absent' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No entries match these filters.</p>
+  {% endif %}
+
+  {% if page_count > 1 %}
+    <nav class="catalogue-pages" aria-label="Catalogue pages">
+      {% if page > 1 %}
+        <a href="{{ url_for('catalogue', q=query, status=status, trivia=trivia, page=page-1) }}">Previous page</a>
+      {% endif %}
+      <span>Page {{ page }} of {{ page_count }}</span>
+      {% if page < page_count %}
+        <a href="{{ url_for('catalogue', q=query, status=status, trivia=trivia, page=page+1) }}">Next page</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+{% endblock content %}

@@ -22,6 +22,7 @@ from .overview import (
     build_transform_overview,
 )
 from .preview_data import JsonDict, PreviewData
+from .catalogue import select_catalogue_page
 from .summary_contexts import (
     prep_history_summary_page_context,
     prep_ini_summary_page_context,
@@ -208,6 +209,17 @@ def create_app(
             trivia_sections=trivia_sections,
             ports_display=rec.get("ports_display") or [],
         )
+
+    @app.route("/catalogue")
+    def catalogue() -> str:
+        selection = select_catalogue_page(
+            preview_data,
+            query=request.args.get("q", ""),
+            status=request.args.get("status", "all"),
+            trivia=request.args.get("trivia", "any"),
+            page=request.args.get("page", "1"),
+        )
+        return render_template("catalogue.html", **selection)
 
     @app.route("/search")
     def search() -> str:
