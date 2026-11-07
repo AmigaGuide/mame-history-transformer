@@ -210,6 +210,14 @@ def create_app(
             ports_display=rec.get("ports_display") or [],
         )
 
+    @app.route("/diagnostics")
+    def diagnostics() -> str:
+        from .diagnostics import build_diagnostic_groups
+        return render_template(
+            "diagnostics.html",
+            diagnostic_groups=build_diagnostic_groups(preview_data),
+        )
+
     @app.route("/catalogue")
     def catalogue() -> str:
         selection = select_catalogue_page(

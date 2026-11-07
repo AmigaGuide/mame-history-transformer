@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Diagnostics - MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp; <strong>Diagnostics</strong>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>Processing diagnostics</h1>
+  <p class="lead">
+    Read-only observations from the existing MAME, Gaming History and transformation summaries.
+    These figures are not a quality score and do not change publication eligibility.
+  </p>
+  <p class="muted">
+    An absent count is not interpreted as zero. Missing PORTS, unpublished games and
+    optional Trivia sections are not treated as errors.
+  </p>
+
+  {% for group in diagnostic_groups %}
+    <section class="summary-block" style="margin-top: 1rem;">
+      <h2>{{ group.title }}</h2>
+      <p class="muted"><a href="{{ url_for(group.summary_endpoint) }}">Inspect source summary</a></p>
+      {% if group.findings %}
+        <div class="search-results">
+          <table>
+            <thead><tr><th>Source-reported finding</th><th>Count</th><th>Interpretation and examples</th></tr></thead>
+            <tbody>
+              {% for finding in group.findings %}
+                <tr>
+                  <td><strong>{{ finding.label }}</strong><div class="muted">{{ finding.path }}</div></td>
+                  <td>{{ finding.count }}</td>
+                  <td>{{ finding.explanation }}
+                    {% if finding.examples %}
+                      <div class="muted">Examples: {{ finding.examples|join(', ') }}</div>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="muted">No supported diagnostic counts recorded in this summary.</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+{% endblock content %}
