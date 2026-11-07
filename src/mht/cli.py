@@ -441,7 +441,17 @@ def cmd_preview(args: argparse.Namespace) -> int:
 # Run (delegate to your existing main.py)
 # --------------------------------------------------------------------------------------
 
-def cmd_run(_: argparse.Namespace) -> int:
+def cmd_run(args: argparse.Namespace) -> int:
+    # Selected runs do not invoke main.py or rebuild the full manifest.
+    stage = getattr(args, "only", None)
+    force = getattr(args, "force", False)
+    if force and not stage:
+        print("[run] --force requires --only STAGE.")
+        return 2
+    if stage:
+        from mht.selected_run import run_selected
+        return run_selected(stage, force=force)
+
     import runpy
     import sys
 
@@ -1087,6 +1097,14 @@ def main() -> None:
 
     # run (explicit only)
     s_run = sub.add_parser("run", help="Run the incremental processing pipeline for the active release")
+    s_run.add_argument(
+        "--only", choices=("ini", "mame", "history", "transform"), metavar="STAGE",
+        help="Check and run only one stage: ini, mame, history or transform",
+    )
+    s_run.add_argument(
+        "--force", action="store_true",
+        help="Rebuild the selected stage even if fresh (requires --only)",
+    )
     s_run.set_defaults(func=cmd_run)
 
     # status
