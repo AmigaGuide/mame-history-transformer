@@ -1,4 +1,4 @@
-"""Regression coverage for MHT status freshness (phase 1)."""
+"""Regression coverage for MHT status freshness."""
 from __future__ import annotations
 
 import argparse
@@ -114,12 +114,16 @@ def test_text_and_json_status_use_same_results(tmp_path, monkeypatch, capsys):
         "exotica_pages_path": root / "outputs/exotica_wiki_pages_and_redirects.json",
         "transform_summary_path": root / "summaries/transform_summary.json",
     }
+    # The central contract resolves release paths via utils.paths.
+    from mht.utils import stage_contracts
     for name, path in locations.items():
         monkeypatch.setattr(cli, name, lambda ver=None, path=path: path)
+        if hasattr(stage_contracts.paths, name):
+            monkeypatch.setattr(stage_contracts.paths, name, lambda ver=None, path=path: path)
     monkeypatch.setattr(cli, "ensure_release_dirs", lambda ver: None)
     monkeypatch.setattr(cli, "find_snaps_archive", lambda path: None)
     monkeypatch.setattr(cli, "title_overrides_path", lambda: root / "optional-overrides.json")
-    monkeypatch.setattr(cli, "GENRE_DESCRIPTIONS_PATH", root / "genres.json")
+    monkeypatch.setattr(stage_contracts, "GENRE_DESCRIPTIONS_PATH", root / "genres.json")
 
     args = argparse.Namespace(version="0284", json=True)
     json_code = cli.cmd_status(args)

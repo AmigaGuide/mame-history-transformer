@@ -28,7 +28,7 @@ from mht.utils.versions import SCHEMA_IDS, schema_version, output_schema
 from mht.utils.paths import (
     # release-aware dirs/files
     ensure_release_dirs,
-    archives_dir,
+    active_version, archives_dir,
     title_overrides_path,
     mame_summary_path, history_summary_path, ini_summary_path, transform_summary_path,
     mame_machines_path, parent_index_path, gh_system_ports_path, ini_classifications_path,
@@ -38,6 +38,7 @@ from mht.utils.paths import (
 from mht.utils.headers import build_summary_header
 from mht.utils.io import write_json, file_meta
 from mht.utils.stamps import save_stamp, stage_is_fresh
+from mht.utils.stage_contracts import stage_contract
 from mht.utils.ports import (
     render_ports_display,
     gh_keys_with_any_valid_ports     as _gh_keys_with_any_valid_ports,
@@ -272,17 +273,7 @@ def run_transformer() -> bool:
     t0 = time.perf_counter()
 
     # --- Stage stamp: skip unchanged (centralised helper) ---
-    stamp_inputs = [
-        mame_machines_path(),
-        ini_classifications_path(),
-        parent_index_path(),
-        gh_system_ports_path(),
-        mame_summary_path(),
-        history_summary_path(),
-        ini_summary_path(),
-        title_overrides_path(),
-        GENRE_DESCRIPTIONS_PATH,
-    ]
+    # The contract provides the ordered input list after SNAPS has been found.
 
     # SNAPS classifications are required for wiki publication.
     # Refuse to transform if the release archive is unavailable.
@@ -299,20 +290,16 @@ def run_transformer() -> bool:
         )
         return False
 
-    stamp_inputs.append(snaps_archive)
+    contract = stage_contract("transform", active_version(), snaps_archive=snaps_archive)
+    stamp_inputs = list(contract.inputs)
 
     fresh, stamp_path, current_stamp = stage_is_fresh(
-        "transform.json",
-        schema_id="mht.stage.transform",
-        tool="transformer",
+        contract.stamp_filename,
+        schema_id=contract.schema_id,
+        tool=contract.tool,
         inputs=stamp_inputs,
         stamps_dir=stamps_dir(),
-        outputs=[
-            exotica_wiki_path(),
-            exotica_raw_path(),
-            exotica_pages_path(),
-            transform_summary_path(),
-        ],
+        outputs=contract.outputs,
     )
     if fresh:
         log.info("Transform stage up-to-date (stamp matched) — skipping transform")

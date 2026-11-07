@@ -42,6 +42,7 @@ import json
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log
 from mht.utils.stamps import save_stamp, stage_is_fresh
+from mht.utils.stage_contracts import stage_contract
 from mht.utils.paths import (
     ini_game_path, ini_category_path, ini_type_path,
     ini_summary_path, ini_classifications_path,
@@ -225,15 +226,13 @@ def parse_history_inis(data_dir: Path, encodings: Dict[str, str]) -> bool:
     primary_input = zip_path                   # zip-only: always the archive
     enc_path = encodings_cache_path(ver)       # data/releases/<ver>/encodings.json
 
+    contract = stage_contract("ini", ver, source=primary_input)
     fresh, stamp_path, current_stamp = stage_is_fresh(
-        "ini.json",
-        schema_id="mht.stage.ini",
-        tool="ini_summary",
-        inputs=[primary_input, enc_path],
-        outputs=[
-            ini_classifications_path(),
-            ini_summary_path(),
-        ],
+        contract.stamp_filename,
+        schema_id=contract.schema_id,
+        tool=contract.tool,
+        inputs=contract.inputs,
+        outputs=contract.outputs,
     )
 
     if fresh:

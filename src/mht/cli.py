@@ -8,6 +8,7 @@ import datetime
 
 from mht.utils.versions import tool_version
 from mht.utils.stamps import stage_is_fresh
+from mht.utils.stage_contracts import stage_contract
 from mht.utils.paths import (
     # repo/data roots
     DATA_DIR,
@@ -46,7 +47,6 @@ from mht.provenance.archives import import_incoming_archives, list_incoming_arch
 from mht.provenance.releases_index import rebuild_releases_index
 from mht.preview.server import run_preview
 from mht.utils.snaps import find_snaps_archive
-from mht.transform.snaps_genres import GENRE_DESCRIPTIONS_PATH
 
 
 def _print_active_banner() -> None:
@@ -265,8 +265,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     ver = _ver_or_active(args.version)
     ensure_release_dirs(ver)
     archive = archives_dir(ver)
-    enc_cache = encodings_cache_path(ver)
 
+    # Source discovery remains outside the shared stage contract.
     # Mirror the source-selection rules used by the current stage runners.
     # INI/History are ZIP-only; MAME can fall back to an extracted XML.
     history_zip = _find_archive_for(ver, "history")
@@ -279,52 +279,24 @@ def cmd_status(args: argparse.Namespace) -> int:
     except ValueError:
         snaps_zip = None
 
-    transform_inputs = [
-        mame_machines_path(ver),
-        ini_classifications_path(ver),
-        parent_index_path(ver),
-        gh_system_ports_path(ver),
-        mame_summary_path(ver),
-        history_summary_path(ver),
-        ini_summary_path(ver),
-        title_overrides_path(),
-        GENRE_DESCRIPTIONS_PATH,
-    ]
-    if snaps_zip is not None:
-        transform_inputs.append(snaps_zip)
-
-    # Required output paths match the stage_is_fresh calls in the runners.
-    configs = {
-        "ini": {
-            "tool": "ini_summary", "inputs": [history_zip, enc_cache] if history_zip else [enc_cache],
-            "outputs": [ini_classifications_path(ver), ini_summary_path(ver)],
-            "missing_source": history_zip is None,
-        },
-        "mame": {
-            "tool": "mame_parser", "inputs": [mame_source, enc_cache],
-            "outputs": [mame_machines_path(ver), parent_index_path(ver), mame_summary_path(ver)],
-            "missing_source": False,
-        },
-        "history": {
-            "tool": "history_parser", "inputs": [history_zip, enc_cache] if history_zip else [enc_cache],
-            "outputs": [gh_system_ports_path(ver), gh_system_trivia_path(ver), history_summary_path(ver)],
-            "missing_source": history_zip is None,
-        },
-        "transform": {
-            "tool": "transformer", "inputs": transform_inputs,
-            "outputs": [exotica_wiki_path(ver), exotica_raw_path(ver), exotica_pages_path(ver), transform_summary_path(ver)],
-            "missing_source": snaps_zip is None,
-            "optional_inputs": (title_overrides_path(),),
-        },
-    }
+    contracts = (
+        stage_contract("ini", ver, source=history_zip),
+        stage_contract("mame", ver, source=mame_source),
+        stage_contract("history", ver, source=history_zip),
+        stage_contract("transform", ver, snaps_archive=snaps_zip),
+    )
     results = {
-        name: _evaluate_stage(
-            name=name,
-            schema_id=f"mht.stage.{name}",
+        contract.name: _evaluate_stage(
+            name=contract.name,
+            schema_id=contract.schema_id,
+            tool=contract.tool,
+            inputs=list(contract.inputs),
+            outputs=list(contract.outputs),
             version=ver,
-            **config,
+            missing_source=contract.missing_source,
+            optional_inputs=contract.optional_inputs,
         )
-        for name, config in configs.items()
+        for contract in contracts
     }
 
     if args.json:

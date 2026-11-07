@@ -34,6 +34,7 @@ import json, datetime
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, debug_log, maybe_log_progress
 from mht.utils.stamps import save_stamp, stage_is_fresh
+from mht.utils.stage_contracts import stage_contract
 from mht.utils.paths import (
     gh_system_ports_path, history_summary_path,
     archives_dir, active_version,
@@ -158,16 +159,13 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
 
     enc_path = encodings_cache_path(ver)
 
+    contract = stage_contract("history", ver, source=history_zip)
     fresh, stamp_path, current_stamp = stage_is_fresh(
-        "history.json",
-        schema_id="mht.stage.history",
-        tool="history_parser",
-        inputs=[history_zip, enc_path],
-        outputs=[
-            gh_system_ports_path(),
-            gh_system_trivia_path(),
-            history_summary_path(),
-        ],
+        contract.stamp_filename,
+        schema_id=contract.schema_id,
+        tool=contract.tool,
+        inputs=contract.inputs,
+        outputs=contract.outputs,
     )
     if fresh:
         log.info("History stage up-to-date (stamp matched) — skipping rebuild")

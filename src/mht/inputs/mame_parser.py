@@ -32,6 +32,7 @@ import zipfile
 from mht.utils.config import LOG_LEVEL
 from mht.utils.logger import setup_logger, maybe_log_progress
 from mht.utils.stamps import save_stamp, stage_is_fresh
+from mht.utils.stage_contracts import stage_contract
 from mht.utils.paths import (
     mame_machines_path, mame_xml_path,
     parent_index_path, mame_summary_path,
@@ -141,16 +142,13 @@ def parse_mame_xml(file_path: Path, encodings: dict[str, str], max_records: int 
     primary_input = mame_zip if mame_zip else mame_xml_path(ver)
 
     # IMPORTANT: use the per-release encodings.json in the stamp inputs
+    contract = stage_contract("mame", ver, source=primary_input)
     fresh, stamp_path, current_stamp = stage_is_fresh(
-        "mame.json",
-        schema_id="mht.stage.mame",
-        tool="mame_parser",
-        inputs=[primary_input, enc_path],
-        outputs=[
-            mame_machines_path(),
-            parent_index_path(),
-            mame_summary_path(),
-        ],
+        contract.stamp_filename,
+        schema_id=contract.schema_id,
+        tool=contract.tool,
+        inputs=contract.inputs,
+        outputs=contract.outputs,
     )
     if fresh:
         log.info("MAME stage up-to-date (stamp matched) — skipping rebuild")
