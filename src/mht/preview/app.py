@@ -186,7 +186,12 @@ def create_app(
                 blocks = sec.get("blocks")
                 if not isinstance(blocks, list):
                     continue
-                trivia_sections.append({"name": sec_name, "blocks": blocks})
+                trivia_sections.append({
+                    "name": sec_name,
+                    "title": sec_name.replace("_", " ").capitalize(),
+                    "anchor": f"trivia-section-{len(trivia_sections) + 1}",
+                    "blocks": blocks,
+                })
 
         return render_template(
             "game.html",

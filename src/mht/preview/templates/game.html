@@ -19,6 +19,19 @@
                 <p class="muted">GH Trivia preview only - not included in the ExoticA wiki output.</p>
             {% endif %}
 
+            {# Page-local navigation for potentially lengthy GH entries. #}
+            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display %}
+                <nav class="trivia-toc" aria-label="Sections on this page">
+                    <strong>On this page:</strong>
+                    {% if overview_blocks %}<a href="#trivia-overview">Overview</a>{% endif %}
+                    {% if mame_titles_display %}<a href="#trivia-mame-titles">MAME titles</a>{% endif %}
+                    {% for section in trivia_sections %}
+                        <a href="#{{ section.anchor }}">{{ section.title }}</a>
+                    {% endfor %}
+                    {% if ports_display %}<a href="#trivia-ports">Ports</a>{% endif %}
+                </nav>
+            {% endif %}
+
             {# Opening sentence only #}
             {% if opening_sentence %}
                 <p class="lead">{{ opening_sentence }}</p>
@@ -26,6 +39,7 @@
 
             {# Full overview section (all blocks, in order), but no "Overview" heading #}
             {% if overview_blocks %}
+                <div id="trivia-overview"></div>
                 {% for block in overview_blocks %}
                     {% set kind = block.kind or block.type %}
 
@@ -49,7 +63,7 @@
                         </ol>
 
                     {% elif kind == "pair" %}
-                        <dl>
+                        <dl class="trivia-pair">
                             <dt>{{ block.label }}</dt>
                             <dd>{{ block.value }}</dd>
                         </dl>
@@ -62,7 +76,7 @@
             {% endif %}
 
             {% if mame_titles_display %}
-                <h2>MAME titles</h2>
+                <h2 id="trivia-mame-titles">MAME titles</h2>
                 <div class="ports-block ports-list">
                     <ul>
                         {% for line in mame_titles_display %}
@@ -74,7 +88,7 @@
 
             {# Remaining trivia sections (overview already removed on the server) #}
             {% for section in trivia_sections %}
-                <h2>{{ section.name }}</h2>
+                <h2 id="{{ section.anchor }}">{{ section.title }}</h2>
 
                 {% for block in section.blocks %}
                     {% set kind = block.kind or block.type %}
@@ -99,7 +113,7 @@
                         </ol>
 
                     {% elif kind == "pair" %}
-                        <dl>
+                        <dl class="trivia-pair">
                             <dt>{{ block.label }}</dt>
                             <dd>{{ block.value }}</dd>
                         </dl>
@@ -112,7 +126,7 @@
             {% endfor %}
 
             {% if ports_display %}
-                <h2>Ports</h2>
+                <h2 id="trivia-ports">Ports</h2>
                 <div class="ports-block ports-list">
                     {% for category, entries in ports_display.items() %}
                         <h3>{{ category }} ({{ entries|length }})</h3>
