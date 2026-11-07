@@ -110,9 +110,11 @@ def create_app(
             "home.html",
             version=version,
             total_games=len(pd.wiki_games),
+            total_preview_games=len(pd.machine_order),
             first_machine=pd.machine_order[0] if pd.machine_order else None,
             first_game_name=(
-                pd.wiki_games[pd.machine_order[0]].get("wiki_page_name")
+                (pd.wiki_games.get(pd.machine_order[0]) or {}).get("wiki_page_name")
+                or (pd.mame_machines.get(pd.machine_order[0]) or {}).get("description")
                 or pd.machine_order[0]
             ) if pd.machine_order else None,
             summary=pd.transform_summary,
@@ -147,18 +149,18 @@ def create_app(
     @app.route("/game/<machine>")
     def game(machine: str) -> str:
         pd = preview_data
-        games = pd.wiki_games
-
-        if machine not in games:
+        if machine not in pd.machine_order:
             abort(404)
 
-        rec = games[machine]
-        wiki_page_name = rec.get("wiki_page_name") or machine
+        published_rec = pd.wiki_games.get(machine)
+        is_published = published_rec is not None
+        mame_info = pd.mame_machines.get(machine) or {}
+        # Canonical MAME fields are useful when no wiki record exists.
+        rec = published_rec if published_rec is not None else mame_info
+        raw_description = mame_info.get("description") or ""
+        wiki_page_name = rec.get("wiki_page_name") or raw_description or machine
 
         prev_m, next_m = _prev_next(machine)
-
-        mame_info = pd.mame_machines.get(machine) or {}
-        raw_description = mame_info.get("description") or ""
 
         opening_sentence = rec.get("opening_sentence")
 
@@ -189,6 +191,7 @@ def create_app(
         return render_template(
             "game.html",
             machine=machine,
+            is_published=is_published,
             prev_machine=prev_m,
             next_machine=next_m,
             wiki_page_name=wiki_page_name,
@@ -209,15 +212,16 @@ def create_app(
 
         if q:
             q_ci = q.casefold()
-            for machine, rec in pd.wiki_games.items():
+            for machine in pd.machine_order:
                 if q_ci in machine.casefold():
+                    published_rec = pd.wiki_games.get(machine) or {}
                     minfo = pd.mame_machines.get(machine) or {}
                     results.append(
                         {
                             "machine": machine,
                             "description": (minfo.get("description") or ""),
-                            "year": rec.get("year"),
-                            "manufacturer": rec.get("manufacturer"),
+                            "year": published_rec.get("year") or minfo.get("year"),
+                            "manufacturer": published_rec.get("manufacturer") or minfo.get("manufacturer"),
                         }
                     )
 

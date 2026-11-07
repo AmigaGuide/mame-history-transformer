@@ -159,7 +159,9 @@ def load_preview_data(version: str | None = None) -> PreviewData:
     ini_summary = load_json(ini_sum_path, "INI parsing summary")
     transform_summary = load_json(xform_sum_path, "Transform summary")
 
-    machine_order = sorted(wiki_games.keys())
+    # Preview both publishable games and GH systems with retained trivia.
+    # The publishing gate remains exclusively in the transformer.
+    machine_order = sorted(set(wiki_games) | set(trivia_by_machine), key=str.casefold)
 
     return PreviewData(
         wiki_doc=wiki_doc,

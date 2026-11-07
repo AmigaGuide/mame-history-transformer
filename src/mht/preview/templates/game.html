@@ -15,10 +15,14 @@
         <div>
             <h1>{{ wiki_page_name }}</h1>
 
+            {% if is_published is defined and not is_published %}
+                <p class="muted">GH Trivia preview only - not included in the ExoticA wiki output.</p>
+            {% endif %}
+
             {# Opening sentence only #}
-            <p class="lead">
-                {{ opening_sentence }}
-            </p>
+            {% if opening_sentence %}
+                <p class="lead">{{ opening_sentence }}</p>
+            {% endif %}
 
             {# Full overview section (all blocks, in order), but no "Overview" heading #}
             {% if overview_blocks %}
