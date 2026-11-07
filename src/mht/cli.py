@@ -1067,34 +1067,36 @@ def cmd_fetch_download(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------------------
 
 def main() -> None:
-    p = argparse.ArgumentParser(prog="mht", description="MAME-History-Transformer CLI")
+    p = argparse.ArgumentParser(
+        prog="mht",
+        description="MAME History Transformer - release data processing and preview",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  python -m mht releases list\n"
+            "  python -m mht run\n"
+            "  python -m mht status --json\n"
+            "  python -m mht preview --version 0289\n\n"
+            "Use 'python -m mht <command> --help' for command-specific options."
+        ),
+    )
     sub = p.add_subparsers(dest="cmd", required=False)
 
     # Default: show active + help (do NOT run pipeline automatically)
     p.set_defaults(func=cmd_root, _root_parser=p)
 
+    # run (explicit only)
+    s_run = sub.add_parser("run", help="Run the incremental processing pipeline for the active release")
+    s_run.set_defaults(func=cmd_run)
+
     # status
-    s_status = sub.add_parser("status", help="Report freshness (stamp-based) for the active (or given) release")
+    s_status = sub.add_parser("status", help="Show stage freshness and missing input/output files")
     s_status.add_argument("--version", "-v", help="Release version (e.g. 0280). Defaults to active_version().")
     s_status.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     s_status.set_defaults(func=cmd_status)
 
-    # clean
-    s_clean = sub.add_parser("clean", help="Remove outputs/stamps/summaries for the active (or given) release")
-    s_clean.add_argument("--version", "-v", help="Release version to clean (default: active)")
-    s_clean.add_argument("--dry-run", action="store_true", help="Show what would be deleted, without deleting")
-    s_clean.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
-    s_clean.add_argument("--outputs", action="store_true", help="Delete outputs/ artefacts")
-    s_clean.add_argument("--stamps", action="store_true", help="Delete .stamps/ files")
-    s_clean.add_argument("--data-summaries", action="store_true", help="Delete *_summary.json and run_manifest.json")
-    s_clean.set_defaults(func=cmd_clean)
-
-    # run (explicit only)
-    s_run = sub.add_parser("run", help="Run the full incremental pipeline (delegates to main.py)")
-    s_run.set_defaults(func=cmd_run)
-
     # validate
-    s_validate = sub.add_parser("validate", help="Validate output JSONs against schemas")
+    s_validate = sub.add_parser("validate", help="Validate generated JSON against available schemas")
     s_validate.add_argument("--version", "-v", help="Release version to validate (default: active)")
     s_validate.add_argument(
         "--only", nargs="+", choices=sorted(VALIDATION_REGISTRY.keys()),
@@ -1105,7 +1107,7 @@ def main() -> None:
     # preview
     s_preview = sub.add_parser(
         "preview",
-        help="Launch a local read-only web preview for a release",
+        help="Start the local read-only preview server",
     )
     s_preview.add_argument(
         "--version", "-v",
@@ -1113,115 +1115,8 @@ def main() -> None:
     )
     s_preview.set_defaults(func=cmd_preview)
 
-    # incoming
-    s_incoming = sub.add_parser("incoming", help="Manage incoming ZIP archives")
-    s_incoming_sub = s_incoming.add_subparsers(dest="subcmd", required=False)
-    s_incoming.set_defaults(func=cmd_incoming_root, _incoming_parser=s_incoming)
-
-    s_inc_scan   = s_incoming_sub.add_parser("scan", help="List ZIPs in data/incoming")
-    s_inc_scan.set_defaults(func=cmd_incoming_scan)
-
-    s_inc_adopt  = s_incoming_sub.add_parser("adopt", help="Verify + move/copy a ZIP into a release")
-    s_inc_adopt.add_argument("zip", type=Path, help="Path to the ZIP in data/incoming")
-    s_inc_adopt.add_argument("--version", required=True, help="Target release version, e.g. 0280")
-    s_inc_adopt.add_argument("--copy", action="store_true", help="Copy instead of move")
-    s_inc_adopt.set_defaults(func=cmd_incoming_adopt)
-
-    s_inc_verify = s_incoming_sub.add_parser("verify", help="Verify ZIPs are valid before import")
-    s_inc_verify.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
-    s_inc_verify.set_defaults(func=cmd_incoming_verify)
-
-    # releases
-    s_rel = sub.add_parser("releases", help="Inspect and manage releases")
-    s_rel_sub = s_rel.add_subparsers(dest="subcmd", required=False)
-    s_rel.set_defaults(func=cmd_releases_root, _releases_parser=s_rel)
-
-    s_rel_idx = s_rel_sub.add_parser("index", help="Rebuild data/releases_index.json")
-    s_rel_idx.set_defaults(func=cmd_releases_index)
-
-    s_rel_list = s_rel_sub.add_parser("list", help="List discovered releases; marks active one")
-    s_rel_list.set_defaults(func=cmd_releases_list)
-
-    s_rel_set = s_rel_sub.add_parser("set", help="Set active version (writes data/current_version.txt)")
-    s_rel_set.add_argument("version", help="Release version, e.g. 0280")
-    s_rel_set.set_defaults(func=cmd_releases_set)
-
-    s_rel_info = s_rel_sub.add_parser("info", help="Show details for a release (default: active)")
-    s_rel_info.add_argument("--version", "-v", help="Release key, e.g. 0281 (default: active)")
-    s_rel_info.add_argument("--json", action="store_true", help="Output machine-readable JSON")
-    s_rel_info.set_defaults(func=cmd_releases_info)
-
-    s_rel_prune = s_rel_sub.add_parser("prune", help="Delete older releases (keep newest N)")
-    s_rel_prune.add_argument("--keep", type=int, default=2, help="Number of newest releases to keep (default: 2)")
-    s_rel_prune.add_argument("--no-protect-current", action="store_true", help="Allow pruning the current release")
-    s_rel_prune.add_argument("--dry-run", action="store_true", help="Show what would be deleted without deleting")
-    s_rel_prune.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
-    s_rel_prune.set_defaults(func=cmd_releases_prune)
-
-    s_rel_gc = s_rel_sub.add_parser("gc", help="Remove empty directories under data/releases")
-    s_rel_gc.add_argument("--dry-run", action="store_true", help="Show what would be removed without deleting")
-    s_rel_gc.set_defaults(func=cmd_releases_gc)
-
-
-    # ingest (ZIP-only by default)
-    s_ingest = sub.add_parser(
-        "ingest",
-        help="Import archives from data/incoming/ into releases/<ver>/archives (ZIP-only by default)",
-    )
-    s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
-    s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
-    s_ingest.add_argument(
-        "--recover",
-        action="store_true",
-        help="Finalise pending acquisitions already staged for --version",
-    )
-    s_ingest.set_defaults(func=cmd_ingest)
-
-    # acquisition
-    s_acquisition = sub.add_parser(
-        "acquisition",
-        help="Inspect upstream archive acquisition provenance",
-    )
-
-    s_acquisition_sub = s_acquisition.add_subparsers(
-        dest="acquisition_command",
-        required=True,
-    )
-
-    s_acquisition_audit = s_acquisition_sub.add_parser(
-        "audit",
-        help="Verify existing release archives without modifying them",
-    )
-
-    s_acquisition_audit.add_argument(
-        "--version",
-        "-v",
-        required=True,
-        help="MAME release to audit (e.g. 0289)",
-    )
-
-    s_acquisition_manifest = s_acquisition_sub.add_parser(
-        "manifest",
-        help="Verify release archives and write an acquisition manifest",
-    )
-
-    s_acquisition_manifest.add_argument(
-        "--version",
-        "-v",
-        required=True,
-        help="MAME release to record (e.g. 0289)",
-    )
-
-    s_acquisition_manifest.set_defaults(
-        func=cmd_acquisition_manifest,
-    )
-
-    s_acquisition_audit.set_defaults(
-        func=cmd_acquisition_audit,
-    )
-
     # fetch
-    s_fetch = sub.add_parser("fetch", help="Check and download upstream MAME, GH and SNAPS archives")
+    s_fetch = sub.add_parser("fetch", help="Check or download upstream MAME, GH and SNAPS archives")
     s_fetch_sub = s_fetch.add_subparsers(dest="subcmd", required=False)
     s_fetch.set_defaults(func=cmd_fetch_root, _fetch_parser=s_fetch)
 
@@ -1265,6 +1160,123 @@ def main() -> None:
         help="Verbose discovery and download logging",
     )
     s_fetch_snaps.set_defaults(func=cmd_fetch_snaps)
+
+    # incoming
+    s_incoming = sub.add_parser("incoming", help="Inspect and adopt incoming ZIP archives")
+    s_incoming_sub = s_incoming.add_subparsers(dest="subcmd", required=False)
+    s_incoming.set_defaults(func=cmd_incoming_root, _incoming_parser=s_incoming)
+
+    s_inc_scan   = s_incoming_sub.add_parser("scan", help="List ZIPs in data/incoming")
+    s_inc_scan.set_defaults(func=cmd_incoming_scan)
+
+    s_inc_adopt  = s_incoming_sub.add_parser("adopt", help="Verify + move/copy a ZIP into a release")
+    s_inc_adopt.add_argument("zip", type=Path, help="Path to the ZIP in data/incoming")
+    s_inc_adopt.add_argument("--version", required=True, help="Target release version, e.g. 0280")
+    s_inc_adopt.add_argument("--copy", action="store_true", help="Copy instead of move")
+    s_inc_adopt.set_defaults(func=cmd_incoming_adopt)
+
+    s_inc_verify = s_incoming_sub.add_parser("verify", help="Verify ZIPs are valid before import")
+    s_inc_verify.add_argument("--version", help="Target MAME version (e.g. 0280). If omitted, infer per archive.")
+    s_inc_verify.set_defaults(func=cmd_incoming_verify)
+
+    # ingest (ZIP-only by default)
+    s_ingest = sub.add_parser(
+        "ingest",
+        help="Import archives from data/incoming/ into releases/<ver>/archives (ZIP-only by default)",
+    )
+    s_ingest.add_argument("--version", "-v", help="Release version to ingest into (default: active)")
+    s_ingest.add_argument("--incoming", help="Override incoming directory (default: data/incoming)")
+    s_ingest.add_argument(
+        "--recover",
+        action="store_true",
+        help="Finalise pending acquisitions already staged for --version",
+    )
+    s_ingest.set_defaults(func=cmd_ingest)
+
+    # releases
+    s_rel = sub.add_parser("releases", help="List, select and maintain release versions")
+    s_rel_sub = s_rel.add_subparsers(dest="subcmd", required=False)
+    s_rel.set_defaults(func=cmd_releases_root, _releases_parser=s_rel)
+
+    s_rel_idx = s_rel_sub.add_parser("index", help="Rebuild data/releases_index.json")
+    s_rel_idx.set_defaults(func=cmd_releases_index)
+
+    s_rel_list = s_rel_sub.add_parser("list", help="List discovered releases; marks active one")
+    s_rel_list.set_defaults(func=cmd_releases_list)
+
+    s_rel_set = s_rel_sub.add_parser("set", help="Set active version (writes data/current_version.txt)")
+    s_rel_set.add_argument("version", help="Release version, e.g. 0280")
+    s_rel_set.set_defaults(func=cmd_releases_set)
+
+    s_rel_info = s_rel_sub.add_parser("info", help="Show details for a release (default: active)")
+    s_rel_info.add_argument("--version", "-v", help="Release key, e.g. 0281 (default: active)")
+    s_rel_info.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    s_rel_info.set_defaults(func=cmd_releases_info)
+
+    s_rel_prune = s_rel_sub.add_parser("prune", help="Delete older releases (keep newest N)")
+    s_rel_prune.add_argument("--keep", type=int, default=2, help="Number of newest releases to keep (default: 2)")
+    s_rel_prune.add_argument("--no-protect-current", action="store_true", help="Allow pruning the current release")
+    s_rel_prune.add_argument("--dry-run", action="store_true", help="Show what would be deleted without deleting")
+    s_rel_prune.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+    s_rel_prune.set_defaults(func=cmd_releases_prune)
+
+    s_rel_gc = s_rel_sub.add_parser("gc", help="Remove empty directories under data/releases")
+    s_rel_gc.add_argument("--dry-run", action="store_true", help="Show what would be removed without deleting")
+    s_rel_gc.set_defaults(func=cmd_releases_gc)
+
+
+    # acquisition
+    s_acquisition = sub.add_parser(
+        "acquisition",
+        help="Audit and record source archive provenance",
+    )
+
+    s_acquisition_sub = s_acquisition.add_subparsers(
+        dest="acquisition_command",
+        required=True,
+    )
+
+    s_acquisition_audit = s_acquisition_sub.add_parser(
+        "audit",
+        help="Verify existing release archives without modifying them",
+    )
+
+    s_acquisition_audit.add_argument(
+        "--version",
+        "-v",
+        required=True,
+        help="MAME release to audit (e.g. 0289)",
+    )
+
+    s_acquisition_manifest = s_acquisition_sub.add_parser(
+        "manifest",
+        help="Verify release archives and write an acquisition manifest",
+    )
+
+    s_acquisition_manifest.add_argument(
+        "--version",
+        "-v",
+        required=True,
+        help="MAME release to record (e.g. 0289)",
+    )
+
+    s_acquisition_manifest.set_defaults(
+        func=cmd_acquisition_manifest,
+    )
+
+    s_acquisition_audit.set_defaults(
+        func=cmd_acquisition_audit,
+    )
+
+    # clean
+    s_clean = sub.add_parser("clean", help="Delete generated release files (destructive)")
+    s_clean.add_argument("--version", "-v", help="Release version to clean (default: active)")
+    s_clean.add_argument("--dry-run", action="store_true", help="Show what would be deleted, without deleting")
+    s_clean.add_argument("--yes", action="store_true", help="Do not ask for confirmation")
+    s_clean.add_argument("--outputs", action="store_true", help="Delete outputs/ artefacts")
+    s_clean.add_argument("--stamps", action="store_true", help="Delete .stamps/ files")
+    s_clean.add_argument("--data-summaries", action="store_true", help="Delete *_summary.json and run_manifest.json")
+    s_clean.set_defaults(func=cmd_clean)
 
     args = p.parse_args()
 
