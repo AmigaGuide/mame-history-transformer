@@ -12,6 +12,7 @@
 
 {% block content %}
   <h1>Transform stage summary</h1>
+  <p class="muted">The complete processing summary is available as <a href="{{ url_for('download_summary_json', stage='transform') }}">downloadable JSON</a>.</p>
 
   {% if header %}
     <div class="summary-block">
@@ -234,13 +235,4 @@
     </div>
   {% endif %}
 
-  {% if raw_json %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Raw JSON</h2>
-      <p class="muted">
-        This is the full transform summary document for reference.
-      </p>
-      <pre class="ports-block">{{ raw_json }}</pre>
-    </div>
-  {% endif %}
 {% endblock content %}

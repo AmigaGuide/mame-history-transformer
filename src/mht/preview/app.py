@@ -7,10 +7,11 @@ Routes are kept here so server startup remains a thin wrapper and so the route
 module can focus on request/response and template contexts only.
 """
 
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from flask import Flask, abort, render_template, request
+from flask import Flask, Response, abort, render_template, request
 
 from mht.utils.paths import active_version
 
@@ -97,6 +98,25 @@ def create_app(
             history_overview=build_history_overview(pd.history_summary),
             ini_overview=build_ini_overview(pd.ini_summary),
             transform_overview=build_transform_overview(pd.transform_summary),
+        )
+
+    @app.route("/summary/<stage>/source.json")
+    def download_summary_json(stage: str) -> Response:
+        """Download an in-memory summary; never read an arbitrary file path."""
+        summaries = {
+            "mame": preview_data.mame_summary,
+            "history": preview_data.history_summary,
+            "ini": preview_data.ini_summary,
+            "transform": preview_data.transform_summary,
+        }
+        if stage not in summaries:
+            abort(404)
+
+        payload = json.dumps(summaries[stage], indent=2, ensure_ascii=False) + "\n"
+        return Response(
+            payload,
+            content_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="mht_{stage}_summary.json"'},
         )
 
     @app.route("/summary/mame")
