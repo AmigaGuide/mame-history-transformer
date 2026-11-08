@@ -4,7 +4,8 @@
         "Each marked game mode contains a title and initial description separated by a colon.",
         "Recognise the three titles as subheadings and their descriptions as paragraphs.",
         "Capitalise the initial description without modifying the original GH source.",
-        "Preserve the additional descriptive paragraphs in their original order."
+        "Preserve the additional descriptive paragraphs in their original order.",
+        "Tips and Tricks contains two named topics without an introductory paragraph."
     ],
     "expectations": {
         "sections": {
@@ -49,6 +50,26 @@
                     {
                         "type": "paragraph",
                         "text_contains": "The brick walls move or 'scroll'"
+                    }
+                ]
+            },
+            "tips and tricks": {
+                "blocks": [
+                    {
+                        "type": "subheading",
+                        "text_contains": "Ball Speed"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Besides the slowest ball speed"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Ball Direction"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "When the ball intercepts the paddle"
                     }
                 ]
             }

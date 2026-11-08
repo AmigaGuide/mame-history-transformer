@@ -6,7 +6,8 @@
         "updates → version-code lines with associated WORLD/US/JAPAN release bullets, plus region-name notes and ending-translation notes.",
         "tips and tricks → Konami code stats display, 0001–0012 internal counters as pairs, and a long set of glitch/exploit bullets with a couple of labelled pairs.",
         "series → ORIGINAL / ZERO / EX headings with numbered list entries for each family.",
-        "staff → five labelled pairs listing planners, character designers, programmers, sound, and special thanks."
+        "staff → five labelled pairs listing planners, character designers, programmers, sound, and special thanks.",
+        "Repeated named Tips and Tricks entries are now classified as subheadings with separate descriptive paragraphs."
     ],
     "expectations": {
         "sections": {
@@ -235,15 +236,15 @@
                         "text_contains": "0012 = No. of times Dhalsim has been used"
                     },
                     {
-                        "type": "bullet_list",
+                        "type": "subheading",
                         "text_contains": "Special Ending"
                     },
                     {
-                        "type": "bullet_list",
+                        "type": "subheading",
                         "text_contains": "To get Ryu vs. Ryu"
                     },
                     {
-                        "type": "bullet_list",
+                        "type": "subheading",
                         "text_contains": "Guile Freeze Himself"
                     },
                     {
@@ -263,7 +264,7 @@
                         "text_contains": "Guile Invisible Throw"
                     },
                     {
-                        "type": "bullet_list",
+                        "type": "subheading",
                         "text_contains": "Guile Reset the Machine"
                     },
                     {
@@ -271,7 +272,7 @@
                         "text_contains": "Ken or Ryu Get Stuck on the car"
                     },
                     {
-                        "type": "bullet_list",
+                        "type": "subheading",
                         "text_contains": "Zangief Turbo Short"
                     }
                 ]

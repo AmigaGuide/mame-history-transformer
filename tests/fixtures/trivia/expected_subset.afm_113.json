@@ -1,0 +1,89 @@
+{
+    "notes": [
+        "Attack from Mars contains repeated named topics in Tips and Tricks.",
+        "Some topics have additional explanatory paragraphs.",
+        "Some topics contain numbered lists.",
+        "Descriptions ending in colons must not override named-topic recognition.",
+        "Preserve the existing source content and numbered-list structure."
+    ],
+    "expectations": {
+        "sections": {
+            "tips and tricks": {
+                "blocks": [
+                    {
+                        "type": "subheading",
+                        "text_contains": "Playfield Layout"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": [
+                            "Left Outlane",
+                            "Launch Button"
+                        ]
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Objectives"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Skill Shots"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Saucer Attack Waves"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "There are 5 countries under attack"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": [
+                            "Statue of Liberty",
+                            "Eiffel Tower"
+                        ]
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Stroke of Luck"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": [
+                            "25,000,000 points",
+                            "1 Martian Bomb"
+                        ]
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Concurrent Multiballs"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "Here's how it all fits together"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Extra Balls"
+                    },
+                    {
+                        "type": "paragraph",
+                        "text_contains": "There are 5 ways to get an Extra Ball"
+                    },
+                    {
+                        "type": "numbered_list",
+                        "text_contains": [
+                            "Complete the second Attack Wave",
+                            "Via a Stroke of Luck"
+                        ]
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Software Compensation"
+                    }
+                ]
+            }
+        }
+    }
+}

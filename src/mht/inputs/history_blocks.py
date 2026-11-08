@@ -521,6 +521,97 @@ def process_section_blocks(
             if len(group_indices) >= 2:
                 overview_named_topic_lines.update(group_indices)
 
+    # Tips and Tricks may contain repeated named topics without an
+    # introductory paragraph. Each topic begins with a marked
+    # "Title : description" line, and blank lines separate topics.
+    #
+    # Require at least two consecutive qualifying groups. Preserve
+    # unmarked descriptive lines for individual paragraph handling.
+    # Isolated colon-bearing bullets remain ordinary list items.
+    tips_named_topic_lines = set()
+    tips_named_topic_description_lines = set()
+
+    if tag == "tips and tricks":
+        tips_topic_pattern = re.compile(
+            r"^\s*\*\s+([^:]{1,60}?)\s*:\s+(\S.*)$"
+        )
+
+        groups = []
+        scan_idx = 0
+
+        while scan_idx < len(lines):
+            if _BLANK_RE.match(lines[scan_idx] or ""):
+                scan_idx += 1
+                continue
+
+            group_start = scan_idx
+
+            while (
+                scan_idx < len(lines)
+                and not _BLANK_RE.match(lines[scan_idx] or "")
+            ):
+                scan_idx += 1
+
+            group_end = scan_idx
+            match = tips_topic_pattern.match(
+                lines[group_start] or ""
+            )
+
+            valid = bool(
+                match
+                and len(match.group(1).strip().split()) <= 9
+            )
+
+            # A named topic may contain paragraphs and numbered lists.
+            # These belong to the topic body and must not disqualify
+            # the heading.
+            #
+            # Another marked bullet or a separator within the same
+            # group makes its boundaries ambiguous.
+            for idx in range(group_start + 1, group_end):
+                following = lines[idx] or ""
+
+                if (
+                    _BULLET_RE.match(following)
+                    or _ALL_HYPHENS_RE.match(following)
+                ):
+                    valid = False
+                    break
+
+            if valid:
+                description_indices = [
+                    idx
+                    for idx in range(group_start + 1, group_end)
+                    if (
+                        not _NUMBERED_RE.match(lines[idx] or "")
+                        and not _is_structural_line(lines[idx] or "")
+                    )
+                ]
+
+                groups.append((
+                    group_start,
+                    description_indices,
+                ))
+            else:
+                groups.append(None)
+
+        consecutive = []
+
+        # A non-qualifying group breaks the sequence of named topics.
+        for group in groups + [None]:
+            if group is not None:
+                consecutive.append(group)
+                continue
+
+            if len(consecutive) >= 2:
+                for heading_idx, description_indices in consecutive:
+                    tips_named_topic_lines.add(heading_idx)
+                    tips_named_topic_description_lines.update(
+                        description_indices
+                    )
+
+            consecutive = []
+
     # --- main loop over filtered lines
     for line in lines:
         ln = (line or "")
@@ -538,6 +629,60 @@ def process_section_blocks(
             flush_list()
             filtered_idx += 1
             continue
+
+        # Tips and Tricks named topics use the same title-description
+        # convention as Overview, but do not require an introduction.
+        #
+        # Both emitted blocks retain the same physical source line.
+        if (
+            tag == "tips and tricks"
+            and filtered_idx in tips_named_topic_lines
+        ):
+            match = tips_topic_pattern.match(ln)
+
+            if match:
+                title = match.group(1).strip()
+                description = match.group(2).strip()
+
+                description = (
+                    description[0].upper() + description[1:]
+                )
+
+                flush_para("paragraph_default")
+                flush_list()
+
+                heading_meta = _make_meta(
+                    detectors=["subheading_tips_named_topic"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=title,
+                )
+
+                blocks.append({
+                    "type": "subheading",
+                    "text": title,
+                    "meta": heading_meta,
+                })
+
+                _inc_count(parsing_state, "subheading")
+
+                paragraph_meta = _make_meta(
+                    detectors=["paragraph_tips_named_topic"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=description,
+                )
+
+                blocks.append({
+                    "type": "paragraph",
+                    "text": description,
+                    "meta": paragraph_meta,
+                })
+
+                _inc_count(parsing_state, "paragraph")
+
+                filtered_idx += 1
+                continue
 
         # subheading: "* Something :" (star + text + colon) → treat as subheading,
         # and check this BEFORE generic bullet detection.
@@ -952,6 +1097,39 @@ def process_section_blocks(
                 list_last_idx = filtered_idx
                 filtered_idx += 1
                 continue
+
+        # Additional prose within a recognised Tips and Tricks topic
+        # belongs after its initial description as separate paragraphs.
+        #
+        # Apply this only to structurally recognised topic groups.
+        # Other Tips and Tricks content retains its existing policy.
+        if (
+            tag == "tips and tricks"
+            and filtered_idx in tips_named_topic_description_lines
+        ):
+            flush_para("paragraph_default")
+            flush_list()
+
+            text = ln.strip()
+
+            if text:
+                meta = _make_meta(
+                    detectors=["paragraph_tips_topic_continuation"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=text,
+                )
+
+                blocks.append({
+                    "type": "paragraph",
+                    "text": text,
+                    "meta": meta,
+                })
+
+                _inc_count(parsing_state, "paragraph")
+
+            filtered_idx += 1
+            continue
 
         # narrative text
         if per_line:
