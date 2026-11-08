@@ -37,6 +37,11 @@ def app():
         endpoint="catalogue",
         view_func=lambda: "",
     )
+    app.add_url_rule(
+        "/diagnostics",
+        endpoint="diagnostics",
+        view_func=lambda: "",
+    )
 
     return app
 

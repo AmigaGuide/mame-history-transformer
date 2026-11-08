@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}MHT Preview – Release {{ version }}{% endblock %}
+{% block title %}MHT Preview - Release {{ version }}{% endblock %}
 
 {% block nav_left %}
-    <strong>MHT Preview</strong> – active release: {{ version }}
+    <strong>MHT Preview</strong> - active release: {{ version }}
     &nbsp;|&nbsp;
     <a href="{{ url_for('home') }}">Home</a>
 {% endblock nav_left %}
@@ -12,202 +12,83 @@
     <h1>MAME-History-Transformer Preview</h1>
 
     <p class="lead">
-        This page provides a high-level overview of the data generated for the active
-        MAME-History-Transformer release, intended to support validation of source inputs,
-        transformation results, and overall data health before publishing updates to
-        ExoticA’s Lost in Translation wiki.
+        Inspect how MAME and Gaming History source data is parsed, interpreted
+        and prepared for ExoticA. Use individual game pages to review rendered
+        content, or Diagnostics to investigate source ambiguities and parser findings.
         {% if run and run.generated_at %}
-            <strong>This release was generated at (UTC): {{ run.generated_at }}.</strong>
+            <strong>Preview generated: {{ run.generated_at }}.</strong>
         {% endif %}
-        Versions are reported per source, and MAME, Gaming-History XML, and
-        Gaming-History INIs may not necessarily align.
     </p>
 
-    <p class="muted">
-        Tip: use the search box in the header to find a game by its MAME shortname,
-        or <a href="{{ url_for('catalogue') }}">browse the catalogue</a> by publication status and GH record availability.
-    </p>
-
-    {% if first_machine %}
-        <p>
-            <strong>Browse games:</strong>
-            Start with
-            <a href="{{ url_for('game', machine=first_machine) }}">{{ first_game_name }} ({{ first_machine }})</a>
-            and use Previous / Next to navigate.
+    <div class="summary-block home-overview" aria-label="Release overview">
+        <h2>Release {{ version }} at a glance</h2>
+        <div class="home-metrics">
+            <div><strong>{{ total_games }}</strong><span>Games in ExoticA wiki output</span></div>
+            <div><strong>{{ total_preview_games }}</strong><span>Entries available for preview</span></div>
+            <div><strong>4</strong><span>Processing stages</span></div>
+        </div>
+        <p class="muted">
+            The preview catalogue includes published games and GH Trivia-only entries.
+            Publication eligibility is determined separately by the transformer.
         </p>
-    {% endif %}
+    </div>
 
-    <div class="summary-block" style="margin-top:1rem;">
-        <div class="overview-grid">
+    <div class="summary-block home-overview">
+        <h2>Processing stages</h2>
+        <div class="overview-grid home-stage-grid">
+            <section class="overview-cell">
+                <h3>MAME XML</h3>
+                <p>Build: {{ sources.mame.build or "unknown" }}</p>
+                <p>Source archive: {{ sources.mame.archive or "not recorded in summary" }}</p>
+                <p>Machines parsed: {{ mame_overview.headlines[0].value if mame_overview.headlines else "unknown" }}</p>
+                <p><a href="{{ url_for('summary_mame') }}">Full MAME summary</a></p>
+            </section>
 
-            <!-- Row 1: Data sources -->
+            <section class="overview-cell">
+                <h3>Gaming History XML</h3>
+                <p>Version: {{ sources.history.version or "unknown" }}</p>
+                <p>Source date: {{ sources.history.date or "unknown" }}</p>
+                <p>Source archive: {{ sources.history.archive or "not recorded in summary" }}</p>
+                <p>Systems parsed: {{ history_overview.headlines[0].value if history_overview.headlines else "unknown" }}</p>
+                <p><a href="{{ url_for('summary_history') }}">Full History summary</a></p>
+            </section>
 
-            <div class="overview-cell">
-                <h2>MAME XML</h2>
-
-                <h3>Data source</h3>
-                <ul>
-                    <li>Build: {{ sources.mame.build or "unknown" }}</li>
-                    <li>XML version: {{ sources.mame.xml_version or "unknown" }}</li>
-                    <li>mameconfig: {{ sources.mame.mameconfig or "unknown" }}</li>
-                    <li>XML member: {{ sources.mame.filename or "not recorded in summary" }}</li>
-                    <li>ZIP archive: {{ sources.mame.archive or "not recorded in summary" }}</li>
-                    <li>ZIP member modified (timezone unspecified): {{ sources.mame.modified or "not recorded in summary" }}</li>
-                </ul>
-            </div>
-
-            <div class="overview-cell">
-                <h2>Gaming-History XML</h2>
-
-                <h3>Data source</h3>
-                <ul>
-                    <li>Version: {{ sources.history.version or "unknown" }}</li>
-                    <li>Date: {{ sources.history.date or "unknown" }}</li>
-                    <li>XML member: {{ sources.history.filename or "not recorded in summary" }}</li>
-                    <li>ZIP archive: {{ sources.history.archive or "not recorded in summary" }}</li>
-                    <li>ZIP member modified (timezone unspecified): {{ sources.history.modified or "not recorded in summary" }}</li>
-                </ul>
-            </div>
-
-            <div class="overview-cell">
-                <h2>Gaming-History INIs</h2>
-
-                <h3>Data source</h3>
-                <ul>
-                    <li>INI generated at: {{ sources.ini.generated_at or "unknown" }}</li>
-                    <li>Referenced MAME version: {{ sources.ini.mame_xml_version or "unknown" }}</li>
+            <section class="overview-cell">
+                <h3>Gaming History INIs</h3>
+                <p>Three classification sources:</p>
+                <ul class="home-ini-list">
                     {% for ini_file in sources.ini.files %}
-                        <li>{{ ini_file.label }}: {{ ini_file.filename or "not recorded in summary" }}
-                            {% if ini_file.archive %}(archive: {{ ini_file.archive }}){% endif %}
-                        </li>
+                        <li>{{ ini_file.label }}</li>
                     {% endfor %}
                 </ul>
-            </div>
+                <p><a href="{{ url_for('summary_ini') }}">Full INI summary</a></p>
+            </section>
 
-            <div class="overview-cell">
-                <h2>Transform</h2>
-
-                <h3>Data source</h3>
-                <p class="muted">
-                    Not applicable (derived stage).
-                </p>
-            </div>
-
-            <!-- Row 2: Stage overviews -->
-
-            <div class="overview-cell overview-row-divider">
-                <h3>
-                    Stage overview -
-                    <a href="{{ url_for('summary_mame') }}">full summary</a>
-                </h3>
-
-                <ul>
-                    {% for item in mame_overview.headlines %}
-                        <li>{{ item.label }}: {{ item.value }}</li>
-                    {% endfor %}
-                </ul>
-
-                {% if mame_overview.findings %}
-                    {% for group in mame_overview.findings %}
-                        <h4>{{ group.title }}</h4>
-                        <ul>
-                            {% for line in group["items"] %}
-                                <li>{{ line }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endfor %}
-                {% endif %}
-            </div>
-
-            <div class="overview-cell overview-row-divider">
-                <h3>
-                    Stage overview -
-                    <a href="{{ url_for('summary_history') }}">full summary</a>
-                </h3>
-
-                <ul>
-                    {% for item in history_overview.headlines %}
-                        <li>{{ item.label }}: {{ item.value }}</li>
-                    {% endfor %}
-                </ul>
-
-                {% if history_overview.findings %}
-                    {% for group in history_overview.findings %}
-                        <h4>{{ group.title }}</h4>
-                        <ul>
-                            {% for line in group["items"] %}
-                                <li>{{ line }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endfor %}
-                {% endif %}
-            </div>
-
-            <div class="overview-cell overview-row-divider">
-                <h3>
-                    Stage overview -
-                    <a href="{{ url_for('summary_ini') }}">full summary</a>
-                </h3>
-
-                <h4 class="source-subheading">Game Or No Game.ini</h4>
-                <ul>
-                    {% for item in ini_overview.game_or_no_game %}
-                        <li>{{ item.label }}: {{ item.value }}</li>
-                    {% endfor %}
-                </ul>
-
-                <h4 class="source-subheading">Machine Category.ini</h4>
-                <ul>
-                    {% for item in ini_overview.machine_category %}
-                        <li>{{ item.label }}: {{ item.value }}</li>
-                    {% endfor %}
-                </ul>
-
-                <h4 class="source-subheading">Machine Type.ini</h4>
-                <ul>
-                    {% for item in ini_overview.machine_type %}
-                        <li>{{ item.label }}: {{ item.value }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-
-            <div class="overview-cell overview-row-divider">
-                <h3>
-                    Stage overview -
-                    <a href="{{ url_for('summary_transform') }}">full summary</a>
-                </h3>
-
-                <ul>
-                    {% for item in transform_overview.headlines %}
-                        <li>{{ item.label }}: {{ item.value }}</li>
-                    {% endfor %}
-                </ul>
-
-                {% if transform_overview.findings %}
-                    {% for group in transform_overview.findings %}
-                        <h4>{{ group.title }}</h4>
-                        <ul>
-                            {% for line in group["items"] %}
-                                <li>{{ line }}</li>
-                            {% endfor %}
-                        </ul>
-                    {% endfor %}
-                {% endif %}
-            </div>
-
+            <section class="overview-cell">
+                <h3>Transformation</h3>
+                <p>Final included parents: {{ summary.get("counts", {}).get("final_included") if summary.get("counts", {}).get("final_included") is not none else "unknown" }}</p>
+                <p>Derived from the processed source data; no independent source file.</p>
+                <p><a href="{{ url_for('summary_transform') }}">Full Transform summary</a></p>
+            </section>
         </div>
     </div>
 
-    <p>
-        <a href="{{ url_for('diagnostics') }}">Processing diagnostics</a>
-        - review source-reported findings and classification coverage.
-    </p>
-
-    <div class="summary-block" style="margin-top:1rem;">
-        <h2>Outputs</h2>
-        <ul>
-            <li>Total games in wiki output: {{ total_games }}</li>
-            <li>Games available for preview: {{ total_preview_games }}</li>
-        </ul>
+    <div class="summary-block home-overview">
+        <h2>Explore and investigate</h2>
+        <div class="home-explore">
+            <section>
+                <h3><a href="{{ url_for('catalogue') }}">Game catalogue</a></h3>
+                <p>Search and filter records, then inspect how the parsed data is presented on game pages.</p>
+                {% if first_machine %}
+                    <p class="muted">Or start with
+                        <a href="{{ url_for('game', machine=first_machine) }}">{{ first_game_name }} ({{ first_machine }})</a>.
+                    </p>
+                {% endif %}
+            </section>
+            <section>
+                <h3><a href="{{ url_for('diagnostics') }}">Processing diagnostics</a></h3>
+                <p>Review source ambiguities, parsing findings and classification coverage before deciding whether a source correction or code change is appropriate.</p>
+            </section>
+        </div>
     </div>
 {% endblock content %}

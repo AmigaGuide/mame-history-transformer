@@ -80,8 +80,15 @@ def test_trivia_without_mame_metadata_uses_machine_name(client):
 def test_home_retains_published_count_and_shows_preview_count(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert b"Total games in wiki output: 1" in response.data
-    assert b"Games available for preview: 3" in response.data
+
+    assert (
+        b"<strong>1</strong><span>Games in ExoticA wiki output</span>"
+        in response.data
+    )
+    assert (
+        b"<strong>3</strong><span>Entries available for preview</span>"
+        in response.data
+    )
 
 
 def test_loader_builds_union_of_wiki_and_trivia(monkeypatch):

@@ -295,6 +295,76 @@
                 margin: 1rem 0;
             }
 
+            /* Compact home page. Existing four-column stage grid retained. */
+            .home-overview {
+                margin-top: 1rem;
+            }
+
+            .home-overview h2 {
+                margin-top: 0;
+            }
+
+            .home-metrics {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 1rem;
+                margin: 1rem 0;
+            }
+
+            .home-metrics div {
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+            }
+
+            .home-metrics strong {
+                font-size: 1.65rem;
+            }
+
+            .home-metrics span {
+                font-size: 0.9rem;
+            }
+
+            .home-stage-grid h3 {
+                margin-top: 0;
+            }
+
+            .home-stage-grid p {
+                margin: 0.6rem 0;
+                overflow-wrap: anywhere;
+            }
+
+            .home-ini-list {
+                padding-left: 1.25rem;
+            }
+
+            .home-explore {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 1.5rem;
+            }
+
+            .home-explore h3 {
+                margin-top: 0;
+            }
+
+            @media (max-width: 850px) {
+                .home-stage-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    background-image: none;
+                }
+
+                .home-explore {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            @media (max-width: 520px) {
+                .home-stage-grid, .home-metrics {
+                    grid-template-columns: 1fr;
+                }
+            }
+
             /* Dark theme overrides */
 
             body.theme-dark {
@@ -379,6 +449,7 @@
 
                 <div class="nav-right">
                     <a href="{{ url_for('catalogue') }}">Catalogue</a>
+                    <a href="{{ url_for('diagnostics') }}">Diagnostics</a>
                     <button type="button" id="theme-toggle">Dark mode</button>
 
                     <form action="{{ url_for('search') }}" method="get" class="search-form">
