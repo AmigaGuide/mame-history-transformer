@@ -1,118 +1,86 @@
 {% extends "base.html" %}
 
-{% block title %}Gaming-History XML summary – MHT Preview{% endblock %}
+{% block title %}Gaming History XML summary - MHT Preview{% endblock %}
 
 {% block nav_left %}
   <strong>MHT Preview</strong>
-  &nbsp;|&nbsp;
-  <a href="{{ url_for('home') }}">Home</a>
-  &nbsp;|&nbsp;
-  <a href="{{ url_for('summary_history') }}">GH XML summary</a>
+  &nbsp;|&nbsp; <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp; GH XML summary
 {% endblock nav_left %}
 
 {% block content %}
-  <h1>Gaming-History XML parsing summary</h1>
-  <p class="muted">The complete processing summary is available as <a href="{{ url_for('download_summary_json', stage='history') }}">downloadable JSON</a>.</p>
+  <h1>Gaming History XML parsing summary</h1>
+  <p class="lead">A concise account of what the parser found. Observations are not automatically errors or source corrections.</p>
+  <p class="muted">Complete evidence: <code>data/releases/{{ version }}/summaries/history_parsing_summary.json</code>.
+    The <a href="{{ url_for('download_summary_json', stage='history') }}">original summary JSON</a> is also available.</p>
+  <p><a href="{{ url_for('diagnostics') }}">Review processing diagnostics</a></p>
 
   {% if header %}
     <div class="summary-block">
-      <h2>Header</h2>
+      <h2>Source and processing</h2>
       <ul>
-        <li>schema_id: {{ header.schema_id or "unknown" }}</li>
-        <li>schema_version: {{ header.schema_version or "unknown" }}</li>
-        <li>generated_at: {{ header.generated_at or "unknown" }}</li>
-      </ul>
-
-      {% if header.versions %}
-        <h3>Versions</h3>
-        <ul>
-          {% for k, v in header.versions.items() %}
-            <li>{{ k }}: {{ v }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    </div>
-  {% endif %}
-
-  {% if totals %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Totals</h2>
-      <ul>
-        {% for k, v in totals.items() %}
-          {% if v is mapping %}
-            <li>{{ k }}: (mapping)</li>
-          {% elif v is sequence and v is not string %}
-            <li>{{ k }}: (list, {{ v|length }} items)</li>
-          {% else %}
-            <li>{{ k }}: {{ v }}</li>
-          {% endif %}
-        {% endfor %}
+        {% if header.versions %}
+          {% if header.versions.gh_version %}<li>Gaming History version: {{ header.versions.gh_version }}</li>{% endif %}
+          {% if header.versions.gh_date %}<li>Source date: {{ header.versions.gh_date }}</li>{% endif %}
+          {% if header.versions.history_parser_version %}<li>Parser version: {{ header.versions.history_parser_version }}</li>{% endif %}
+        {% endif %}
+        {% if header.generated_at %}<li>Summary generated: {{ header.generated_at }}</li>{% endif %}
       </ul>
     </div>
   {% endif %}
 
-  {% if sections_found %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Sections found</h2>
+  <div class="summary-block" style="margin-top:1rem;">
+    <h2>Processing totals</h2>
+    {% if report.metrics %}
+      <ul>{% for metric in report.metrics %}<li>{{ metric.label }}: <strong>{{ metric.count }}</strong></li>{% endfor %}</ul>
+    {% else %}<p class="muted">No recognised totals recorded.</p>{% endif %}
+  </div>
 
+  <div class="summary-block" style="margin-top:1rem;">
+    <h2>Findings for investigation</h2>
+    <p class="muted">Counts are recorded occurrences or distinct headings. An affected-system count is shown separately where available. Examples are capped at {{ report.sample_limit }} and are not an exhaustive list.</p>
+    {% if report.findings %}
       <table class="search-results">
-        <thead>
-          <tr>
-            <th>Section</th>
-            <th>Systems count</th>
-            <th>Software count</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Observation</th><th>Occurrences / distinct values</th><th>Systems affected</th><th>Example systems or headings</th><th>JSON field</th></tr></thead>
         <tbody>
-          {% for sec_name, obj in sections_found.items() %}
+          {% for finding in report.findings %}
             <tr>
-              <td>{{ sec_name }}</td>
-              <td>{{ obj.systems_count if obj is mapping and obj.systems_count is defined else "unknown" }}</td>
-              <td>{{ obj.software_count if obj is mapping and obj.software_count is defined else "unknown" }}</td>
+              <td>{{ finding.label }}</td>
+              <td>{{ finding.count if finding.count is not none else 'Not recorded' }}</td>
+              <td>{{ finding.systems_affected if finding.systems_affected is not none else 'Not recorded' }}</td>
+              <td>{{ finding.examples|join(', ') if finding.examples else 'Not recorded' }}</td>
+              <td><code>{{ finding.path }}</code></td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
-    </div>
-  {% endif %}
+    {% else %}<p class="muted">No non-zero findings recorded in the supported summary fields.</p>{% endif %}
+  </div>
 
-  {% if found_blocks_by_type %}
+  {% for group, heading in [(report.platforms, 'Platforms found'), (report.publishers, 'Publishers found')] %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>{{ heading }}</h2>
+      <p class="muted">Showing {{ group.shown_groups }} of {{ group.total_groups }} recorded groups, ordered by systems affected. Up to {{ report.sample_limit }} example systems each.</p>
+      {% if group.rows %}
+        <table class="search-results">
+          <thead><tr><th>Name</th><th>Systems</th><th>Example systems</th></tr></thead>
+          <tbody>
+            {% for entry in group.rows %}
+              <tr><td>{{ entry.name }}</td><td>{{ entry.count }}</td><td>{{ entry.examples|join(', ') if entry.examples else 'Not recorded' }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}<p class="muted">No groups recorded.</p>{% endif %}
+    </div>
+  {% endfor %}
+
+  {% if report.blocks %}
     <div class="summary-block" style="margin-top:1rem;">
       <h2>Trivia blocks by type</h2>
-      <table class="search-results">
-        <thead><tr><th>Type</th><th>Count</th></tr></thead>
-        <tbody>
-          {% for k, v in found_blocks_by_type %}
-            <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-          {% endfor %}
-        </tbody>
+      <p class="muted">Showing {{ report.blocks|length }} of {{ report.blocks_total_types }} block types.</p>
+      <table class="search-results"><thead><tr><th>Type</th><th>Blocks</th></tr></thead>
+        <tbody>{% for block in report.blocks %}<tr><td>{{ block.name }}</td><td>{{ block.count }}</td></tr>{% endfor %}</tbody>
       </table>
     </div>
   {% endif %}
-
-  {% if found_platforms %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Platforms found</h2>
-      <table class="search-results">
-        <thead><tr><th>Platform</th><th>Count</th></tr></thead>
-        <tbody>
-          {% for k, v in found_platforms %}
-            <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% endif %}
-
-  {% if anomalies_nonzero %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Anomalies (non-zero)</h2>
-      <ul>
-        {% for line in anomalies_nonzero %}
-          <li>{{ line }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-  {% endif %}
-
 {% endblock content %}

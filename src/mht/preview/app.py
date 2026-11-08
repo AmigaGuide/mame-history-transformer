@@ -127,7 +127,7 @@ def create_app(
     @app.route("/summary/history")
     def summary_history() -> str:
         ctx = prep_history_summary_page_context(preview_data.history_summary)
-        return render_template("summary_history.html", **ctx)
+        return render_template("summary_history.html", version=version, **ctx)
 
     @app.route("/summary/ini")
     def summary_ini() -> str:

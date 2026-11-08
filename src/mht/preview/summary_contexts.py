@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple
 
 from .formatting import as_dict, as_list, sorted_pairs_from_mapping
 from .preview_data import JsonDict
+from .history_report import build_history_report
 
 
 def prep_mame_summary_page_context(mame_summary: JsonDict) -> JsonDict:
@@ -118,6 +119,7 @@ def prep_history_summary_page_context(history_summary: JsonDict) -> JsonDict:
         "found_blocks_by_type": found_blocks_by_type,
         "found_platforms": found_platforms,
         "anomalies_nonzero": anomalies_nonzero,
+        "report": build_history_report(history_summary),
     }
 
 

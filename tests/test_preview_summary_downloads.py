@@ -32,7 +32,11 @@ def test_summary_page_links_to_json_without_embedding_it(client, stage):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert f'/summary/{stage}/source.json' in html
-    assert 'downloadable JSON' in html
+    assert (
+        'original summary JSON' in html
+        if stage == 'history'
+        else 'downloadable JSON' in html
+    )
     assert f'{stage.upper()}_SECRET_MARKER' not in html
     assert '<h2>Raw JSON</h2>' not in html
 
