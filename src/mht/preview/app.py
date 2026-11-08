@@ -132,7 +132,7 @@ def create_app(
     @app.route("/summary/ini")
     def summary_ini() -> str:
         ctx = prep_ini_summary_page_context(preview_data.ini_summary)
-        return render_template("summary_ini.html", **ctx)
+        return render_template("summary_ini.html", version=version, **ctx)
 
     @app.route("/summary/transform")
     def summary_transform() -> str:

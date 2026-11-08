@@ -1,106 +1,106 @@
 {% extends "base.html" %}
 
-{% block title %}Gaming-History INI summary – MHT Preview{% endblock %}
+{% block title %}Gaming History INI summary - MHT Preview{% endblock %}
 
 {% block nav_left %}
   <strong>MHT Preview</strong>
-  &nbsp;|&nbsp;
-  <a href="{{ url_for('home') }}">Home</a>
-  &nbsp;|&nbsp;
-  <a href="{{ url_for('summary_ini') }}">GH INI summary</a>
+  &nbsp;|&nbsp; <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp; GH INI summary
 {% endblock nav_left %}
 
 {% block content %}
-  <h1>Gaming-History INI parsing summary</h1>
-  <p class="muted">The complete processing summary is available as <a href="{{ url_for('download_summary_json', stage='ini') }}">downloadable JSON</a>.</p>
+  <h1>Gaming History INI parsing summary</h1>
+  <p>A concise account of the three classification sources. Coverage gaps and duplicate
+    assignments are observations, not automatically parser errors or publication decisions.</p>
+  <p class="muted">Complete evidence: <code>data/releases/{{ version }}/summaries/ini_parsing_summary.json</code>.
+    The <a href="{{ url_for('download_summary_json', stage='ini') }}">downloadable JSON</a> is also available.</p>
+  <p><a href="{{ url_for('diagnostics') }}">Review processing diagnostics</a></p>
 
-  {% if header %}
-    <div class="summary-block">
-      <h2>Header</h2>
-      <ul>
-        <li>schema_id: {{ header.schema_id or "unknown" }}</li>
-        <li>schema_version: {{ header.schema_version or "unknown" }}</li>
-        <li>generated_at: {{ header.generated_at or "unknown" }}</li>
-      </ul>
+  <div class="summary-block">
+    <h2>Source and processing</h2>
+    <ul>
+      <li>Summary generated: {{ header.generated_at or report.source_generated or 'Not recorded' }}</li>
+      <li>Summary tool version: {{ report.versions.ini_summary_version or 'Not recorded' }}</li>
+      <li>Referenced MAME version (consensus): {{ report.versions.mame_xml_version or 'Not recorded' }}</li>
+    </ul>
+    <p class="muted">INI files may refer to different MAME versions; an absent consensus
+      does not prove a parsing error. Per-file declarations are shown below.</p>
+  </div>
 
-      {% if header.versions %}
-        <h3>Versions</h3>
+  <div class="summary-block" style="margin-top:1rem;">
+    <h2>Classification coverage</h2>
+    <p class="muted">Coverage is measured against the union of machine names across the three
+      INIs, not against every MAME machine.</p>
+    {% if report.coverage %}
+      <table class="search-results">
+        <thead><tr><th>Measure</th><th>Machines</th><th>JSON field</th></tr></thead>
+        <tbody>
+        {% for row in report.coverage %}
+          <tr><td>{{ row.label }}</td><td>{{ row.value }}</td><td><code>{{ row.path }}</code></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="muted">No coverage totals recorded.</p>{% endif %}
+  </div>
+
+  <div class="summary-block" style="margin-top:1rem;">
+    <h2>Findings for review</h2>
+    <p class="muted">Only non-zero observations are shown here. The source summary does not
+      provide affected shortname lists for these counts.</p>
+    {% if report.observations %}
+      <table class="search-results">
+        <thead><tr><th>Observation</th><th>Recorded count</th><th>JSON field</th></tr></thead>
+        <tbody>
+        {% for item in report.observations %}
+          <tr><td>{{ item.label }}</td><td>{{ item.count }}</td><td><code>{{ item.path }}</code></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}<p class="muted">No non-zero duplicate or error counts recorded.</p>{% endif %}
+  </div>
+
+  <div class="summary-block" style="margin-top:1rem;">
+    <h2>Classification sources</h2>
+    {% for file in report.files %}
+      <section style="margin-top:1.25rem;">
+        <h3>{{ file.friendly_filename }}</h3>
+        <p class="muted">{{ file.title }}</p>
         <ul>
-          {% for k, v in header.versions.items() %}
-            <li>{{ k }}: {{ v }}</li>
-          {% endfor %}
+          <li>Recorded source file: {{ file.source_filename or 'Not recorded' }}</li>
+          <li>Source archive: {{ file.archive or 'Not recorded' }}</li>
+          <li>Declared MAME version: {{ file.mame_version or 'Not recorded' }}</li>
+          <li>Declared MAME build: {{ file.mame_build or 'Not recorded' }}</li>
+          <li>Encoding: {{ file.encoding or 'Not recorded' }}</li>
         </ul>
-      {% endif %}
-    </div>
-  {% endif %}
+        {% if file.metrics %}
+          <table class="search-results">
+            <thead><tr><th>Measure</th><th>Count</th></tr></thead>
+            <tbody>{% for metric in file.metrics %}
+              <tr><td>{{ metric.label }}</td><td>{{ metric.value }}</td></tr>
+            {% endfor %}</tbody>
+          </table>
+        {% else %}<p class="muted">No file statistics recorded.</p>{% endif %}
 
-  {% if ini %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>INI files</h2>
-
-      {% if ini.files %}
-        {% for file_key, f in ini.files.items() %}
-          <h3 style="margin-top:1rem;">{{ f.filename or file_key }}</h3>
-
-          <ul class="muted" style="margin-top:0.25rem;">
-            {% if f.source_zip %}<li>Source ZIP: {{ f.source_zip }}</li>{% endif %}
-            {% if f.version %}<li>Version: {{ f.version }}</li>{% endif %}
-            {% if f.total_lines is defined %}<li>Total lines: {{ f.total_lines }}</li>{% endif %}
-            {% if f.total_entries is defined %}<li>Total entries: {{ f.total_entries }}</li>{% endif %}
-          </ul>
-
-          {% if f.section_counts_listed %}
-            <h4 style="margin-top:0.75rem;">Counts by value</h4>
-            <table class="search-results">
-              <thead>
-                <tr><th>Value</th><th>Count</th></tr>
-              </thead>
-              <tbody>
-                {% for k, v in f.section_counts_listed.items() %}
-                  <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          {% endif %}
-
-          {% if f.duplicates %}
-            <h4 style="margin-top:0.75rem;">Duplicates</h4>
-            <ul>
-              {% if f.duplicates.count is defined %}
-                <li>Total duplicates: {{ f.duplicates.count }}</li>
-              {% endif %}
-              {% if f.duplicates.examples %}
-                <li>Examples:</li>
-                <ul>
-                  {% for ex in f.duplicates.examples %}
-                    <li>{{ ex }}</li>
-                  {% endfor %}
-                </ul>
-              {% endif %}
-            </ul>
-          {% endif %}
-        {% endfor %}
-      {% else %}
-        <p class="muted">No INI file breakdown found.</p>
-      {% endif %}
-    </div>
-  {% endif %}
-
-  {% if totals %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Totals</h2>
-      <ul>
-        {% for k, v in totals.items() %}
-          {% if v is mapping %}
-            <li>{{ k }}: (mapping)</li>
-          {% elif v is sequence and v is not string %}
-            <li>{{ k }}: (list, {{ v|length }} items)</li>
-          {% else %}
-            <li>{{ k }}: {{ v }}</li>
-          {% endif %}
-        {% endfor %}
-      </ul>
-    </div>
-  {% endif %}
-
+        {% if file.listed.rows %}
+          <h4>Assignments by classification</h4>
+          <p class="muted">Showing {{ file.listed.shown_groups }} of {{ file.listed.total_groups }} recorded
+            classifications, ordered by assignment count. JSON: <code>{{ file.listed_path }}</code></p>
+          <table class="search-results"><thead><tr><th>Classification</th><th>Assignments</th></tr></thead>
+          <tbody>{% for row in file.listed.rows %}
+            <tr><td>{{ row.name }}</td><td>{{ row.count }}</td></tr>
+          {% endfor %}</tbody></table>
+        {% endif %}
+        {% if file.unique.rows %}
+          <details style="margin-top:0.75rem;">
+            <summary>Distinct machines by classification ({{ file.unique.total_groups }} groups)</summary>
+            <p class="muted">Showing {{ file.unique.shown_groups }} groups. JSON: <code>{{ file.unique_path }}</code></p>
+            <table class="search-results"><thead><tr><th>Classification</th><th>Distinct machines</th></tr></thead>
+            <tbody>{% for row in file.unique.rows %}
+              <tr><td>{{ row.name }}</td><td>{{ row.count }}</td></tr>
+            {% endfor %}</tbody></table>
+          </details>
+        {% endif %}
+      </section>
+    {% endfor %}
+  </div>
 {% endblock content %}

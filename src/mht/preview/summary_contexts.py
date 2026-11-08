@@ -14,6 +14,7 @@ from .formatting import as_dict, as_list, sorted_pairs_from_mapping
 from .preview_data import JsonDict
 from .history_report import build_history_report
 from .mame_report import build_mame_report
+from .ini_report import build_ini_report
 
 
 def prep_mame_summary_page_context(mame_summary: JsonDict) -> JsonDict:
@@ -66,39 +67,10 @@ def prep_history_summary_page_context(history_summary: JsonDict) -> JsonDict:
 
 
 def prep_ini_summary_page_context(ini_summary: JsonDict) -> JsonDict:
-    """
-    Template-friendly context for summary_ini.html.
-
-    We avoid relying on dict ".items" directly in templates by providing
-    explicit lists of pairs.
-    """
-    header = as_dict(ini_summary.get("header"))
-    ini = as_dict(ini_summary.get("ini"))
-    files = as_dict(ini.get("files"))
-
-    file_cards: List[JsonDict] = []
-    for key in ["game_status", "category", "type"]:
-        f = as_dict(files.get(key))
-        section_counts = f.get("section_counts_listed")
-        pairs = sorted_pairs_from_mapping(section_counts) if isinstance(section_counts, dict) else []
-        file_cards.append(
-            {
-                "key": key,
-                "filename": f.get("filename"),
-                "version": f.get("version"),
-                "entries_listed": f.get("entries_listed"),
-                "sections_total": f.get("sections_total"),
-                "section_counts_pairs": pairs,
-                "raw": f,
-            }
-        )
-
-    totals = as_dict(ini_summary.get("totals"))
-
+    """Build a compact source-backed Gaming History INI report."""
     return {
-        "header": header,
-        "totals": totals,
-        "file_cards": file_cards,
+        "header": as_dict(ini_summary.get("header")),
+        "report": build_ini_report(ini_summary),
     }
 
 
