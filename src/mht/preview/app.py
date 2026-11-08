@@ -207,6 +207,7 @@ def create_app(
         from .diagnostics import build_diagnostic_groups
         return render_template(
             "diagnostics.html",
+            version=version,
             diagnostic_groups=build_diagnostic_groups(preview_data),
         )
 

@@ -9,33 +9,46 @@
 
 {% block content %}
   <h1>Processing diagnostics</h1>
-  <p class="lead">
-    Read-only observations from the existing MAME, Gaming History and transformation summaries.
-    These figures are not a quality score and do not change publication eligibility.
-  </p>
-  <p class="muted">
-    An absent count is not interpreted as zero. Missing PORTS, unpublished games and
-    optional Trivia sections are not treated as errors.
-  </p>
+  <p class="lead">Read-only findings recorded by the MAME, Gaming History, INI and
+    transformation stages. These figures are not a quality score and do not change
+    publication eligibility.</p>
+  <p class="muted">Use the examples to inspect affected game pages where available,
+    or open the detailed stage summary for context. A recorded observation may reflect
+    source material, parser interpretation, or intended processing behaviour; no cause
+    is assigned automatically. An absent count is not interpreted as zero.</p>
 
   {% for group in diagnostic_groups %}
-    <section class="summary-block" style="margin-top: 1rem;">
+    <section class="summary-block" style="margin-top:1rem;">
       <h2>{{ group.title }}</h2>
-      <p class="muted"><a href="{{ url_for(group.summary_endpoint) }}">Inspect source summary</a></p>
+      <p class="muted">
+        <a href="{{ url_for(group.summary_endpoint) }}">Full stage summary</a>
+        | Evidence: <code>data/releases/{{ version }}/summaries/{{ group.filename }}</code>
+      </p>
       {% if group.findings %}
         <div class="search-results">
           <table>
-            <thead><tr><th>Source-reported finding</th><th>Count</th><th>Interpretation and examples</th></tr></thead>
+            <thead>
+              <tr><th>Observation</th><th>Recorded count</th><th>Interpretation and examples</th><th>JSON field</th></tr>
+            </thead>
             <tbody>
               {% for finding in group.findings %}
                 <tr>
-                  <td><strong>{{ finding.label }}</strong><div class="muted">{{ finding.path }}</div></td>
-                  <td>{{ finding.count }}</td>
-                  <td>{{ finding.explanation }}
-                    {% if finding.examples %}
-                      <div class="muted">Examples: {{ finding.examples|join(', ') }}</div>
+                  <td><strong>{{ finding.label }}</strong></td>
+                  <td>{{ finding.count }}<div class="muted">{{ finding.count_label }}</div>
+                    {% if finding.systems_affected is not none and finding.count_label != 'Systems' %}
+                      <div class="muted">Systems affected: {{ finding.systems_affected }}</div>
                     {% endif %}
                   </td>
+                  <td>{{ finding.explanation }}
+                    {% if finding.example_items %}
+                      <div class="muted">Examples (up to 5):
+                        {% for example in finding.example_items %}
+                          {% if example.machine %}<a href="{{ url_for('game', machine=example.machine) }}">{{ example.name }}</a>{% else %}{{ example.name }}{% endif %}{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                  </td>
+                  <td><code>{{ finding.path }}</code></td>
                 </tr>
               {% endfor %}
             </tbody>
