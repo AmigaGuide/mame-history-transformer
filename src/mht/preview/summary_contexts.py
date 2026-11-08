@@ -10,7 +10,7 @@ and type checks inside Jinja.
 
 from typing import Any, Dict, List, Tuple
 
-from .formatting import as_dict, as_list, pretty_json, sorted_pairs_from_mapping
+from .formatting import as_dict, as_list, sorted_pairs_from_mapping
 from .preview_data import JsonDict
 
 
@@ -78,7 +78,6 @@ def prep_mame_summary_page_context(mame_summary: JsonDict) -> JsonDict:
         "totals": totals,
         "distributions": distributions,
         "example_groups": example_groups,
-        "raw_json": pretty_json(mame_summary),
     }
 
 
@@ -119,7 +118,6 @@ def prep_history_summary_page_context(history_summary: JsonDict) -> JsonDict:
         "found_blocks_by_type": found_blocks_by_type,
         "found_platforms": found_platforms,
         "anomalies_nonzero": anomalies_nonzero,
-        "raw_json": pretty_json(history_summary),
     }
 
 
@@ -157,7 +155,6 @@ def prep_ini_summary_page_context(ini_summary: JsonDict) -> JsonDict:
         "header": header,
         "totals": totals,
         "file_cards": file_cards,
-        "raw_json": pretty_json(ini_summary),
     }
 
 
@@ -198,5 +195,4 @@ def prep_transform_summary_page_context(transform_summary: JsonDict) -> JsonDict
         "prov_outputs": prov_outputs_list,
         "upstream": upstream_dict,
 
-        "raw_json": pretty_json(transform_summary),
     }
