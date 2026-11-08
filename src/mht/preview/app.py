@@ -122,7 +122,7 @@ def create_app(
     @app.route("/summary/mame")
     def summary_mame() -> str:
         ctx = prep_mame_summary_page_context(preview_data.mame_summary)
-        return render_template("summary_mame.html", **ctx)
+        return render_template("summary_mame.html", version=version, **ctx)
 
     @app.route("/summary/history")
     def summary_history() -> str:

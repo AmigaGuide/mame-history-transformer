@@ -1,99 +1,67 @@
 {% extends "base.html" %}
 
-{% block title %}MAME summary – MHT Preview{% endblock %}
+{% block title %}MAME parsing summary - MHT Preview{% endblock %}
 
 {% block nav_left %}
-  <strong>MHT Preview</strong>
-  &nbsp;|&nbsp;
-  <a href="{{ url_for('home') }}">Home</a>
-  &nbsp;|&nbsp;
-  <a href="{{ url_for('summary_mame') }}">MAME summary</a>
+  <strong>MHT Preview</strong> &nbsp;|&nbsp;
+  <a href="{{ url_for('home') }}">Home</a> &nbsp;|&nbsp; MAME summary
 {% endblock nav_left %}
 
 {% block content %}
-  <h1>MAME parsing summary</h1>
-  <p class="muted">The complete processing summary is available as <a href="{{ url_for('download_summary_json', stage='mame') }}">downloadable JSON</a>.</p>
+  <h1>MAME XML parsing summary</h1>
+  <p class="lead">A concise account of the machines and metadata that the MAME parser recorded. Observations do not automatically indicate parser defects.</p>
+  <p class="muted">Complete evidence: <code>data/releases/{{ version }}/summaries/mame_parsing_summary.json</code>.
+    The <a href="{{ url_for('download_summary_json', stage='mame') }}">downloadable JSON</a> is also available.</p>
+  <p><a href="{{ url_for('diagnostics') }}">Review processing diagnostics</a></p>
 
-  {% if header %}
-    <div class="summary-block">
-      <h2>Header</h2>
-      <ul>
-        <li>schema_id: {{ header.schema_id or "unknown" }}</li>
-        <li>schema_version: {{ header.schema_version or "unknown" }}</li>
-        <li>generated_at: {{ header.generated_at or "unknown" }}</li>
-      </ul>
+  <section class="summary-block">
+    <h2>Source and processing</h2>
+    <ul>
+      <li>MAME build: {{ report.versions.mame_build or 'Not recorded' }}</li>
+      <li>MAME XML version: {{ report.versions.mame_xml_version or 'Not recorded' }}</li>
+      <li>MAME parser version: {{ report.versions.mame_parser_version or 'Not recorded' }}</li>
+      <li>Summary generated: {{ header.generated_at or 'Not recorded' }}</li>
+      <li>Source ZIP: {{ report.source.zip_archive or 'Not recorded' }}</li>
+      <li>Source XML member: {{ report.source.zip_member or 'Not recorded' }}</li>
+    </ul>
+  </section>
 
-      {% if header.versions %}
-        <h3>Versions</h3>
-        <ul>
-          {% for k, v in header.versions.items() %}
-            <li>{{ k }}: {{ v }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    </div>
-  {% endif %}
+  <section class="summary-block" style="margin-top:1rem;">
+    <h2>Processing totals</h2>
+    {% if report.metrics %}
+      <ul>{% for metric in report.metrics %}
+        <li>{{ metric.label }}: {{ metric.value }}</li>
+      {% endfor %}</ul>
+    {% else %}<p class="muted">No recognised totals recorded.</p>{% endif %}
+  </section>
 
-  {% if totals %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Totals</h2>
-      <ul>
-        {% for k, v in totals.items() %}
-          {% if v is mapping %}
-            <li>{{ k }}: (mapping)</li>
-          {% elif v is sequence and v is not string %}
-            <li>{{ k }}: (list, {{ v|length }} items)</li>
-          {% else %}
-            <li>{{ k }}: {{ v }}</li>
-          {% endif %}
-        {% endfor %}
-      </ul>
-      <p class="muted">
-        Note: distributions and example lists are shown further down the page where present.
-      </p>
-    </div>
-  {% endif %}
-
-  {% if distributions %}
-    <div class="summary-block" style="margin-top:1rem;">
-      <h2>Distributions</h2>
-      {% for title, dist in distributions %}
-        <h3>{{ title }}</h3>
-        {% if dist %}
-          <table class="search-results">
-            <thead>
-              <tr><th>Key</th><th>Count</th></tr>
-            </thead>
-            <tbody>
-              {% for k, v in dist %}
-                <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% else %}
-          <p class="muted">No data.</p>
-        {% endif %}
+  <section class="summary-block" style="margin-top:1rem;">
+    <h2>Findings for investigation</h2>
+    <p class="muted">Counts refer to recorded observations, not necessarily distinct machines. Up to {{ report.sample_limit }} examples are shown for each finding.</p>
+    {% if report.findings %}
+      <table class="search-results"><thead><tr><th>Observation</th><th>Recorded count</th><th>Example machines and details</th><th>JSON field</th></tr></thead><tbody>
+      {% for finding in report.findings %}
+        <tr><td>{{ finding.label }}</td><td>{{ finding.count }}</td>
+          <td>{% if finding.examples %}
+            {% for example in finding.examples %}{{ example.machine }}{% if example.detail %} ({{ example.detail }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+          {% else %}Not recorded{% endif %}</td>
+          <td><code>{{ finding.path }}</code></td></tr>
       {% endfor %}
-    </div>
-  {% endif %}
+      </tbody></table>
+    {% else %}<p class="muted">No non-zero findings are recorded in the recognised MAME fields.</p>{% endif %}
+  </section>
 
-	{% if example_groups %}
-	  <div class="summary-block" style="margin-top:1rem;">
-		<h2>Examples</h2>
-		{% for eg in example_groups %}
-		  <h3>{{ eg.title }}</h3>
-		  {% if eg["items"] %}
-			<ul>
-			  {% for item in eg["items"] %}
-				<li>{{ item }}</li>
-			  {% endfor %}
-			</ul>
-		  {% else %}
-			<p class="muted">No examples.</p>
-		  {% endif %}
-		{% endfor %}
-	  </div>
-	{% endif %}
-
-
+  <section class="summary-block" style="margin-top:1rem;">
+    <h2>Recorded distributions</h2>
+    <p class="muted">Groups are ranked by their recorded counts. Only the first {{ report.distribution_limit }} values of each distribution are shown. The complete values remain in the original summary JSON.</p>
+    {% if report.distributions %}
+      {% for dist in report.distributions %}
+        <h3>{{ dist.label }}</h3>
+        <p class="muted">Showing {{ dist.shown_groups }} of {{ dist.total_groups }} categories. JSON field: <code>{{ dist.path }}</code></p>
+        <table class="search-results"><thead><tr><th>Value</th><th>Count</th></tr></thead><tbody>
+        {% for item in dist.rows %}<tr><td>{{ item.name }}</td><td>{{ item.count }}</td></tr>{% endfor %}
+        </tbody></table>
+      {% endfor %}
+    {% else %}<p class="muted">No recognised distributions recorded.</p>{% endif %}
+  </section>
 {% endblock content %}

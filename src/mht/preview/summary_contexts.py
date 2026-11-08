@@ -13,72 +13,14 @@ from typing import Any, Dict, List, Tuple
 from .formatting import as_dict, as_list, sorted_pairs_from_mapping
 from .preview_data import JsonDict
 from .history_report import build_history_report
+from .mame_report import build_mame_report
 
 
 def prep_mame_summary_page_context(mame_summary: JsonDict) -> JsonDict:
-    header = as_dict(mame_summary.get("header"))
-    totals = as_dict(mame_summary.get("totals"))
-
-    dist_specs: List[Tuple[str, str]] = [
-        ("Players per machine", "players_per_machine_distribution"),
-        ("Buttons per machine", "buttons_per_machine_distribution"),
-        ("Display types", "display_types_distribution"),
-        ("Orientations", "orientations_distribution"),
-        ("Refresh rates (rounded)", "refresh_rates_rounded_distribution"),
-        ("Speakers per machine", "speakers_per_machine_distribution"),
-        ("Sound channels per machine", "sound_channels_per_machine_distribution"),
-        ("CPU manufacturers", "cpu_manufacturers_distribution"),
-        ("CPU families", "cpu_families_distribution"),
-    ]
-
-    distributions: List[Tuple[str, List[Tuple[str, Any]]]] = []
-    for title, key in dist_specs:
-        dist = totals.get(key)
-        if isinstance(dist, dict) and dist:
-            distributions.append((title, sorted_pairs_from_mapping(dist)))
-
-    example_groups: List[JsonDict] = []
-
-    invalid_displays = totals.get("invalid_displays_dropped")
-    if isinstance(invalid_displays, dict) and (invalid_displays.get("count") or invalid_displays.get("examples")):
-        lines: List[str] = []
-        cnt = invalid_displays.get("count")
-        if cnt is not None:
-            lines.append(f"Count: {cnt}")
-
-        examples = as_list(invalid_displays.get("examples"))
-        for ex in examples[:25]:
-            if isinstance(ex, dict):
-                machine = ex.get("machine", "?")
-                dtype = ex.get("type", "?")
-                w = ex.get("width", "?")
-                h = ex.get("height", "?")
-                tag = ex.get("tag", "")
-                line = f"{machine}: {dtype} {w}x{h}"
-                if tag:
-                    line = f"{line} ({tag})"
-                lines.append(line)
-            else:
-                lines.append(str(ex))
-
-        example_groups.append({"title": "Invalid displays dropped", "items": lines})
-
-    anomalies = mame_summary.get("anomalies")
-    if isinstance(anomalies, dict) and (anomalies.get("count") or anomalies.get("examples")):
-        lines2: List[str] = []
-        cnt2 = anomalies.get("count")
-        if cnt2 is not None:
-            lines2.append(f"Count: {cnt2}")
-        examples2 = as_list(anomalies.get("examples"))
-        for ex in examples2[:25]:
-            lines2.append(str(ex))
-        example_groups.append({"title": "Anomalies", "items": lines2})
-
+    """Build a compact, source-backed MAME summary report."""
     return {
-        "header": header,
-        "totals": totals,
-        "distributions": distributions,
-        "example_groups": example_groups,
+        "header": as_dict(mame_summary.get("header")),
+        "report": build_mame_report(mame_summary),
     }
 
 
