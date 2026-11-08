@@ -22,6 +22,7 @@ from .overview import (
     build_transform_overview,
 )
 from .preview_data import JsonDict, PreviewData
+from .provenance import build_source_provenance
 from .catalogue import select_catalogue_page
 from .summary_contexts import (
     prep_history_summary_page_context,
@@ -76,36 +77,7 @@ def create_app(
             "generated_at": format_utc_iso(t_hdr.get("generated_at")),
         }
 
-        m_ver = header_versions(pd.mame_summary)
-        h_ver = header_versions(pd.history_summary)
-        i_ver = header_versions(pd.ini_summary)
-        t_ver = header_versions(pd.transform_summary)
-
-        sources: JsonDict = {
-            "mame": {
-                "build": m_ver.get("mame_build"),
-                "xml_version": m_ver.get("mame_xml_version"),
-                "mameconfig": m_ver.get("mameconfig"),
-                "filename": None,
-            },
-            "history": {
-                "version": h_ver.get("gh_version"),
-                "date": h_ver.get("gh_date"),
-                "filename": None,
-            },
-            "ini": {
-                "generated_at": i_ver.get("ini_generated_at"),
-                "mame_xml_version": i_ver.get("mame_xml_version"),
-                "filename": None,
-            },
-            "transform": {
-                "mame_build": t_ver.get("mame_build"),
-                "history_version": t_ver.get("history_version"),
-                "history_date": t_ver.get("history_date"),
-                "ini_generated_at": t_ver.get("ini_generated_at"),
-                "filename": None,
-            },
-        }
+        sources = build_source_provenance(pd)
 
         return render_template(
             "home.html",

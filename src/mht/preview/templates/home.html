@@ -50,7 +50,9 @@
                     <li>Build: {{ sources.mame.build or "unknown" }}</li>
                     <li>XML version: {{ sources.mame.xml_version or "unknown" }}</li>
                     <li>mameconfig: {{ sources.mame.mameconfig or "unknown" }}</li>
-                    <li>File: {{ sources.mame.filename or "not recorded in summary" }}</li>
+                    <li>XML member: {{ sources.mame.filename or "not recorded in summary" }}</li>
+                    <li>ZIP archive: {{ sources.mame.archive or "not recorded in summary" }}</li>
+                    <li>ZIP member modified (timezone unspecified): {{ sources.mame.modified or "not recorded in summary" }}</li>
                 </ul>
             </div>
 
@@ -61,7 +63,9 @@
                 <ul>
                     <li>Version: {{ sources.history.version or "unknown" }}</li>
                     <li>Date: {{ sources.history.date or "unknown" }}</li>
-                    <li>File: {{ sources.history.filename or "not recorded in summary" }}</li>
+                    <li>XML member: {{ sources.history.filename or "not recorded in summary" }}</li>
+                    <li>ZIP archive: {{ sources.history.archive or "not recorded in summary" }}</li>
+                    <li>ZIP member modified (timezone unspecified): {{ sources.history.modified or "not recorded in summary" }}</li>
                 </ul>
             </div>
 
@@ -72,7 +76,11 @@
                 <ul>
                     <li>INI generated at: {{ sources.ini.generated_at or "unknown" }}</li>
                     <li>Referenced MAME version: {{ sources.ini.mame_xml_version or "unknown" }}</li>
-                    <li>File bundle: {{ sources.ini.filename or "not recorded in summary" }}</li>
+                    {% for ini_file in sources.ini.files %}
+                        <li>{{ ini_file.label }}: {{ ini_file.filename or "not recorded in summary" }}
+                            {% if ini_file.archive %}(archive: {{ ini_file.archive }}){% endif %}
+                        </li>
+                    {% endfor %}
                 </ul>
             </div>
 
