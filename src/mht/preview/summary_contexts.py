@@ -15,6 +15,7 @@ from .preview_data import JsonDict
 from .history_report import build_history_report
 from .mame_report import build_mame_report
 from .ini_report import build_ini_report
+from .transform_report import build_transform_report
 
 
 def prep_mame_summary_page_context(mame_summary: JsonDict) -> JsonDict:
@@ -75,40 +76,8 @@ def prep_ini_summary_page_context(ini_summary: JsonDict) -> JsonDict:
 
 
 def prep_transform_summary_page_context(transform_summary: JsonDict) -> JsonDict:
-    """
-    Template-friendly context for summary_transform.html.
-
-    Provides both raw dicts and pre-sorted lists so templates can iterate safely.
-    """
-    header = as_dict(transform_summary.get("header"))
-    counts = as_dict(transform_summary.get("counts"))
-    selection = as_dict(transform_summary.get("selection"))
-    ports = as_dict(transform_summary.get("ports"))
-
-    excluded = transform_summary.get("excluded_parents_by_reason")
-    excluded_pairs = sorted_pairs_from_mapping(excluded) if isinstance(excluded, dict) else []
-
-    # --- NEW: provenance blocks ---
-    provenance = as_dict(transform_summary.get("provenance"))
-    prov_inputs = provenance.get("inputs")
-    prov_outputs = provenance.get("outputs")
-    upstream = provenance.get("upstream_summaries")
-
-    prov_inputs_list = [as_dict(x) for x in prov_inputs] if isinstance(prov_inputs, list) else []
-    prov_outputs_list = [as_dict(x) for x in prov_outputs] if isinstance(prov_outputs, list) else []
-    upstream_dict = as_dict(upstream) if isinstance(upstream, dict) else {}
-
+    """Build a compact, source-backed Transformation summary report."""
     return {
-        "header": header,
-        "counts": counts,
-        "selection": selection,
-        "ports": ports,
-        "excluded_pairs": excluded_pairs,
-
-        # NEW
-        "provenance": provenance,
-        "prov_inputs": prov_inputs_list,
-        "prov_outputs": prov_outputs_list,
-        "upstream": upstream_dict,
-
+        "header": as_dict(transform_summary.get("header")),
+        "report": build_transform_report(transform_summary),
     }

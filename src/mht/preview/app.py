@@ -137,7 +137,7 @@ def create_app(
     @app.route("/summary/transform")
     def summary_transform() -> str:
         ctx = prep_transform_summary_page_context(preview_data.transform_summary)
-        return render_template("summary_transform.html", **ctx)
+        return render_template("summary_transform.html", version=version, **ctx)
 
     @app.route("/game/<machine>")
     def game(machine: str) -> str:
