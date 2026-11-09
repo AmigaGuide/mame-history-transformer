@@ -1,0 +1,33 @@
+{
+    "notes": [
+        "Deathsmiles Staff contains labels enclosed in asterisks.",
+        "Recognise these entries as pairs without retaining the asterisks in the labels.",
+        "Preserve contributor names and source provenance."
+    ],
+    "expectations": {
+        "sections": {
+            "staff": {
+                "blocks": [
+                    {
+                        "type": "pair",
+                        "label_contains": "Windia",
+                        "value_contains": "Naomi Iida"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Recording Engineer",
+                        "value_contains": "Ryoji Uezu"
+                    },
+                    {
+                        "type": "pair",
+                        "label_contains": "Sound Director",
+                        "value_contains": [
+                            "Daisuke Matsumoto",
+                            "Yukihiro Masaki"
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}

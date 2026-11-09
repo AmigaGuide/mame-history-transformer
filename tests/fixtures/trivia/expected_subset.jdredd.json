@@ -1,0 +1,28 @@
+{
+    "notes": [
+        "Judge Dredd Staff contains three emphasised group headings.",
+        "Recognise standalone asterisk-enclosed headings as subheadings.",
+        "Remove the formatting markers from interpreted headings.",
+        "Preserve the original source and ordering of staff credits."
+    ],
+    "expectations": {
+        "sections": {
+            "staff": {
+                "blocks": [
+                    {
+                        "type": "subheading",
+                        "text_contains": "Team Gremlin"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Video Cut Sequences"
+                    },
+                    {
+                        "type": "subheading",
+                        "text_contains": "Acclaim Team"
+                    }
+                ]
+            }
+        }
+    }
+}

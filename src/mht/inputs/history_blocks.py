@@ -21,6 +21,14 @@ _NUMBERED_RE      = re.compile(r"^\s*(?:\d+[\)\].]|[\[\(]\d+[\]\)])\s+\S")  # "1
 _PAIR_RE          = re.compile(r"^\s*([^:\-][^:]{0,100}?)\s*(?::|-)\s*(\S.*\S|\S)\s*$")
 # Subheading line used within GH text: "* Something :" (ends with a colon)
 _SUBHEADING_RE    = re.compile(r"^\s*\*\s+.+:\s*$")
+# GH Staff sometimes uses Markdown-style emphasis around labels.
+# These patterns are deliberately restricted to Staff by their caller.
+_STAFF_EMPHASISED_PAIR_RE = re.compile(
+    r"^\s*\*([^*\n]+)\*\s*:\s*(\S.*)$"
+)
+_STAFF_EMPHASISED_HEADING_RE = re.compile(
+    r"^\s*\*([^*\n]+)\*\s*$"
+)
 # Blank line
 _BLANK_RE         = re.compile(r"^\s*$")
 # Lines made only of hyphens → treat as a separator (no block emitted)
@@ -681,6 +689,65 @@ def process_section_blocks(
 
                 _inc_count(parsing_state, "paragraph")
 
+                filtered_idx += 1
+                continue
+
+        # GH Staff sometimes uses asterisks to emphasise role labels
+        # and standalone group headings.
+        #
+        # Interpret these as existing pair/subheading block types.
+        # The original source text remains unchanged in sections_raw.
+        if tag == "staff":
+            staff_pair = _STAFF_EMPHASISED_PAIR_RE.match(ln)
+
+            if staff_pair:
+                flush_para("paragraph_default")
+                flush_list()
+
+                label = staff_pair.group(1).strip()
+                value = staff_pair.group(2).strip()
+                text = f"{label}: {value}"
+
+                meta = _make_meta(
+                    detectors=["pair_staff_emphasis"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=text,
+                )
+
+                blocks.append({
+                    "type": "pair",
+                    "label": label,
+                    "value": value,
+                    "meta": meta,
+                })
+
+                _inc_count(parsing_state, "pair")
+                filtered_idx += 1
+                continue
+
+            staff_heading = _STAFF_EMPHASISED_HEADING_RE.match(ln)
+
+            if staff_heading:
+                flush_para("paragraph_default")
+                flush_list()
+
+                heading = staff_heading.group(1).strip()
+
+                meta = _make_meta(
+                    detectors=["subheading_staff_emphasis"],
+                    f_start=filtered_idx,
+                    f_end=filtered_idx,
+                    text=heading,
+                )
+
+                blocks.append({
+                    "type": "subheading",
+                    "text": heading,
+                    "meta": meta,
+                })
+
+                _inc_count(parsing_state, "subheading")
                 filtered_idx += 1
                 continue
 
