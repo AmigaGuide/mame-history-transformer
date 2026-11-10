@@ -136,3 +136,89 @@ def test_empty_audit_report_is_still_written(tmp_path):
     assert report["release"] == "0280"
     assert report["findings"] == []
     assert report["provenance"] == {"inputs": []}
+
+
+def test_odd_brackets_create_individual_audit_finding():
+    """Odd brackets should produce an audit observation."""
+
+    parsing_state = make_parsing_state()
+
+    original_line = '[US] PC [MS-DOS (1991) "Example Game"'
+
+    parse_port_entry(
+        original_line,
+        system_name="example",
+        parsing_state=parsing_state,
+    )
+
+    # Existing anomaly reporting remains unchanged.
+    assert parsing_state["odd_brackets"]["example"] == [original_line]
+
+    # The audit preserves the complete source line.
+    assert parsing_state["audit_findings"] == [
+        {
+            "rule_id": "gh.ports.odd_brackets",
+            "machine": "example",
+            "section": "PORTS",
+            "source_text": original_line,
+        }
+    ]
+
+
+def test_unparseable_date_creates_individual_audit_finding():
+    """Rejected dates should retain their original PORTS context."""
+
+    parsing_state = make_parsing_state()
+
+    original_line = '[US] PC (Spring 1991) "Example Game"'
+
+    parse_port_entry(
+        original_line,
+        system_name="example",
+        parsing_state=parsing_state,
+    )
+
+    # The established date detector must still record the rejected value.
+    assert parsing_state["unparsable_dates"]["example"] == ["Spring 1991"]
+
+    # The new finding preserves both the source line and rejected date.
+    assert parsing_state["audit_findings"] == [
+        {
+            "rule_id": "gh.ports.unparsable_date",
+            "machine": "example",
+            "section": "PORTS",
+            "source_text": original_line,
+            "value": "Spring 1991",
+        }
+    ]
+
+
+def test_multiple_anomalies_are_recorded_independently():
+    """One PORTS line can legitimately trigger multiple detectors."""
+
+    parsing_state = make_parsing_state()
+
+    original_line = '[US] PC (Spring 1991) "Unclosed game title'
+
+    parse_port_entry(
+        original_line,
+        system_name="example",
+        parsing_state=parsing_state,
+    )
+
+    findings = parsing_state["audit_findings"]
+
+    assert len(findings) == 2
+
+    assert {finding["rule_id"] for finding in findings} == {
+        "gh.ports.odd_quotes",
+        "gh.ports.unparsable_date",
+    }
+
+    assert all(
+        finding["source_text"] == original_line
+        for finding in findings
+    )
+
+    assert parsing_state["odd_quotes"]["example"] == [original_line]
+    assert parsing_state["unparsable_dates"]["example"] == ["Spring 1991"]

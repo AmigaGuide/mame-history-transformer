@@ -256,6 +256,14 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     if bracket_count % 2 == 1:
         parsing_state.setdefault("odd_brackets", defaultdict(list))[system_name].append(working_line)
 
+        # Preserve the individual observation for historical auditing.
+        parsing_state.setdefault("audit_findings", []).append({
+            "rule_id": "gh.ports.odd_brackets",
+            "machine": system_name,
+            "section": "PORTS",
+            "source_text": original_line,
+        })
+
     # 1) comment
     working_line, comment = _split_comment_outside_quotes(working_line)
     if comment:
@@ -308,6 +316,16 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
         else:
             port["residue"].append(date_raw)
             parsing_state.setdefault("unparsable_dates", defaultdict(list))[system_name].append(date_raw)
+
+            # Preserve both the rejected date and its originating PORTS line.
+            parsing_state.setdefault("audit_findings", []).append({
+                "rule_id": "gh.ports.unparsable_date",
+                "machine": system_name,
+                "section": "PORTS",
+                "source_text": original_line,
+                "value": date_raw,
+            })
+
             _mark_residue()
 
         zone = (post_date_text or "").strip()

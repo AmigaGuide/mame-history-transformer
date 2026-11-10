@@ -173,6 +173,8 @@ def write_history_audit_findings(
         "provenance": summary.get("provenance", {}),
         "detectors": {
             "gh.ports.odd_quotes": "1",
+            "gh.ports.odd_brackets": "1",
+            "gh.ports.unparsable_date": "1",
         },
         "findings": audit_findings,
     }
