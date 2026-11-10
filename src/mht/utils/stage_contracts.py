@@ -73,6 +73,7 @@ def stage_contract(
                 paths.gh_system_ports_path(version),
                 paths.gh_system_trivia_path(version),
                 paths.history_summary_path(version),
+                paths.history_audit_findings_path(version),
             ),
             missing_source=source is None,
         )

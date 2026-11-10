@@ -241,8 +241,18 @@ def parse_port_entry(line: str, system_name: str = "", parsing_state: dict = Non
     bracket_count = (working_line.count('(') + working_line.count(')') +
                      working_line.count('[') + working_line.count(']') +
                      working_line.count('{') + working_line.count('}'))
+
     if quote_count % 2 == 1:
         parsing_state.setdefault("odd_quotes", defaultdict(list))[system_name].append(working_line)
+
+        # Preserve the individual observation for historical auditing.
+        parsing_state.setdefault("audit_findings", []).append({
+            "rule_id": "gh.ports.odd_quotes",
+            "machine": system_name,
+            "section": "PORTS",
+            "source_text": original_line,
+        })
+
     if bracket_count % 2 == 1:
         parsing_state.setdefault("odd_brackets", defaultdict(list))[system_name].append(working_line)
 

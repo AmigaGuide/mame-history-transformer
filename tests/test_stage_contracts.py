@@ -23,6 +23,7 @@ def release_paths(tmp_path, monkeypatch):
         'gh_system_ports_path': 'outputs/gh_system_ports.json',
         'gh_system_trivia_path': 'outputs/gh_system_trivia.json',
         'history_summary_path': 'summaries/history_parsing_summary.json',
+        'history_audit_findings_path': 'summaries/history_audit_findings.json',
         'exotica_wiki_path': 'outputs/exotica_lit_wiki.json',
         'exotica_raw_path': 'outputs/exotica_lit_raw_data.json',
         'exotica_pages_path': 'outputs/exotica_wiki_pages_and_redirects.json',
@@ -51,12 +52,20 @@ def test_ini_contract_uses_history_zip_and_declares_two_outputs(release_paths, t
     assert not contract.missing_source
 
 
-def test_history_contract_keeps_trivia_as_required_output(release_paths, tmp_path):
+def test_history_contract_declares_all_required_outputs(release_paths, tmp_path):
     source = tmp_path / 'history.zip'
     contract = stage_contracts.stage_contract('history', '0289', source=source)
+
     assert contract.inputs == (source, release_paths['encodings_cache_path'])
-    assert release_paths['gh_system_trivia_path'] in contract.outputs
-    assert len(contract.outputs) == 3
+
+    assert contract.outputs == (
+        release_paths['gh_system_ports_path'],
+        release_paths['gh_system_trivia_path'],
+        release_paths['history_summary_path'],
+        release_paths['history_audit_findings_path'],
+    )
+
+    assert not contract.missing_source
 
 
 def test_mame_contract_uses_extracted_fallback(release_paths):

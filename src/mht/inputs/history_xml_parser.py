@@ -37,6 +37,7 @@ from mht.utils.stamps import save_stamp, stage_is_fresh
 from mht.utils.stage_contracts import stage_contract
 from mht.utils.paths import (
     gh_system_ports_path, history_summary_path,
+    history_audit_findings_path,
     archives_dir, active_version,
     encodings_cache_path,
     gh_system_trivia_path,
@@ -147,6 +148,38 @@ def _attach_trivia_section_blocks(
 
 # --- Main ---------------------------------------------------------------------
 
+def write_history_audit_findings(
+    parsing_state: dict,
+    summary: dict,
+    version: str,
+    output_path: Path,
+) -> bool:
+    """Write individual History audit observations with source provenance."""
+    audit_findings = sorted(
+        parsing_state.get("audit_findings", []),
+        key=lambda item: (
+            item.get("machine", ""),
+            item.get("section", ""),
+            item.get("rule_id", ""),
+            item.get("source_text", ""),
+        ),
+    )
+
+    audit_report = {
+        "schema_id": "mht.history.audit_findings",
+        "schema_version": "1.0.0",
+        "release": version,
+        "source": "gaming_history",
+        "provenance": summary.get("provenance", {}),
+        "detectors": {
+            "gh.ports.odd_quotes": "1",
+        },
+        "findings": audit_findings,
+    }
+
+    return write_json(output_path, audit_report, sort_keys=False)
+
+
 def parse_history_entries(file_path: Path, encoding: str) -> bool:
     start = time.perf_counter()
     ver = active_version()
@@ -186,6 +219,10 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         "publisher_indicators_found": {"released_by": 0, "by": 0, "other_after_date": 0, "none": 0},
         "odd_quotes": defaultdict(list),
         "odd_brackets": defaultdict(list),
+
+        # Individual source observations for anomaly auditing
+        "audit_findings": [],
+
         "titles_found": set(),
         "region_codes": Counter(),
         "models_found": defaultdict(list),
@@ -508,6 +545,20 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         return False
     debug_log(f"Wrote parsing summary to {history_summary_path()}")
 
+    # Persist individual History audit observations.
+    if not write_history_audit_findings(
+        parsing_state,
+        summary,
+        ver,
+        history_audit_findings_path(),
+    ):
+        return False
+
+    log.info(
+        f"Wrote {history_audit_findings_path()} "
+        f"({len(parsing_state.get('audit_findings', []))} observations)"
+    )
+
     log.info(f"History parsing completed in {time.perf_counter() - start:.2f} seconds")
 
     parsing_state["total_port_lines_all"] = total_port_lines_all
@@ -527,7 +578,9 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     hs = history_summary_path()
     gh = gh_system_ports_path()
     tr = gh_system_trivia_path()
-    success = hs.exists() and gh.exists() and tr.exists()
+    audit = history_audit_findings_path()
+
+    success = all(path.exists() for path in (hs, gh, tr, audit))
     if not success:
         log.error("History outputs not found. Stamp not saved.")
         return False
@@ -558,6 +611,17 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
         except Exception:
             tmeta["records"] = None
         outputs.append(tmeta)
+
+    if audit.exists():
+        ameta = file_meta(audit)
+        try:
+            with open(audit, "r", encoding="utf-8") as f:
+                audit_doc = json.load(f)
+            findings = audit_doc.get("findings", [])
+            ameta["records"] = len(findings) if isinstance(findings, list) else None
+        except Exception:
+            ameta["records"] = None
+        outputs.append(ameta)
 
     stats = {}
     try:

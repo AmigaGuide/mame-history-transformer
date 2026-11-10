@@ -137,6 +137,9 @@ def mame_summary_path(version: Optional[str] = None) -> Path:
 def history_summary_path(version: Optional[str] = None) -> Path:
     return summaries_dir(version) / "history_parsing_summary.json"
 
+def history_audit_findings_path(version: Optional[str] = None) -> Path:
+    return summaries_dir(version) / "history_audit_findings.json"
+
 def ini_summary_path(version: Optional[str] = None) -> Path:
     return summaries_dir(version) / "ini_parsing_summary.json"
 
