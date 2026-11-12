@@ -444,6 +444,10 @@ def cmd_diff(args: argparse.Namespace) -> int:
 
     before, after = args.before, args.after
 
+    if args.json and (args.details or args.machine):
+        print("[diff] --json cannot be combined with --details or --machine.")
+        return 2
+
     if (before is None) != (after is None):
         print("[diff] Specify both releases, or neither.")
         return 2
@@ -502,6 +506,22 @@ def cmd_diff(args: argparse.Namespace) -> int:
             print(f"    After:  {entry['after']}")
 
     print(f"\nScope: {report['scope']}")
+
+    if args.details or args.machine:
+        from mht.audit.trivia_details import format_trivia_details
+
+        machines = (
+            [args.machine]
+            if args.machine
+            else list(report["trivia"]["changed_machines"])
+        )
+
+        details = format_trivia_details(before, after, machines)
+
+        print("\nDetailed GH Trivia changes:")
+        print("=" * 60)
+        print(details or "No rendered GH Trivia changes for the selection.")
+
     return 0
 
 # --------------------------------------------------------------------------------------
@@ -1181,6 +1201,16 @@ def main() -> None:
         "--json",
         action="store_true",
         help="Print the complete structured comparison as JSON",
+    )
+    s_diff.add_argument(
+        "--details",
+        action="store_true",
+        help="Show changed GH Trivia blocks rather than complete sections",
+    )
+    s_diff.add_argument(
+        "--machine",
+        metavar="MACHINE",
+        help="Show detailed GH Trivia differences for one MAME machine",
     )
     s_diff.set_defaults(func=cmd_diff)
 
