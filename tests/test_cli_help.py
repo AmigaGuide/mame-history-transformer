@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import sys
+import json
 
 import pytest
 
@@ -10,7 +11,7 @@ from mht import cli
 
 
 EXPECTED_COMMANDS = (
-    "run", "status", "validate", "preview", "fetch",
+    "diff", "run", "status", "validate", "preview", "fetch",
     "incoming", "ingest", "releases", "acquisition", "clean",
 )
 
@@ -110,3 +111,109 @@ def test_incoming_without_subcmd_prints_help_and_exits_0():
     assert "scan" in output
     assert "adopt" in output
     assert "verify" in output
+
+
+def test_diff_command_help(monkeypatch, capsys):
+    output = _help(monkeypatch, capsys, "diff")
+
+    assert "before" in output
+    assert "after" in output
+    assert "--json" in output
+
+
+def test_diff_json_has_no_active_banner(monkeypatch, capsys):
+    from mht.audit import release_diff
+
+    report = {
+        "wiki_schema": "1.2.0",
+        "counts": {"modified": 1},
+    }
+
+    monkeypatch.setattr(
+        release_diff,
+        "compare_wiki_releases",
+        lambda before, after: report,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mht", "diff", "0288", "0289", "--json"],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 0
+
+    output = capsys.readouterr().out
+    assert json.loads(output) == report
+
+
+def test_diff_defaults_to_active_and_previous_release(
+    monkeypatch, capsys
+):
+    from mht.audit import release_diff
+
+    calls = []
+
+    def fake_compare(before, after):
+        calls.append((before, after))
+        return {"counts": {"modified": 0}}
+
+    monkeypatch.setattr(
+        release_diff, "compare_wiki_releases", fake_compare
+    )
+    monkeypatch.setattr(cli, "active_version", lambda: "0289")
+    monkeypatch.setattr(
+        cli,
+        "list_release_versions",
+        lambda: ["0287", "0289", "0288"],
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["mht", "diff", "--json"]
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 0
+    assert calls == [("0288", "0289")]
+    assert json.loads(capsys.readouterr().out) == {
+        "counts": {"modified": 0}
+    }
+
+
+def test_diff_rejects_single_release(monkeypatch, capsys):
+    monkeypatch.setattr(
+        sys, "argv", ["mht", "diff", "0288"]
+    )
+    monkeypatch.setattr(
+        cli, "_print_active_banner", lambda: None
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 2
+    assert "Specify both releases" in capsys.readouterr().out
+
+
+def test_diff_reports_missing_predecessor(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "active_version", lambda: "0288")
+    monkeypatch.setattr(
+        cli,
+        "list_release_versions",
+        lambda: ["0288", "0289"],
+    )
+    monkeypatch.setattr(
+        cli, "_print_active_banner", lambda: None
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["mht", "diff"]
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 1
+    assert "No preceding MAME release" in capsys.readouterr().out

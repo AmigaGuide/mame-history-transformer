@@ -437,6 +437,70 @@ def cmd_preview(args: argparse.Namespace) -> int:
         print("\nPreview server stopped by user.")
         return 0
 
+
+def cmd_diff(args: argparse.Namespace) -> int:
+    """Compare published Wiki outputs from two MAME releases."""
+    from mht.audit.release_diff import compare_wiki_releases
+
+    before, after = args.before, args.after
+
+    if (before is None) != (after is None):
+        print("[diff] Specify both releases, or neither.")
+        return 2
+
+    if before is None:
+        after = active_version()
+
+        versions = sorted(
+            (
+                version for version in list_release_versions()
+                if version.isdigit() and int(version) < int(after)
+            ),
+            key=int,
+        )
+
+        if not versions:
+            print(f"[diff] No preceding MAME release found for {after}.")
+            return 1
+
+        before = versions[-1]
+
+    try:
+        report = compare_wiki_releases(before, after)
+    except ValueError as exc:
+        print(f"[diff] {exc}")
+        return 1
+
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0
+
+    counts = report["counts"]
+
+    print(f"MHT Wiki comparison: {before} -> {after}")
+    print("=" * 60)
+    print(f"Wiki schema:              {report['wiki_schema']}")
+    print(f"Modified records:         {counts['modified']:,}")
+    print(f"Newly published:          {counts['added']:,}")
+    print(f"No longer published:      {counts['withdrawn']:,}")
+    print(f"Unchanged records:        {counts['unchanged']:,}")
+    print(f"Affected machines:        {counts['affected_machines']:,}")
+    print(f"Page-name changes:        {counts['page_name_changes']:,}")
+
+    print("\nAffected Wiki regions:")
+    for region, count in report["affected_region_counts"].items():
+        print(f"  {region:<28} {count:,}")
+
+    if report["renamed"]:
+        print("\nPage-name changes requiring review:")
+        for entry in report["renamed"]:
+            print(f"  {entry['machine']}")
+            print(f"    Before: {entry['before']}")
+            print(f"    After:  {entry['after']}")
+
+    print(f"\nScope: {report['scope']}")
+    return 0
+
 # --------------------------------------------------------------------------------------
 # Run (delegate to your existing main.py)
 # --------------------------------------------------------------------------------------
@@ -1095,6 +1159,28 @@ def main() -> None:
     # Default: show active + help (do NOT run pipeline automatically)
     p.set_defaults(func=cmd_root, _root_parser=p)
 
+    # diff - compare two completed Wiki release datasets
+    s_diff = sub.add_parser(
+        "diff",
+        help="Compare generated Wiki content between two MAME releases",
+    )
+    s_diff.add_argument(
+        "before",
+        nargs="?",
+        help="Earlier MAME release (default: predecessor of active release)",
+    )
+    s_diff.add_argument(
+        "after",
+        nargs="?",
+        help="Later MAME release (default: active release)",
+    )
+    s_diff.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the complete structured comparison as JSON",
+    )
+    s_diff.set_defaults(func=cmd_diff)
+
     # run (explicit only)
     s_run = sub.add_parser("run", help="Run the incremental processing pipeline for the active release")
     s_run.add_argument(
@@ -1298,8 +1384,13 @@ def main() -> None:
 
     args = p.parse_args()
 
-    # Print active banner for every actual command
-    if args.func is not cmd_root and not (args.cmd == "status" and args.json):
+    # Keep machine-readable JSON output free of terminal banners.
+    machine_readable = (
+        args.cmd in ("status", "diff")
+        and getattr(args, "json", False)
+    )
+
+    if args.func is not cmd_root and not machine_readable:
         _print_active_banner()
 
     raise SystemExit(args.func(args))
