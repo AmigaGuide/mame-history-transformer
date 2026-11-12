@@ -122,7 +122,7 @@ def test_diff_command_help(monkeypatch, capsys):
 
 
 def test_diff_json_has_no_active_banner(monkeypatch, capsys):
-    from mht.audit import release_diff
+    from mht.audit import combined_diff
 
     report = {
         "wiki_schema": "1.2.0",
@@ -130,10 +130,11 @@ def test_diff_json_has_no_active_banner(monkeypatch, capsys):
     }
 
     monkeypatch.setattr(
-        release_diff,
-        "compare_wiki_releases",
+        combined_diff,
+        "compare_release_content",
         lambda before, after: report,
     )
+
     monkeypatch.setattr(
         sys,
         "argv",
@@ -152,7 +153,7 @@ def test_diff_json_has_no_active_banner(monkeypatch, capsys):
 def test_diff_defaults_to_active_and_previous_release(
     monkeypatch, capsys
 ):
-    from mht.audit import release_diff
+    from mht.audit import combined_diff
 
     calls = []
 
@@ -161,7 +162,7 @@ def test_diff_defaults_to_active_and_previous_release(
         return {"counts": {"modified": 0}}
 
     monkeypatch.setattr(
-        release_diff, "compare_wiki_releases", fake_compare
+        combined_diff, "compare_release_content", fake_compare
     )
     monkeypatch.setattr(cli, "active_version", lambda: "0289")
     monkeypatch.setattr(

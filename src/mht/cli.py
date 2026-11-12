@@ -440,7 +440,7 @@ def cmd_preview(args: argparse.Namespace) -> int:
 
 def cmd_diff(args: argparse.Namespace) -> int:
     """Compare published Wiki outputs from two MAME releases."""
-    from mht.audit.release_diff import compare_wiki_releases
+    from mht.audit.combined_diff import compare_release_content
 
     before, after = args.before, args.after
 
@@ -466,7 +466,7 @@ def cmd_diff(args: argparse.Namespace) -> int:
         before = versions[-1]
 
     try:
-        report = compare_wiki_releases(before, after)
+        report = compare_release_content(before, after)
     except ValueError as exc:
         print(f"[diff] {exc}")
         return 1
@@ -485,6 +485,9 @@ def cmd_diff(args: argparse.Namespace) -> int:
     print(f"No longer published:      {counts['withdrawn']:,}")
     print(f"Unchanged records:        {counts['unchanged']:,}")
     print(f"Affected machines:        {counts['affected_machines']:,}")
+    print(f"  Wiki-related machines:  {counts['wiki_affected_machines']:,}")
+    print(f"  Trivia-only machines:   {counts['trivia_only_machines']:,}")
+    print(f"Trivia sections changed:  {counts['changed_trivia_sections']:,}")
     print(f"Page-name changes:        {counts['page_name_changes']:,}")
 
     print("\nAffected Wiki regions:")
@@ -1162,7 +1165,7 @@ def main() -> None:
     # diff - compare two completed Wiki release datasets
     s_diff = sub.add_parser(
         "diff",
-        help="Compare generated Wiki content between two MAME releases",
+        help="Compare generated Wiki and GH Trivia content between MAME releases",
     )
     s_diff.add_argument(
         "before",
