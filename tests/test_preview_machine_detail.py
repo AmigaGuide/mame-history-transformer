@@ -90,7 +90,11 @@ def app_client(monkeypatch):
 
 def test_listing_links_to_detail_and_current_game_separately(app_client):
     page = app_client.get('/compare?before=0288&after=0289').get_data(as_text=True)
-    assert 'href="/compare/machine/xevious?before=0288&amp;after=0289"' in page
+
+    assert (
+        'href="/compare/machine/xevious?before=0288&amp;after=0289'
+        '&amp;q=&amp;status=all&amp;change=all&amp;page=1"'
+    ) in page
     assert 'href="/game/xevious"' in page
 
 

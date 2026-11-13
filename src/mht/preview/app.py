@@ -236,6 +236,13 @@ def create_app(
 
     @app.route("/compare/machine/<machine>")
     def comparison_machine(machine: str) -> str:
+        # Preserve the caller's optional affected-machine browsing state.
+        # Invalid values remain harmless query text; the list selector normalises them.
+        browse_params = {
+            key: request.args[key]
+            for key in ("q", "status", "change", "page")
+            if key in request.args
+        }
         # Use exactly the same availability, ordering and schema checks as /compare.
         before = request.args.get("before")
         after = request.args.get("after")
@@ -246,6 +253,7 @@ def create_app(
             return render_template(
                 "machine_detail.html", machine=machine, before=before, after=after,
                 detail=None, error=context["error"], preview_available=False,
+                browse_params=browse_params,
             )
         if machine not in context["affected_records"]:
             abort(404)
@@ -262,6 +270,7 @@ def create_app(
             "machine_detail.html", machine=machine, before=context["before"],
             after=context["after"], detail=detail, error=error,
             preview_available=machine in preview_data.machine_order,
+            browse_params=browse_params,
         )
 
     @app.route("/catalogue")

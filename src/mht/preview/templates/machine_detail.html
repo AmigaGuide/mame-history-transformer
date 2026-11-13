@@ -2,14 +2,14 @@
 {% block title %}{{ machine }} - Release comparison - MHT Preview{% endblock %}
 {% block nav_left %}
   <a href="{{ url_for('home') }}">Home</a>
-  &nbsp;|&nbsp; <a href="{{ url_for('release_comparison', before=before, after=after) }}">Release comparison</a>
+  &nbsp;|&nbsp; <a href="{{ url_for('release_comparison', before=before, after=after, **browse_params) ~ '#affected-machines' }}">Release comparison</a>
   &nbsp;|&nbsp; <strong>{{ machine }}</strong>
 {% endblock nav_left %}
 {% block content %}
 <h1>Changes to {{ machine }}</h1>
 <p class="lead">Comparison {{ before }} to {{ after }} - generated ExoticA Wiki and rendered Gaming History Trivia.</p>
 <p class="muted">This report is read-only. A change does not necessarily indicate an improvement, regression or error. Published Wiki records are not the same as MAME's machine inventory.</p>
-<p><a href="{{ url_for('release_comparison', before=before, after=after) }}">Back to comparison overview</a>
+<p><a href="{{ url_for('release_comparison', before=before, after=after, **browse_params) ~ '#affected-machines' }}">Back to comparison overview</a>
 {% if preview_available %} | <a href="{{ url_for('game', machine=machine) }}">View active-release game page</a>{% endif %}</p>
 {% if error %}
 <section class="summary-block"><p role="alert">{{ error }}</p></section>

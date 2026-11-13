@@ -47,7 +47,7 @@
       {% if report.counts[key] is not none %}<tr><td>{{ label }}</td><td>{{ report.counts[key] }}</td></tr>{% endif %}
     {% endfor %}
   </tbody></table>
-  <p class="muted">Counts describe generated content changes. Machines are matched by MAME shortname, with overlapping Wiki and Trivia changes counted once.</p>
+  <p class="muted">Counts describe generated content changes. Machines are matched by MAME shortname, with overlapping Wiki and Trivia changes counted once. <a href="#affected-machines">Jump to affected machines</a>.</p>
 </section>
 <section class="summary-block" style="margin-top:1rem;">
   <h2>Page-name changes</h2>
@@ -67,7 +67,7 @@
     </tbody></table>
   {% else %}<p class="muted">No affected regions recorded.</p>{% endif %}
 </section>
-<section class="summary-block" style="margin-top:1rem;">
+<section id="affected-machines" class="summary-block" style="margin-top:1rem;">
   <h2>Affected machines</h2>
   <p class="muted">Browse the distinct machines reported by the comparison. A publication withdrawal does not necessarily mean the machine was removed from MAME. Game links refer to the active Preview release, which may differ from the selected later release.</p>
   <form method="get" action="{{ url_for('release_comparison') }}" class="catalogue-controls">
@@ -101,7 +101,7 @@
           {% for row in browsing.rows %}
           <tr>
             <td>
-              <a href="{{ url_for('comparison_machine', machine=row.machine, before=before, after=after) }}">{{ row.machine }}</a>
+              <a href="{{ url_for('comparison_machine', machine=row.machine, before=before, after=after, q=browsing.query, status=browsing.status, change=browsing.change, page=browsing.page) }}">{{ row.machine }}</a>
               {% if row.preview_available %}<div class="muted"><a href="{{ url_for('game', machine=row.machine) }}">Current game page</a></div>{% endif %}
             </td>
             <td>
