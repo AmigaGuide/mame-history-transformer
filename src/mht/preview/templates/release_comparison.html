@@ -67,5 +67,74 @@
     </tbody></table>
   {% else %}<p class="muted">No affected regions recorded.</p>{% endif %}
 </section>
+<section class="summary-block" style="margin-top:1rem;">
+  <h2>Affected machines</h2>
+  <p class="muted">Browse the distinct machines reported by the comparison. A publication withdrawal does not necessarily mean the machine was removed from MAME. Game links refer to the active Preview release, which may differ from the selected later release.</p>
+  <form method="get" action="{{ url_for('release_comparison') }}" class="catalogue-controls">
+    <input type="hidden" name="before" value="{{ before }}">
+    <input type="hidden" name="after" value="{{ after }}">
+    <label>MAME shortname or page name
+      <input type="search" name="q" value="{{ browsing.query }}" placeholder="Search affected machines">
+    </label>
+    <label>Publication / page status
+      <select name="status">
+        {% for value, name in [('all', 'All'), ('added', 'Newly published'), ('withdrawn', 'No longer published'), ('modified', 'Continuing'), ('renamed', 'Page name changed')] %}
+          <option value="{{ value }}"{% if browsing.status == value %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Change type
+      <select name="change">
+        {% for value, name in [('all', 'All'), ('wiki', 'Wiki related'), ('trivia', 'Trivia'), ('both', 'Wiki and Trivia'), ('trivia-only', 'Trivia only')] %}
+          <option value="{{ value }}"{% if browsing.change == value %} selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Apply filters</button>
+  </form>
+  <p class="muted">{{ browsing.total }} matching machine{{ '' if browsing.total == 1 else 's' }}. Page {{ browsing.page }} of {{ browsing.page_count }}. Up to {{ browsing.page_size }} machines per page.</p>
+  {% if browsing.rows %}
+    <div class="search-results">
+      <table>
+        <thead><tr><th>MAME shortname</th><th>Publication</th><th>Changed Wiki regions</th><th>Changed Trivia sections</th><th>Page identity</th></tr></thead>
+        <tbody>
+          {% for row in browsing.rows %}
+          <tr>
+            <td>
+              {% if row.preview_available %}<a href="{{ url_for('game', machine=row.machine) }}">{{ row.machine }}</a>
+              {% else %}{{ row.machine }}{% endif %}
+            </td>
+            <td>
+              {% if row.status == 'added' %}Newly published
+              {% elif row.status == 'withdrawn' %}No longer published
+              {% else %}Continuing{% endif %}
+              {% if row.renamed %}<div class="muted">Page renamed</div>{% endif %}
+            </td>
+            <td>{{ row.wiki_regions|join(', ') if row.wiki_regions else ('Publication changed' if row.status != 'modified' else 'None recorded') }}</td>
+            <td>{{ row.trivia_sections|join(', ') if row.trivia_sections else 'None recorded' }}</td>
+            <td>
+              {% if row.renamed %}<span class="muted">Before:</span> {{ row.page_before }}<div><span class="muted">After:</span> {{ row.page_after }}</div>
+              {% else %}{{ row.page_after or row.page_before or 'Not recorded' }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No affected machines match these filters.</p>
+  {% endif %}
+  {% if browsing.page_count > 1 %}
+  <nav class="catalogue-pages" aria-label="Affected machines pages">
+    {% if browsing.page > 1 %}
+      <a href="{{ url_for('release_comparison', before=before, after=after, q=browsing.query, status=browsing.status, change=browsing.change, page=browsing.page - 1) }}">Previous page</a>
+    {% endif %}
+    <span>Page {{ browsing.page }} of {{ browsing.page_count }}</span>
+    {% if browsing.page < browsing.page_count %}
+      <a href="{{ url_for('release_comparison', before=before, after=after, q=browsing.query, status=browsing.status, change=browsing.change, page=browsing.page + 1) }}">Next page</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+</section>
 {% endif %}
 {% endblock content %}

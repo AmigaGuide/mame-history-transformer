@@ -26,6 +26,7 @@ from .preview_data import JsonDict, PreviewData
 from .provenance import build_source_provenance
 from .catalogue import select_catalogue_page
 from .release_comparison import overview_context
+from .affected_browsing import select_affected_machines
 from .summary_contexts import (
     prep_history_summary_page_context,
     prep_ini_summary_page_context,
@@ -221,6 +222,15 @@ def create_app(
             after=request.args.get("after"),
             selected=selected,
         )
+        if context["report"] is not None:
+            context["browsing"] = select_affected_machines(
+                context["affected_records"],
+                preview_machines=preview_data.machine_order,
+                query=request.args.get("q", ""),
+                status=request.args.get("status", "all"),
+                change=request.args.get("change", "all"),
+                page=request.args.get("page", "1"),
+            )
         return render_template("release_comparison.html", **context)
 
     @app.route("/catalogue")
