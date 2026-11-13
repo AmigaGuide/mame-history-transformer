@@ -101,8 +101,8 @@
           {% for row in browsing.rows %}
           <tr>
             <td>
-              {% if row.preview_available %}<a href="{{ url_for('game', machine=row.machine) }}">{{ row.machine }}</a>
-              {% else %}{{ row.machine }}{% endif %}
+              <a href="{{ url_for('comparison_machine', machine=row.machine, before=before, after=after) }}">{{ row.machine }}</a>
+              {% if row.preview_available %}<div class="muted"><a href="{{ url_for('game', machine=row.machine) }}">Current game page</a></div>{% endif %}
             </td>
             <td>
               {% if row.status == 'added' %}Newly published

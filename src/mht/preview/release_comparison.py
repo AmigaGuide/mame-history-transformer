@@ -51,7 +51,7 @@ def overview_context(*, active_release: str, before: str | None,
 
     context = {"available": available, "before": before, "after": after,
                "report": None, "error": None, "renamed": [], "renamed_total": 0,
-               "regions": {"rows": [], "total": 0}, "affected_records": {}}
+               "regions": {"rows": [], "total": 0}, "affected_records": {}, "modified_records": {}}
     if not available or len(available) < 2:
         context["error"] = "At least two complete release datasets are required for comparison."
         return context
@@ -90,4 +90,5 @@ def overview_context(*, active_release: str, before: str | None,
     context["regions"] = _top_regions(report.get("affected_region_counts"))
     # Preserve comparator records for the independent read-only browsing selector.
     context["affected_records"] = report.get("affected") if isinstance(report.get("affected"), dict) else {}
+    context["modified_records"] = report.get("modified") if isinstance(report.get("modified"), dict) else {}
     return context

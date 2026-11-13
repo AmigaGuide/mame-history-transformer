@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ machine }} - Release comparison - MHT Preview{% endblock %}
+{% block nav_left %}
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp; <a href="{{ url_for('release_comparison', before=before, after=after) }}">Release comparison</a>
+  &nbsp;|&nbsp; <strong>{{ machine }}</strong>
+{% endblock nav_left %}
+{% block content %}
+<h1>Changes to {{ machine }}</h1>
+<p class="lead">Comparison {{ before }} to {{ after }} - generated ExoticA Wiki and rendered Gaming History Trivia.</p>
+<p class="muted">This report is read-only. A change does not necessarily indicate an improvement, regression or error. Published Wiki records are not the same as MAME's machine inventory.</p>
+<p><a href="{{ url_for('release_comparison', before=before, after=after) }}">Back to comparison overview</a>
+{% if preview_available %} | <a href="{{ url_for('game', machine=machine) }}">View active-release game page</a>{% endif %}</p>
+{% if error %}
+<section class="summary-block"><p role="alert">{{ error }}</p></section>
+{% elif detail %}
+<section class="summary-block">
+  <h2>Publication and page identity</h2>
+  <p><strong>Publication:</strong>
+  {% if detail.status == 'added' %}Newly published in {{ after }}
+  {% elif detail.status == 'withdrawn' %}No longer published in {{ after }}
+  {% else %}Published in both releases{% endif %}</p>
+  {% if detail.renamed %}<p><strong>Page name changed</strong></p>{% endif %}
+  <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.5rem; margin:1rem 0;">
+    <div style="min-width:0; overflow-wrap:anywhere;">
+      <strong>Earlier release ({{ before }})</strong>
+      <p>{{ detail.page_before or 'Not published' }}</p>
+    </div>
+    <div style="min-width:0; overflow-wrap:anywhere;">
+      <strong>Later release ({{ after }})</strong>
+      <p>{{ detail.page_after or 'Not published' }}</p>
+    </div>
+  </div>
+  {% if detail.status != 'modified' %}
+    <p class="muted">This is a publication addition or withdrawal, not a field-by-field modification of a continuing published page.</p>
+  {% endif %}
+</section>
+<section class="summary-block" style="margin-top:1rem;">
+  <h2>Recorded changes</h2>
+  <p><strong>Wiki regions:</strong> {{ detail.wiki_regions|join(', ') if detail.wiki_regions else ('Publication changed' if detail.status != 'modified' else 'None recorded') }}</p>
+  <p><strong>Gaming History Trivia sections:</strong> {{ detail.trivia_sections|join(', ') if detail.trivia_sections else 'None recorded' }}</p>
+</section>
+{% if detail.fields %}
+<section class="summary-block" style="margin-top:1rem;">
+  <h2>Changed Wiki fields</h2>
+  <p class="muted">Only fields identified by the existing comparison engine are shown. Large values are shortened for readability; the generated release JSON files contain the full values.</p>
+  {% for field in detail.fields %}
+  <details style="margin:0.75rem 0;">
+    <summary><strong>{{ field.name }}</strong></summary>
+    <div class="search-results" style="margin:0.5rem 0;">
+      <table><thead><tr><th>{{ before }} - before</th><th>{{ after }} - after</th></tr></thead>
+        <tbody><tr>
+          <td style="width:50%;vertical-align:top;"><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-width:50vw;">{{ field.before }}</pre></td>
+          <td style="width:50%;vertical-align:top;"><pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-width:50vw;">{{ field.after }}</pre></td>
+        </tr></tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+{% if detail.trivia_text %}
+<section class="summary-block" style="margin-top:1rem;">
+  <h2>Gaming History Trivia differences</h2>
+  <p class="muted">Changed rendered blocks, using the existing CLI diagnostic comparison. A section removal is a recorded source/content change, not automatically an error.</p>
+  <pre style="white-space:pre-wrap;overflow-wrap:anywhere;">{{ detail.trivia_text }}</pre>
+</section>
+{% endif %}
+{% endif %}
+{% endblock content %}

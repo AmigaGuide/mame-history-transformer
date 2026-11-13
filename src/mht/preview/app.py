@@ -27,6 +27,7 @@ from .provenance import build_source_provenance
 from .catalogue import select_catalogue_page
 from .release_comparison import overview_context
 from .affected_browsing import select_affected_machines
+from .machine_detail import build_machine_detail
 from .summary_contexts import (
     prep_history_summary_page_context,
     prep_ini_summary_page_context,
@@ -232,6 +233,36 @@ def create_app(
                 page=request.args.get("page", "1"),
             )
         return render_template("release_comparison.html", **context)
+
+    @app.route("/compare/machine/<machine>")
+    def comparison_machine(machine: str) -> str:
+        # Use exactly the same availability, ordering and schema checks as /compare.
+        before = request.args.get("before")
+        after = request.args.get("after")
+        context = overview_context(
+            active_release=version, before=before, after=after, selected=True,
+        )
+        if context["report"] is None:
+            return render_template(
+                "machine_detail.html", machine=machine, before=before, after=after,
+                detail=None, error=context["error"], preview_available=False,
+            )
+        if machine not in context["affected_records"]:
+            abort(404)
+        try:
+            detail = build_machine_detail(
+                before=context["before"], after=context["after"], machine=machine,
+                affected=context["affected_records"], modified=context["modified_records"],
+            )
+            error = None
+        except (ValueError, OSError, KeyError) as exc:
+            detail = None
+            error = str(exc)
+        return render_template(
+            "machine_detail.html", machine=machine, before=context["before"],
+            after=context["after"], detail=detail, error=error,
+            preview_available=machine in preview_data.machine_order,
+        )
 
     @app.route("/catalogue")
     def catalogue() -> str:
