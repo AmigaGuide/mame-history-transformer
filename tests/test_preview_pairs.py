@@ -42,6 +42,11 @@ def app():
         endpoint="diagnostics",
         view_func=lambda: "",
     )
+    app.add_url_rule(
+        "/compare",
+        endpoint="release_comparison",
+        view_func=lambda: "",
+    )
 
     return app
 

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Release comparison - MHT Preview{% endblock %}
+{% block nav_left %}
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp; <strong>Release comparison</strong>
+{% endblock nav_left %}
+{% block content %}
+<h1>Release comparison</h1>
+<p class="lead">Compare generated ExoticA Wiki records, page names and rendered Gaming History Trivia between two completed MAME releases.</p>
+<p class="muted">Read-only comparison of generated datasets. A reported change is not automatically an improvement, regression or error. No live ExoticA Wiki pages are inspected or modified.</p>
+<section class="summary-block">
+  <h2>Select releases</h2>
+  <form method="get" action="{{ url_for('release_comparison') }}" class="catalogue-controls">
+    <label>Earlier release
+      <select name="before" required>
+      {% for release in available %}
+        <option value="{{ release }}"{% if release == before %} selected{% endif %}>{{ release }}</option>
+      {% endfor %}
+      </select>
+    </label>
+    <label>Later release
+      <select name="after" required>
+      {% for release in available %}
+        <option value="{{ release }}"{% if release == after %} selected{% endif %}>{{ release }}</option>
+      {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Compare releases</button>
+  </form>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+</section>
+{% if report %}
+<section class="summary-block" style="margin-top:1rem;">
+  <h2>Comparison {{ before }} to {{ after }}</h2>
+  <div class="home-metrics">
+    <div><strong>{{ report.counts.affected_machines if report.counts.affected_machines is not none else 'Not recorded' }}</strong><span>Distinct affected machines</span></div>
+    <div><strong>{{ report.counts.modified if report.counts.modified is not none else 'Not recorded' }}</strong><span>Modified Wiki records</span></div>
+    <div><strong>{{ report.counts.trivia_changed_machines if report.counts.trivia_changed_machines is not none else 'Not recorded' }}</strong><span>Machines with changed Trivia</span></div>
+  </div>
+  <table class="search-results"><thead><tr><th>Measurement</th><th>Count</th></tr></thead><tbody>
+    {% for key, label in [
+      ('added', 'Newly published'), ('withdrawn', 'No longer published'),
+      ('unchanged', 'Unchanged Wiki records'), ('wiki_affected_machines', 'Wiki-related affected machines'),
+      ('changed_in_both', 'Affected in both comparisons'), ('trivia_only_machines', 'Trivia-only affected machines'),
+      ('changed_trivia_sections', 'Changed Trivia sections'), ('page_name_changes', 'Wiki page-name changes')
+    ] %}
+      {% if report.counts[key] is not none %}<tr><td>{{ label }}</td><td>{{ report.counts[key] }}</td></tr>{% endif %}
+    {% endfor %}
+  </tbody></table>
+  <p class="muted">Counts describe generated content changes. Machines are matched by MAME shortname, with overlapping Wiki and Trivia changes counted once.</p>
+</section>
+<section class="summary-block" style="margin-top:1rem;">
+  <h2>Page-name changes</h2>
+  {% if renamed %}
+    <p class="muted">Showing {{ renamed|length }} of {{ renamed_total }} renamed pages. Page names may warrant separate Wiki review.</p>
+    <table class="search-results"><thead><tr><th>MAME shortname</th><th>Before</th><th>After</th></tr></thead><tbody>
+      {% for row in renamed %}<tr><td>{{ row.machine }}</td><td>{{ row.before }}</td><td>{{ row.after }}</td></tr>{% endfor %}
+    </tbody></table>
+  {% else %}<p class="muted">No page-name changes reported.</p>{% endif %}
+</section>
+<section class="summary-block" style="margin-top:1rem;">
+  <h2>Affected Wiki regions and Trivia sections</h2>
+  {% if regions.rows %}
+    <p class="muted">Showing {{ regions.rows|length }} of {{ regions.total }} region categories. These counts can overlap across regions.</p>
+    <table class="search-results"><thead><tr><th>Region</th><th>Affected records or sections</th></tr></thead><tbody>
+      {% for row in regions.rows %}<tr><td>{{ row.name }}</td><td>{{ row.count }}</td></tr>{% endfor %}
+    </tbody></table>
+  {% else %}<p class="muted">No affected regions recorded.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock content %}

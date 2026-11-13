@@ -25,6 +25,7 @@ from .overview import (
 from .preview_data import JsonDict, PreviewData
 from .provenance import build_source_provenance
 from .catalogue import select_catalogue_page
+from .release_comparison import overview_context
 from .summary_contexts import (
     prep_history_summary_page_context,
     prep_ini_summary_page_context,
@@ -210,6 +211,17 @@ def create_app(
             version=version,
             diagnostic_groups=build_diagnostic_groups(preview_data),
         )
+
+    @app.route("/compare")
+    def release_comparison() -> str:
+        selected = "before" in request.args or "after" in request.args
+        context = overview_context(
+            active_release=version,
+            before=request.args.get("before"),
+            after=request.args.get("after"),
+            selected=selected,
+        )
+        return render_template("release_comparison.html", **context)
 
     @app.route("/catalogue")
     def catalogue() -> str:
