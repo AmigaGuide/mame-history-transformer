@@ -122,3 +122,55 @@ def check_gh_revision(release: str | None = None, *, timeout: float = 15.0,
         status = "local_newer"
     return {"release": target, "staged": local, "advertised": advertised,
             "status": status, "source": GH_DOWNLOAD_PAGE}
+
+def download_advertised_gh_revision(
+    release: str | None = None, *,
+    yes: bool = False,
+    destination_dir: Path | None = None,
+    checker=None,
+    downloader=None,
+    expected_filename: str | None = None,
+) -> dict:
+    """Acquire an advertised GH revision, but do not ingest or parse it.
+
+    A current-release advertisement is required; an advertisement for a
+    newer MAME release is not evidence about the requested older release.
+    The existing verified-download path checks embedded metadata and ZIP
+    integrity, and creates matching pending acquisition provenance.
+    """
+    from mht.provenance import fetch
+
+    check = checker if checker is not None else check_gh_revision
+    report = check(release)
+    status = report["status"]
+    target = report["release"]
+    if status not in ("update_available", "not_staged"):
+        return {"ok": True, "action": "skipped", "reason": status, "release": target}
+
+    advertised = report["advertised"]
+    if advertised["release"] != target:
+        return {"ok": False, "action": "blocked", "reason": "release_mismatch", "release": target}
+    name = advertised["filename"]
+    expected = f"history{int(target)}{advertised['revision']}.zip"
+    if name != expected or not _FILENAME_RE.fullmatch(name):
+        return {"ok": False, "action": "blocked", "reason": "unexpected_filename", "release": target}
+
+    if expected_filename is not None and name != expected_filename:
+        return {"ok": False, "action": "blocked", "reason": "advertisement_changed", "release": target}
+
+    url = f"https://www.arcade-history.com/dats/{name}"
+    destination = (Path(destination_dir) if destination_dir is not None else fetch.INCOMING_DIR) / name
+    if not yes:
+        return {"ok": True, "action": "planned", "release": target,
+                "filename": name, "url": url, "path": destination.as_posix()}
+
+    download = downloader if downloader is not None else fetch.gh_download
+    result = download(url, destination, overwrite=False)
+    if not result.get("ok"):
+        return {"ok": False, "action": "error", "release": target, "filename": name,
+                "reason": result.get("reason", "download_failed"),
+                "error": result.get("error", "Download or verification failed"),
+                "path": destination.as_posix()}
+    return {"ok": True, "action": "downloaded" if result.get("reason") != "exists" else "existing",
+            "release": target, "filename": name, "url": url,
+            "path": destination.as_posix(), "sha256": result.get("sha256")}

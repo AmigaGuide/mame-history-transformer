@@ -1143,6 +1143,53 @@ def cmd_fetch_gh_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch_gh_download(args: argparse.Namespace) -> int:
+    """Download only the official advertised GH revision to incoming/."""
+    from mht.provenance.gh_revisions import download_advertised_gh_revision
+
+    try:
+        planned = download_advertised_gh_revision(args.version, yes=False)
+    except (ValueError, OSError, __import__("requests").RequestException) as exc:
+        print(f"[fetch gh-download] Discovery failed: {exc}")
+        return 1
+
+    if planned["action"] == "skipped":
+        print(f"No GH download required ({planned['reason']}).")
+        return 0
+    if planned["action"] != "planned":
+        print(f"GH download blocked: {planned.get('reason', 'unknown reason')}")
+        return 1
+
+    print(f"MAME release: {planned['release']}")
+    print(f"GH archive:   {planned['filename']}")
+    print(f"Source:       {planned['url']}")
+    print(f"Destination:  {planned['path']}")
+    if not args.yes:
+        answer = input("Download this verified GH archive into incoming/? [y/N] ").strip().lower()
+        if answer not in ("y", "yes"):
+            print("Aborted. No files downloaded.")
+            return 1
+
+    # A fresh discovery occurs before acting, so changes in the advertised
+    # release cannot cause an unverified older/newer archive to be selected.
+    try:
+        result = download_advertised_gh_revision(
+            args.version, yes=True, expected_filename=planned["filename"]
+        )
+    except (ValueError, OSError, __import__("requests").RequestException) as exc:
+        print(f"[fetch gh-download] Unable to acquire GH archive: {exc}")
+        return 1
+
+    if not result["ok"]:
+        print(f"GH acquisition failed: {result.get('error', result.get('reason'))}")
+        return 1
+    print(f"Result: {result['action']}")
+    if result.get("path"):
+        print(f"Path:   {result['path']}")
+    print("No ingestion, parser execution or release output changes performed.")
+    return 0
+
+
 def cmd_fetch_download(args: argparse.Namespace) -> int:
     from mht.provenance.fetch import probe_latest, perform_downloads
 
@@ -1297,6 +1344,13 @@ def main() -> None:
     s_fetch_gh_check.add_argument("--version", "-v", help="MHT release (default: active)")
     s_fetch_gh_check.add_argument("--json", action="store_true", help="Output read-only report as JSON")
     s_fetch_gh_check.set_defaults(func=cmd_fetch_gh_check)
+
+    s_fetch_gh_dl = s_fetch_sub.add_parser(
+        "gh-download", help="Verify and download an advertised GH revision to incoming (no ingest)"
+    )
+    s_fetch_gh_dl.add_argument("--version", "-v", help="MHT release (default: active)")
+    s_fetch_gh_dl.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+    s_fetch_gh_dl.set_defaults(func=cmd_fetch_gh_download)
 
     s_fetch_dl = s_fetch_sub.add_parser("download", help="Download latest MAME+GH pair into data/incoming")
     s_fetch_dl.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
