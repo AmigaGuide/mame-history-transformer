@@ -15,6 +15,7 @@ from mht.utils.stage_contracts import StageContract, stage_contract
 from mht.utils.stamps import stage_is_fresh
 from mht.utils.snaps import find_snaps_archive
 from mht.provenance.gh_archive_selection import select_history_archive
+from mht.utils.gh_encoding_guard import check_gh_encoding_cache
 
 STAGES = ("ini", "mame", "history", "transform")
 
@@ -143,10 +144,24 @@ def run_selected(stage: str, *, force: bool = False) -> int:
     encodings = {}
     if stage != "transform":
         try:
+            # Do not run GH stages using a cache from a superseded revision.
+            # Preflight happens before --force can remove an existing stamp.
+            if stage in ("ini", "history"):
+                # The contract already resolved the authoritative GH source.
+                # Reuse it, rather than discovering a potentially different
+                # archive or bypassing the stage contract in isolated tests.
+                source = contract.inputs[0] if not contract.missing_source else None
+                if source is None or not source.is_file():
+                    raise ValueError("No staged Gaming History archive")
+                # Both paths are resolved by the same stage contract.
+                check_gh_encoding_cache(
+                    version, source, stage, cache_path=contract.inputs[1]
+                )
             encodings = _load_encodings(version, stage)
         except ValueError as exc:
             print(f"[run] {exc}")
-            print("[run] Run the full pipeline to prepare the release first.")
+            print("[run] No stage outputs or stamps were changed.")
+            print("[run] Refresh encoding provenance before running this stage.")
             return 1
 
     # Force is explicit: remove only this stage's stamp after validating inputs.

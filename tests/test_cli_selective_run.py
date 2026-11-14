@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
+from zipfile import ZipFile
 
 import pytest
 
@@ -14,9 +16,19 @@ from mht.utils import paths
 
 def _setup(monkeypatch, tmp_path, stage="history"):
     archive = tmp_path / "history.zip"
-    archive.write_bytes(b"history")
+    with ZipFile(archive, "w") as zf:
+        zf.writestr("history.xml", b'<history version="2.89"/>')
+    with ZipFile(archive) as zf:
+        member = zf.getinfo("history.xml")
+        record = {
+            "encoding": "utf-8",
+            "zip_archive": archive.name,
+            "zip_member": member.filename,
+            "zip_crc32": member.CRC,
+            "zip_size_bytes": member.file_size,
+        }
     cache = tmp_path / "encodings.json"
-    cache.write_text('{"history.xml":{"encoding":"utf-8"},"mame.xml":{"encoding":"utf-8"}}', encoding="utf-8")
+    cache.write_text(json.dumps({"history.xml": record, "mame.xml": {"encoding": "utf-8"}}), encoding="utf-8")
     output = tmp_path / "output.json"
     output.write_text("{}", encoding="utf-8")
     stamps = tmp_path / "stamps"
