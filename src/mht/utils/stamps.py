@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 from mht.utils.versions import tool_version
 from mht.utils.paths import stamps_dir as resolve_stamps_dir
+from mht.utils.encoding_stamp import semantic_cache_signature, legacy_stage_compatible
 
 # Canonical dump (used for digest)
 def _canon(obj: Any) -> str:
@@ -75,6 +76,7 @@ def make_stamp(
     *,
     extra: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    inputs = list(inputs)
     inputs_list = file_signatures(inputs)
     payload = {
         "schema_id": "mht.stage.stamp",
@@ -92,6 +94,12 @@ def make_stamp(
         {"path": it["path"], "size": it["size"], "mtime_ns": it["mtime_ns"]}
         for it in inputs_list
     ]
+    # Parsing stages depend only on their own encoding records, not on the
+    # modification time of the shared encodings.json file.
+    for index, (input_path, signature) in enumerate(zip(inputs, minimal_inputs)):
+        semantic = semantic_cache_signature(schema_id, Path(input_path))
+        if semantic is not None:
+            minimal_inputs[index] = {"path": signature["path"], "encoding_dependency": semantic}
     digest_basis = {
         "stage_id": payload["stage_id"],
         "tool_version": payload["tool_version"],
@@ -141,14 +149,21 @@ def stage_is_fresh(
 
     stamp_path = base / stamp_filename
 
+    input_paths = list(inputs)
     current = make_stamp(
         schema_id=schema_id,
         tool_version=tool_version(tool),
-        inputs=list(inputs),
+        inputs=input_paths,
     )
 
     previous = load_stamp(stamp_path)
     fresh = is_fresh(current, previous)
+    if not fresh and previous:
+        fresh = legacy_stage_compatible(previous, current, input_paths)
+    # Corrupt or missing metadata must never qualify as fresh, even when a
+    # previous stamp also happened to contain an invalid-cache sentinel.
+    if any(semantic_cache_signature(schema_id, p) == "invalid-cache" for p in input_paths):
+        fresh = False
 
     if fresh and outputs is not None:
         fresh = all(
