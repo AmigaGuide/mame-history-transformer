@@ -53,6 +53,7 @@ from mht.utils.logger import setup_logger, debug_log
 from mht.inputs.mame_parser import parse_mame_xml
 from mht.inputs.history_xml_parser import parse_history_entries
 from mht.inputs.history_ini_parser import parse_history_inis
+from mht.provenance.gh_archive_selection import select_history_archive
 from mht.transform.pipeline import run_transformer
 from mht.utils.paths import (
     # release resolution + dirs
@@ -194,14 +195,7 @@ def _find_history_archive_for_manifest(version: Optional[str]) -> Optional[Path]
             version = active_version()
         except Exception:
             return None
-    adir = archives_dir(version)
-    if not adir.exists():
-        return None
-    # Prefer obvious history zips, else any zip
-    for pat in ("history*.zip", "*.zip"):
-        for zp in adir.glob(pat):
-            return zp
-    return None
+    return select_history_archive(version)
 
 def _find_mame_archive_for_manifest(version: Optional[str]) -> Optional[Path]:
     """Return a representative MAME ZIP in releases/<ver>/archives to show in the manifest."""
@@ -301,6 +295,9 @@ def check_required_files() -> Optional[List[Path]]:
                     mame_zip = p
                 if ("history" in low) and (hist_zip is None):
                     hist_zip = p
+
+    # Resolve GH once, independently of filesystem iteration order.
+    hist_zip = select_history_archive(ver) if ver is not None else None
 
     found: list[Path] = []
     if mame_zip and hist_zip:
@@ -707,26 +704,17 @@ def main() -> int:
 
     # Build a stable "input" meta for the history stage
     try:
-        if history_xml.exists():
-            history_input_meta = _file_meta(history_xml)
+        # History is ZIP-only; do not report an old extracted XML as its input.
+        try:
+            ver = active_version()
+        except Exception:
+            ver = None
+        zp = select_history_archive(ver) if ver else None
+        if zp:
+            history_input_meta = _file_meta(zp)
+            history_input_meta["note"] = "streamed XML from ZIP (no extracted history.xml)"
         else:
-            try:
-                ver = active_version()
-            except Exception:
-                ver = None
-            zp = None
-            if ver:
-                adir = archives_dir(ver)
-                if adir.exists():
-                    for cand in sorted(adir.glob("history*.zip")):
-                        if cand.exists():
-                            zp = cand
-                            break
-            if zp:
-                history_input_meta = _file_meta(zp)
-                history_input_meta["note"] = "streamed XML from ZIP (no extracted history.xml)"
-            else:
-                history_input_meta = {"path": str(history_xml), "missing": True}
+            history_input_meta = {"path": str(history_xml), "missing": True}
     except Exception:
         history_input_meta = {"path": str(history_xml), "missing": True}
 

@@ -73,19 +73,15 @@ __all__ = [
 ]
 
 
+from mht.provenance.gh_archive_selection import select_history_archive
+
 # --- ZIP-only helpers ---------------------------------------------------------
 
 def _pick_history_zip(version: str) -> Path:
-    """Return the preferred History ZIP for this release, or raise FileNotFoundError."""
-    arc_dir = archives_dir(version)
-    if not arc_dir.exists():
-        raise FileNotFoundError(f"Archives folder missing: {arc_dir.as_posix()}")
-    # Prefer files with 'history' in the name; else any .zip
-    zips = sorted([p for p in arc_dir.iterdir() if p.suffix.lower() == ".zip"], key=lambda p: p.name.lower())
-    hist = [p for p in zips if "history" in p.name.lower()] or zips
-    if not hist:
-        raise FileNotFoundError(f"No .zip files found under {arc_dir.as_posix()}")
-    return hist[0]
+    source = select_history_archive(version)
+    if source is None:
+        raise FileNotFoundError(f"No recognised Gaming History ZIP for {version} in {archives_dir(version)}")
+    return source
 
 
 def _enc_for_ini_basename(encodings: Dict[str, str], basename: str) -> str:

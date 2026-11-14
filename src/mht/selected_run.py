@@ -14,6 +14,7 @@ from mht.utils import paths
 from mht.utils.stage_contracts import StageContract, stage_contract
 from mht.utils.stamps import stage_is_fresh
 from mht.utils.snaps import find_snaps_archive
+from mht.provenance.gh_archive_selection import select_history_archive
 
 STAGES = ("ini", "mame", "history", "transform")
 
@@ -28,7 +29,7 @@ def _preferred_zip(version: str, token: str) -> Path | None:
 
 def _contract(stage: str, version: str) -> StageContract:
     if stage in ("ini", "history"):
-        return stage_contract(stage, version, source=_preferred_zip(version, "history"))
+        return stage_contract(stage, version, source=select_history_archive(version))
     if stage == "mame":
         return stage_contract(stage, version, source=_preferred_zip(version, "mame"))
     if stage == "transform":

@@ -75,17 +75,15 @@ _ALLOWED_BLOCK_KEYS_BY_TYPE = {
     # if you emit other types later, add them here
 }
 
+from mht.provenance.gh_archive_selection import select_history_archive
+
 # --- ZIP-only helpers ---------------------------------------------------------
 
 def _pick_history_zip(version: str) -> Path:
-    arc_dir = archives_dir(version)
-    if not arc_dir.exists():
-        raise FileNotFoundError(f"Archives folder missing: {arc_dir.as_posix()}")
-    zips = sorted(arc_dir.glob("*.zip"), key=lambda p: p.name.lower())
-    if not zips:
-        raise FileNotFoundError(f"No .zip files found under {arc_dir.as_posix()}")
-    prefer = [p for p in zips if "history" in p.name.lower()] or zips
-    return prefer[0]
+    source = select_history_archive(version)
+    if source is None:
+        raise FileNotFoundError(f"No recognised Gaming History ZIP for {version} in {archives_dir(version)}")
+    return source
 
 def _find_history_xml_member(zf: zipfile.ZipFile) -> str | None:
     names = zf.namelist()

@@ -9,6 +9,7 @@ import datetime
 from mht.utils.versions import tool_version
 from mht.utils.stamps import stage_is_fresh
 from mht.utils.stage_contracts import stage_contract
+from mht.provenance.gh_archive_selection import select_history_archive
 from mht.utils.paths import (
     # repo/data roots
     DATA_DIR,
@@ -269,7 +270,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     # Source discovery remains outside the shared stage contract.
     # Mirror the source-selection rules used by the current stage runners.
     # INI/History are ZIP-only; MAME can fall back to an extracted XML.
-    history_zip = _find_archive_for(ver, "history")
+    history_zip = select_history_archive(ver)
     mame_zip = _find_archive_for(ver, "mame")
     mame_source = mame_zip if mame_zip is not None else mame_xml_path(ver)
 
