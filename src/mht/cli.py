@@ -1115,6 +1115,34 @@ def cmd_fetch_snaps(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch_gh_check(args: argparse.Namespace) -> int:
+    """Read-only comparison of advertised GH revision with staged archives."""
+    from mht.provenance.gh_revisions import check_gh_revision
+
+    try:
+        report = check_gh_revision(args.version)
+    except (ValueError, OSError, __import__("requests").RequestException) as exc:
+        print(f"[fetch gh-check] Unable to check Gaming History: {exc}")
+        return 1
+
+    if args.json:
+        _print_json(report)
+        return 0
+
+    staged = report["staged"]
+    online = report["advertised"]
+    print(f"Gaming History revision check - MAME {report['release']}")
+    print(f"Staged:     {staged['filename'] if staged else '(none)'}")
+    print(f"Advertised: {online['filename']} (GH v{int(online['release']) // 100}.{int(online['release']) % 100:02d}{online['revision']})")
+    print(f"Status:     {report['status'].replace('_', ' ')}")
+    if report["status"] == "different_release":
+        print("The website advertises a newer MAME release; this does not establish whether a revision exists for the requested older release.")
+    elif report["status"] == "update_available":
+        print("A newer GH archive is advertised. No files were downloaded or modified.")
+    print(f"Source:     {report['source']}")
+    return 0
+
+
 def cmd_fetch_download(args: argparse.Namespace) -> int:
     from mht.provenance.fetch import probe_latest, perform_downloads
 
@@ -1262,6 +1290,13 @@ def main() -> None:
     s_fetch_check.add_argument("--debug", action="store_true", help="Verbose HTTP probe logging")
     s_fetch_check.add_argument("--json", action="store_true", help="Output probe result as JSON")
     s_fetch_check.set_defaults(func=cmd_fetch_check)
+
+    s_fetch_gh_check = s_fetch_sub.add_parser(
+        "gh-check", help="Check the official GH page for a newer revision of a staged release"
+    )
+    s_fetch_gh_check.add_argument("--version", "-v", help="MHT release (default: active)")
+    s_fetch_gh_check.add_argument("--json", action="store_true", help="Output read-only report as JSON")
+    s_fetch_gh_check.set_defaults(func=cmd_fetch_gh_check)
 
     s_fetch_dl = s_fetch_sub.add_parser("download", help="Download latest MAME+GH pair into data/incoming")
     s_fetch_dl.add_argument("--yes", "-y", action="store_true", help="Skip confirmation prompt")
