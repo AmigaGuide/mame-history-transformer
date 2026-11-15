@@ -57,6 +57,20 @@ def _validate_audit(audit: dict, release: str, archive: Path) -> dict:
     return source
 
 
+
+def revision_snapshot_path(release: str, archive: Path) -> Path | None:
+    """Return the required snapshot path for a canonical GH archive.
+
+    Non-canonical fixture names and missing sources have no required snapshot.
+    Real revision selection only returns canonical historyNNN[a-z].zip files.
+    """
+    archive = Path(archive)
+    match = _NAME.fullmatch(archive.name)
+    if not match or f"{int(match.group(1)):04d}" != release:
+        return None
+    return summaries_dir(release) / "gh_audit_revisions" / f"{archive.stem.lower()}.json"
+
+
 def preserve_gh_audit_snapshot(
     release: str,
     archive: Path,

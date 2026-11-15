@@ -60,6 +60,8 @@ from mht.inputs.history_blocks import (
     promote_preamble_paragraphs_to_bullet_lists,
 )
 from mht.inputs.history_suppress import apply_suppressions
+from mht.provenance.gh_audit_snapshots import preserve_gh_audit_snapshot
+from mht.utils.paths import summaries_dir
 
 __all__ = ["parse_history_entries"]
 
@@ -584,6 +586,24 @@ def parse_history_entries(file_path: Path, encoding: str) -> bool:
     if not success:
         log.error("History outputs not found. Stamp not saved.")
         return False
+
+    # Preserve source-specific findings before declaring this stage fresh.
+    # A conflicting snapshot is never overwritten, and no stamp is saved.
+    try:
+        snapshot_path, created = preserve_gh_audit_snapshot(
+            ver,
+            history_zip,
+            audit,
+            summaries_dir(ver) / "gh_audit_revisions",
+        )
+    except (OSError, ValueError) as exc:
+        log.error("Cannot preserve immutable GH audit snapshot: %s", exc)
+        return False
+    log.info(
+        "History audit snapshot %s: %s",
+        "created" if created else "already preserved",
+        snapshot_path,
+    )
 
     stamp_doc = dict(current_stamp)
 

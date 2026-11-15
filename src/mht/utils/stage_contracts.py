@@ -14,6 +14,7 @@ from pathlib import Path
 
 from mht.utils import paths
 from mht.transform.snaps_genres import GENRE_DESCRIPTIONS_PATH
+from mht.provenance.gh_audit_snapshots import revision_snapshot_path
 
 
 @dataclass(frozen=True)
@@ -66,15 +67,21 @@ def stage_contract(
             ),
         )
     if name == "history":
+        # A recognised GH revision is not complete until its immutable audit
+        # snapshot exists. This applies consistently to status and both runners.
+        outputs = (
+            paths.gh_system_ports_path(version),
+            paths.gh_system_trivia_path(version),
+            paths.history_summary_path(version),
+            paths.history_audit_findings_path(version),
+        )
+        snapshot = revision_snapshot_path(version, source) if source is not None else None
+        if snapshot is not None:
+            outputs += (snapshot,)
         return StageContract(
             name, "history_parser",
             (source, enc_cache) if source is not None else (enc_cache,),
-            (
-                paths.gh_system_ports_path(version),
-                paths.gh_system_trivia_path(version),
-                paths.history_summary_path(version),
-                paths.history_audit_findings_path(version),
-            ),
+            outputs,
             missing_source=source is None,
         )
     if name == "transform":
