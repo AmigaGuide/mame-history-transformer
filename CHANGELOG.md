@@ -4,10 +4,43 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
-* `diff` command to compare outputs between two release versions (planned).
-* CLI tab-completion support.
-* Optional JSON schema validation on stamps.
-* Performance metrics and timing summaries for each stage.
+### Planned or under consideration
+
+- CLI tab-completion support.
+- Optional JSON schema validation for stamps.
+- Further per-stage performance reporting.
+- Historical snapshot compatibility checks for releases processed before automatic audit preservation.
+- Anomaly-review tracking and source-aware cross-revision reporting (separate from ZIP acquisition and generated-content comparisons).
+
+### Added - November 2026
+
+- **Gaming History revision acquisition and processing (14-15 November):** Read-only revision discovery, verified revised-ZIP downloads, canonical `historyNNN[a-z].zip` selection, and retention of original archives under the same four-digit release. Source selection remains separate from archive validation. Relevant commits: `dc367bd5`, `6f3da0ad`, `0ceb06d0`.
+- **Safe GH revision provenance:** Guard selected History/INI processing against stale archive/member encoding metadata; refresh GH cache records using the existing detector while retaining unchanged MAME provenance. Stage-specific semantic encoding dependencies avoid needless MAME rebuilding. Relevant commits: `533c14d3`, `65eecbf4`, `02465416`.
+- **Revision-specific History audit snapshots:** Preserve source-verified, immutable findings keyed by GH archive revision. Integrated automatic snapshot creation before the successful History stamp, and required snapshots for History freshness. Existing identical snapshots remain unchanged; conflicting ones are refused. Relevant commits: `bd447c80`, `b4a1e81`.
+- **Read-only generated-content comparisons (12-13 November):** `mht diff` compares release Wiki output and GH Trivia, with combined machine impact, detailed Trivia diagnostics and Preview pages. This is a *content* comparison, not the planned revision-anomaly comparison. Relevant commits: `c807be95`, `72768a37`, `ba69021d`, `f859de01`, `d09d1ba6`.
+- **History audit groundwork (10-12 November):** Persistent GH anomaly findings, additional PORTS checks for brackets/dates and audit/review utilities. These commits predate the revised-archive snapshot implementation; do not equate their cross-release audit work with the later snapshot-aware review workflow. Relevant commits: `91249be6`, `aead1090`, `22205033`, `f2439464`.
+- **Selective stage execution and Preview improvements (November):** Central stage contracts, safer freshness reporting, targeted pipeline runs, structured Preview summaries and game navigation. Relevant commits: `393c1758`, `15c69125`, `67985196`, `b91b5258`.
+- **Approved PS-SNAPS introductory wording (4 November):** Reviewed classifications, exact-key genre descriptions and generated LiT opening sentences. Relevant commits: `60a45c1d`, `feccac43`, `17aec888`.
+
+### Changed - October-November 2026
+
+- **Publication selection:** Canonical MAME parents with valid GH PORTS drive candidates, while Progetto-SNAPS CatList supplies category/genre information and publication eligibility following GH's discontinuation of `Machine Category.ini`. Relevant commits: `42ec7291`, `740ee22f`, `5c0f5b50`.
+- **Acquisition provenance:** Added release-aware SNAPS acquisition, unified source acquisition records and historical manifest/audit commands. Relevant commits: `283093a7`, `6bad7626`, `98671a68`, `d232382e`.
+- **Pipeline safeguards:** Better propagation of failures, refusal to use stale or missing upstream outputs and explicit output checks before treating stages as fresh. Relevant commits: `9ecf9436`, `71941ef8`, `bae15880`, `8941c8c5`.
+
+### Added and changed - January-February 2026
+
+- Refined the Preview structure, navigation and summaries; added ZIP-aware parsing-summary provenance and aligned transformation provenance and output counts. Relevant commits: `8488c1f9`, `0a03a55c`, `a3f4793d`, `ab5b57d1`, `f4b986b4`.
+
+### Historical recovery note - 15 November 2026
+
+- **Local data operation, not a repository feature commit:** The original GH 2.89 History audit was recovered from a checksum-verified pre-revision backup and matched to the retained `history289.zip` member's CRC32 and size. Both `history289.json` and `history289a.json` revision snapshots now exist locally. No History parsing rerun was required, and active outputs/stamps were not changed. Archive/snapshot data is not asserted to be tracked in Git.
+- **Verification checkpoint:** After automatic snapshot integration, the user's Windows checkout reported 783 tests passed, one skipped; the 2.89a release had all four stages fresh. The live automatic-write path was covered by synthetic tests, not a forced production History rebuild.
+
+### Documentation
+
+- Added `PROJECT_STATUS.md` and `DESIGN_DECISIONS.md`, then refreshed them after automatic snapshot integration. `DEVELOPMENT_HANDOVER.md` remains local and ignored by Git.
+- Older entries below remain preserved as historical release notes. No new semantic software version is claimed for the changes listed under Unreleased.
 
 ---
 

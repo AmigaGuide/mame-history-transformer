@@ -4,7 +4,7 @@
 **Repository:** `AmigaGuide/mame-history-transformer`  
 **Development branch:** `v2`  
 **Baseline date:** 15 November 2026  
-**Status:** Updated documentation baseline following automatic GH audit snapshot integration (commit `b4a1e81`)  
+**Status:** Core GH ZIP revision implementation complete; historical recovery verified; anomaly comparison is a separate workstream  
 **Companion:** `DESIGN_DECISIONS.md`
 
 > **Read this first when resuming development.** This document records the verified v2 architecture, known operational state and unfinished work. Source code and passing tests are authoritative for executable behaviour. Decisions are explained separately in `DESIGN_DECISIONS.md`. Update the current position after each substantial development increment, and distinguish verified facts from intentions.
@@ -19,6 +19,7 @@
 - The revised History XML declares **2.89a**, dated **2026-11-09**. The archive's History, Game Or No Game and Machine Type members have been verified against their ZIP CRC32 values.
 - MAME parsing was **not** repeated for this GH revision. Its provenance stayed unchanged and its stage remained fresh.
 - An immutable audit snapshot was created at `data/releases/0289/summaries/gh_audit_revisions/history289a.json` using the standalone command before integration. The subsequent automatic implementation recognises that snapshot without replacing it.
+- The user subsequently verified `data/backups/0289-before-history289a.zip` (SHA256 `3326fa6d514f50a8e0247cd7994753132931e25d91ef2b6a21dadc35e26a651e`) and recovered the **original 2.89** audit to `gh_audit_revisions/history289.json`. Its `history/history.xml` member was verified against the original `history289.zip` (CRC32 `F70F6180`, 64,217,187 bytes). The original audit contained one finding and declared GH 2.89 dated 2026-08-07. Neither the active audit nor the outputs, cache or stage stamps were modified.
 - **Automatic GH audit snapshot preservation is implemented and committed** in `b4a1e81`. The History parser preserves the selected revision's audit after successfully writing its outputs and before saving its stage stamp. The History stage contract requires the revision-specific snapshot for freshness. The user verified all four stages remained fresh afterwards. No new full History parse was performed to exercise the automatic path on the real 2.89a dataset.
 - Separately, the user confirmed that the generated Wiki release comparison, combined Trivia comparison and detailed Trivia diagnostics were committed to `v2` before this baseline. The focused regression run at that earlier checkpoint passed **39 tests**. The reported GH 2.89a processing and **783 passed, 1 skipped** full-suite checkpoint are more recent; do not substitute the older 0.288-to-0.289 content-diff counts for a fresh comparison of GH 2.89a outputs.
 
@@ -26,9 +27,11 @@
 
 The intended deliverable is automatic, source-backed findings plus a separate, persistent manual review history; a manually maintained CSV is not the primary record. Source responsibility matters: GH findings may be corrected upstream, MAME irregularities generally require documented local workarounds, and MHT interpretation defects require parser or rendering changes. Compare original and lettered GH revisions without assuming that a vanished finding proves an upstream correction. These are design requirements, **not** a claim that the review workflow or cross-revision comparator already exists. See DD-009, DD-010, DD-015 and DD-016.
 
-### Immediate next development task
+### Current ZIP revision workstream status
 
-Inspect the pre-revision backup `data/backups/0289-before-history289a.zip` **read-only** and determine whether a verifiable original GH 2.89 audit survives. If so, recover it without misattributing 2.89a findings; if not, decide whether an isolated historical reconstruction is justified. Also assess how older releases without snapshots should become compatible without unnecessary parser reruns. Keep the existing audit detectors, ExoticA schemas and archived sources unchanged.
+**Core implementation complete.** Revision discovery, verified acquisition, source selection, provenance refresh, selective rebuilds and automatic audit snapshots have passed tests and been exercised against GH 2.89a where applicable. The local 2.89 backup inspection and recovery described below are complete. Remaining historical-snapshot compatibility and additional real-world suffix coverage are optional hardening, not blockers for declaring the core ZIP revision work complete.
+
+**Next documentation task:** bring the previously stale `CHANGELOG.md` up to date from commit history, without assigning an unissued release version. Cross-revision anomaly analysis is a separate workstream and must not be introduced as a ZIP-revision prerequisite.
 
 ### Latest stage outcome, GH 2.89a
 
@@ -241,7 +244,7 @@ Reported SHA256 of that backup:
 
 `3326fa6d514f50a8e0247cd7994753132931e25d91ef2b6a21dadc35e26a651e`
 
-This backup was created before the revised source was ingested. **Its contents have not been re-inspected for this documentation draft**; verify it before relying on any presumed original audit. No claim is made that a version 2.89 snapshot has already been recovered.
+The user subsequently inspected this backup and recovered its original `history_audit_findings.json`. The original History stamp identified `history289.zip` and its XML member, and the retained archive matched CRC32 `F70F6180` and uncompressed size 64,217,187 bytes. The user reported successful creation of `summaries/gh_audit_revisions/history289.json`, preserving the original 2.89 audit with one finding and declared date 2026-08-07. The existing `history289a.json` snapshot and active 2.89a outputs were not changed. These are user-verified local artefacts, not claimed Git-tracked data.
 
 Verified GH 2.89a member CRC32s from the user's live refresh test:
 
@@ -269,11 +272,11 @@ Verified GH 2.89a member CRC32s from the user's live refresh test:
 
 ### Next, in order
 
-1. **Historical compatibility and recovery:** inspect the original GH 2.89 pre-revision backup without altering current outputs. Recover only verifiable original audit evidence. Determine a safe treatment for older processed releases whose required revision snapshot is missing; do not force wholesale reparsing without justification.
+1. **Optional historical compatibility hardening:** the original GH 2.89 audit has been recovered and source-verified. Determine a safe treatment for *other* older processed releases whose required revision snapshot is missing; do not force wholesale reparsing without justification.
 2. **Cross-revision anomaly comparison:** classify findings as new, persisting, apparently resolved or indeterminate. Attribute detector-version changes separately from upstream source edits.
 3. **Reporting and review workflow:** automatically generated, individually categorised findings with source evidence; separate persistent review decisions; readable Preview summaries and complete CSV/spreadsheet exports suitable for GH correction work. Keep upstream GH issues, local MAME workarounds and MHT defects distinct. Confirm coverage of formatting anomalies with tests before claiming completeness.
 4. **Cross-release tests and cleanup:** cover successive MAME releases, GH suffixes, absent optional INIs, corrupt archives, cache failures, duplicate revisions and legacy stamps.
-5. **Documentation alignment:** update stale portions of `README.md` after the new docs are reviewed. Reconstruct `CHANGELOG.md` from verified Git history after the ZIP acquisition/revision work is sufficiently settled.
+5. **Documentation alignment:** update stale portions of `README.md` after reviewing current behaviour. Reconstruct `CHANGELOG.md` from verified Git history now that core ZIP acquisition/revision work is complete. Keep the generated-content comparison and anomaly-review workstreams separate.
 
 ### Separate Preview workstream
 
