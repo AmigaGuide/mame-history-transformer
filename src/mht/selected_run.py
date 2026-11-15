@@ -1,8 +1,8 @@
 """Run one prepared MHT stage without invoking the full pipeline.
 
 This is deliberately separate from main.py: full runs continue to own
-archive/encoding detection and the full run manifest. Selected runs reuse
-an existing release's encoding cache and write the selected stage's ordinary
+archive/encoding detection and the full run manifest. Selected runs verify and refresh
+an existing release's GH encoding cache when necessary, then write the selected stage's ordinary
 outputs and stamp only.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from mht.utils.stage_contracts import StageContract, stage_contract
 from mht.utils.stamps import stage_is_fresh
 from mht.utils.snaps import find_snaps_archive
 from mht.provenance.gh_archive_selection import select_history_archive
-from mht.utils.gh_encoding_guard import check_gh_encoding_cache
+from mht.utils.gh_encoding_refresh import ensure_gh_encodings
 
 STAGES = ("ini", "mame", "history", "transform")
 
@@ -153,15 +153,22 @@ def run_selected(stage: str, *, force: bool = False) -> int:
                 source = contract.inputs[0] if not contract.missing_source else None
                 if source is None or not source.is_file():
                     raise ValueError("No staged Gaming History archive")
-                # Both paths are resolved by the same stage contract.
-                check_gh_encoding_cache(
-                    version, source, stage, cache_path=contract.inputs[1]
+                # Both paths come from the existing stage contracts. Refresh
+                # GH provenance without changing the MAME cache record.
+                mame_contract = _contract("mame", version)
+                mame_source = mame_contract.inputs[0]
+                refreshed = ensure_gh_encodings(
+                    version, source, stage,
+                    cache_path=contract.inputs[1],
+                    mame_archive=mame_source,
                 )
+                if refreshed:
+                    print(f"[run] Refreshed GH encodings from {source.name}.")
             encodings = _load_encodings(version, stage)
         except ValueError as exc:
             print(f"[run] {exc}")
             print("[run] No stage outputs or stamps were changed.")
-            print("[run] Refresh encoding provenance before running this stage.")
+            print("[run] Check archive and encoding provenance before retrying.")
             return 1
 
     # Force is explicit: remove only this stage's stamp after validating inputs.
