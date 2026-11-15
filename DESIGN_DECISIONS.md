@@ -19,10 +19,15 @@
 | DD-006 | Use SNAPS after GH Machine Category INI was discontinued | Accepted |
 | DD-007 | Preserve GH PORTS independently of legacy arcade eligibility | Accepted |
 | DD-008 | Preserve genuine source anomalies for manual correction | Accepted |
-| DD-009 | Preserve revision-specific audit evidence immutably | Accepted, manual operation implemented |
+| DD-009 | Preserve revision-specific audit evidence immutably | Accepted, automatic History integration implemented |
 | DD-010 | Separate upstream changes from detector changes | Planned comparison principle |
 | DD-011 | Prefer additive compatibility and focused tests | Accepted practice |
 | DD-012 | Keep conversation handovers separate from repository design records | Documentation convention |
+| DD-013 | Retain historical GH Machine Category catalogue for optional research only | Accepted |
+| DD-014 | Use reviewed PS-SNAPS gameplay descriptions as an independent exact-key lookup | Accepted vocabulary policy; implementation state to verify |
+| DD-015 | Generate anomaly evidence automatically; preserve human review separately | Agreed design direction; detailed contract pending |
+| DD-016 | Track GH upstream corrections separately from MAME workarounds and MHT defects | Agreed reporting principle; workflow pending |
+| DD-017 | Keep generated Wiki content comparisons read-only and separate from anomaly-audit comparisons | Accepted and implemented for release content; Preview integration pending |
 
 ## DD-001 - Base release and GH revision model
 
@@ -82,7 +87,7 @@
 
 **Implementation:** `src/mht/utils/snaps.py` and transformer. SNAPS classifications are loaded from a release `ps_*.zip` containing a unique CatList member.
 
-**Important:** This is a deliberately settled architecture choice. Do not suggest synthesising a missing Machine Category INI as a routine workaround.
+**Important:** This is a deliberately settled architecture choice. Do not suggest synthesising a missing Machine Category INI as a routine workaround. The older GH category catalogue is optional research evidence, not an alternative mandatory classification input (see DD-013).
 
 ## DD-007 - PORTS-based parent selection
 
@@ -114,9 +119,9 @@ The existing quote detector recognises valid disk-size quoting (e.g. `3.5"`, `5.
 
 **Rationale:** The active audit is regenerated when History runs. Revision comparisons require trustworthy earlier evidence.
 
-**Implementation today:** `src/mht/provenance/gh_audit_snapshots.py` validates archive/audit provenance, embeds source audit content and SHA256s, then writes a revision-keyed JSON snapshot using exclusive file creation. Identical repeated saves are accepted; mismatched content is refused. The user reports successful creation of `history289a.json`.
+**Implementation:** `src/mht/provenance/gh_audit_snapshots.py` validates archive/audit provenance, embeds source audit content and SHA256s, then writes a revision-keyed JSON snapshot using exclusive file creation. Identical repeated saves are accepted; mismatched content is refused. The user reports successful manual creation of `history289a.json`. **Commit `b4a1e81`** integrated automatic preservation into `src/mht/inputs/history_xml_parser.py` after successful output generation and before saving the History stage stamp; `src/mht/utils/stage_contracts.py` requires the revision snapshot as a History output. The user reported 12 focused snapshot tests passing, 783 passed/1 skipped in the full suite, and a fresh History stage for 0289 after the change.
 
-**Next:** Integrate automatic preservation into successful History processing. This integration is **not yet implemented** at this baseline.
+**Remaining boundary:** Existing older releases may lack the newly required snapshot. Historical recovery and compatibility are separate from implementing the automatic path; do not relabel a newer audit or trigger a destructive historical rebuild merely to satisfy freshness.
 
 **Consequence:** Do not substitute an active 2.89a audit for a missing original 2.89 snapshot.
 
@@ -134,7 +139,7 @@ The existing quote detector recognises valid disk-size quoting (e.g. `3.5"`, `5.
 
 **Decision:** Prefer small source changes, stable output schemas and explicit tests. Preserve existing archives, release folders, unrelated untracked files and previous working outputs until new behaviour has passed controlled tests.
 
-**Baseline:** The user reported **779 passed, 1 skipped** on 15 November 2026. Tests run in the user's checkout; this figure is not an invariant.
+**Baseline:** The user reported **783 passed, 1 skipped** on 15 November 2026 after commit `b4a1e81` (earlier snapshot-utility checkpoint: 779 passed, 1 skipped). Tests ran in the user's checkout; these figures are historical checkpoints, not invariants.
 
 **Practice:** Review the current source and tests, make an incremental patch, run focused tests, run full tests, inspect `git diff --check`, and stage explicit paths. Avoid `git add .` and broad cleanup commands.
 
@@ -145,6 +150,89 @@ The existing quote detector recognises valid disk-size quoting (e.g. `3.5"`, `5.
 **Rationale:** Long-lived architecture and decisions belong beside code. A fast-changing conversational handover may contain transient information or assumptions that need not be part of the public repository.
 
 **Maintenance:** Update the project status at milestones and the decision log when a real architectural choice changes. Refresh the separate handover before changing chat threads. The handover should point to source files and commit state rather than duplicate the full project history.
+
+## DD-013 - Historical GH Machine Category catalogue is optional research data
+
+**Decision:** Do not make the standalone historical GH classification catalogue a dependency of normal MHT parsing, transformation or publication. Retain the ability to consult or rebuild it for targeted investigations only.
+
+**Background:** Earlier research assembled observations from archived GH INIs, approximately MAME releases `0271` to `0287`, before GH discontinued `Machine Category.ini`. The reported standalone JSON was approximately 45 MB and covered roughly 41,417 machines. These figures describe the historical research artefact, not a live requirement or a currently verified production dataset.
+
+**Rationale:** Historical category values can explain past GH classifications and changes, but carrying them forward as authoritative classifications risks introducing stale evidence into newer releases. Current GH data, progetto-SNAPS and MAME metadata already support the selected production classification approach. The original archived releases are the reproducible source of any historical lookup.
+
+**Implementation and scope:** `src/mht/utils/gh_category_history.py` supports historical category lookups and records the observed source release versus a carried-forward value. `src/mht/utils/classification_catalog.py` accepts an optional historical snapshot. Neither utility makes the catalogue mandatory. A carried-forward classification must remain distinguishable from one observed in the requested release.
+
+**Distribution and maintenance:** Do not bundle or redistribute the aggregated catalogue by default; redistribution permission has not been established. Do not automatically synthesize a missing GH `Machine Category.ini`, override current SNAPS classifications, or change PORTS-based selection from this historical data. Keep the original archives available for reproducible research when needed.
+
+**Revisit only if:** A concrete regression, reporting question or historical-comparison requirement cannot be addressed adequately from the current release sources. Establish the need and provenance before adding any new dependency.
+
+## DD-014 - Reviewed PS-SNAPS genre vocabulary and source fidelity
+
+**Decision:** Use the separately approved MAME 0.289 PS-SNAPS Arcade vocabulary, covering **134** Group / Category / Subcategory combinations relevant to LiT, as a complete-phrase lookup. Preserve the exact source classification key; the returned description already includes its initial indefinite article and `arcade video game` wording where applicable. Do not automatically add another article or suffix.
+
+**Rationale:** The original classifications sometimes contain atypical or plainly misclassified games. The three-day audit evaluated the wider parent-game population for each category and selected a useful description of the dominant gameplay, rather than making the whole category vague because of exceptions. Avoid per-machine descriptions, automatic reclassification and silent source correction; any source problems remain independently documentable, with potential future wiki citations.
+
+**Illustrative approved entries:**
+
+| Original classification | Approved full introductory phrase |
+| --- | --- |
+| `Arcade / Fighter / Versus` | `a competitive fighting arcade video game` |
+| `Arcade / Maze / Integrate` | `a repair-based action arcade video game` |
+| `Arcade / Sports / Football` | `an American football arcade video game` |
+| `Arcade / Sports / Soccer` | `a soccer-themed arcade video game` |
+| `Arcade / Tabletop / Cards` | `a card-playing arcade video game` |
+| `Arcade / MultiGame / Compilation` | `an arcade game compilation` |
+| `Arcade / TTL * Ball & Paddle / Breakout` | `a target-clearing arcade video game` |
+| `Arcade / TTL * Ball & Paddle / Pong` | `a table tennis arcade video game` |
+
+The `TTL *` prefix is hardware-related and is retained in source lookup keys but does **not** dictate genre wording. Likewise `Ball & Paddle` is not a mandatory prose component. Distinct classification keys may intentionally share the same description. The approved vocabulary also distinguishes *American football* from *soccer*.
+
+**Evidence and deliverable:** `lit_snaps_classification_review_0289_v96.xlsx`, especially the **Final approved lookup**, **Second-pass decisions** and **Final consistency audit** worksheets. The user reports creating a standalone JSON representation for another development thread; this record does not establish its filename, Git commit or runtime integration. Inspect the current repository before describing any of these as implemented. No production MHT code was changed during the vocabulary review itself.
+
+**Separate future design questions:** A technology modifier for LaserDisc `interactive` or vector graphics is not part of the approved lookup policy. The existing `Arcade / Driving / Guide and Shoot` phrase is `an interactive driving action arcade video game`; `a reaction-based driving arcade video game` has been suggested but **not yet approved** as its replacement. Do not mutate the authoritative lookup until the project owner decides. Keep vocabulary integration independent of the immediate GH revision-audit work and add focused tests when integration is undertaken.
+
+## DD-015 - Generated findings and independent human review
+
+**Status:** Agreed design direction, not an implemented review workflow. The existing active History audit and automatically preserved revision snapshots are described in DD-009; persistent human review remains unimplemented.
+
+**Decision intent:** MHT, not a manually assembled spreadsheet, should generate source-backed anomaly findings as part of its normal analysis. A spreadsheet or CSV may be *exported* for investigation, but should not become a competing authoritative detector output. Keep user review decisions separate from regenerated observations so a rerun or new GH revision cannot erase their history.
+
+**Background:** The original MHT workflow exported detected anomalies to spreadsheets, followed by manual investigation and edits on the Gaming History website. The next GH version was expected to incorporate those edits and allow the reported cases to be checked again. Lettered GH revisions must participate in the same process.
+
+**Proposed review information:** At minimum, preserve the anomaly rule and detector version; source family and archive/member identity; base release and GH revision; system, section, and source text; available original and filtered line provenance; and any supported proposed action. A distinct review record may later add a decision, status, rationale, date and upstream reference. Avoid treating unverified suggestions as automatic source corrections.
+
+**Guardrails:** Reuse the existing `history_audit_findings.json`, `history_parsing_summary.json`, parser provenance and snapshot architecture. Do not introduce a manually maintained correction CSV as the primary system, silently edit GH input or make review metadata part of ExoticA's publication schema. Detailed identifiers, storage, export and UI contracts require further design and tests.
+
+## DD-016 - Distinguish the responsibility and outcome of anomalies
+
+**Status:** Agreed reporting principle; a unified classification and resolution workflow is not yet implemented.
+
+**Decision intent:** Report findings according to their origin and appropriate action:
+
+- **Gaming History source issue:** candidate for user review and upstream correction; verify whether later GH releases actually change the offending source.
+- **MAME source incompatibility:** identify and document a local MHT workaround where needed, rather than assuming the user can submit a GH correction for MAME data.
+- **MHT parsing or presentation issue:** address through code, fixtures and regression tests, not by falsely attributing it to GH or MAME.
+
+**Rationale:** A finding disappearing can mean an upstream edit, a new local workaround, a changed detector, a removed record, or a source-processing failure. Such outcomes are not interchangeable.
+
+**Consequence:** Future comparisons should distinguish new, persisting, changed and potentially resolved findings, with an indeterminate outcome when provenance or detector comparability is insufficient. Do not equate a clean audit with proof that every underlying issue was fixed. Review decisions and local workaround status must remain traceable across revisions and successive MAME releases.
+
+**Example investigation (not a confirmed production detector):** A read-only audit of GH `0289` found 95 lines with a leading asterisk immediately followed by text. Of these, 35 Staff cases (32 emphasised pairs and three headings) were addressed by the Staff-specific parser change at `d613278`, with 636 tests passing at that earlier checkpoint. The other 60 cases require interpretation; `tumblep` demonstrated both list bullets and retained literal asterisks in the Preview. These historical counts are *not* the reported finding count for the newer GH `2.89a` audit. The lesson is to classify source conventions separately from confirmed upstream defects and presentation bugs.
+
+## DD-017 - Generated Wiki content comparison is read-only and separate from anomaly audit
+
+**Decision:** Compare publication-facing output from two completed MAME release directories using stable machine identifiers. Combine generated Wiki record changes with rendered GH Trivia changes, without double-counting affected machines. Report the affected *generated regions* rather than assuming an individual modified JSON field is an independent live Wiki edit.
+
+**Rationale:** MAME and GH changes can affect multiple sections of the same LiT page. PORTS updates are section-level replacements; GH Trivia is independently generated and must not be overlooked merely because the Wiki JSON record is unchanged. A page name change, newly published record or withdrawn publication needs distinct treatment. The resulting count of affected machines is not necessarily the number of independent page operations on a live Wiki.
+
+**Implementation:** `src/mht/audit/release_diff.py` compares generated Wiki data and page mappings; `trivia_diff.py` compares per-machine rendered sections; `combined_diff.py::compare_release_content()` merges the results. `trivia_details.py` uses Python's `difflib` to display changed paragraphs and structured blocks, suppressing unchanged content. `src/mht/cli.py` exposes `mht diff`, `--json`, `--details` and `--machine`. When versions are omitted, the CLI uses the active version and the numerically preceding available release. The feature and associated tests were committed before the 15 November 2026 documentation baseline.
+
+**Trivia-specific boundary:** Compare generated section blocks (paragraphs, pairs, subheadings and list types) and disregard provenance/diagnostic metadata that does not alter the generated content. Do not assume the evolving `history.xml` parser yet recognises every formatting convention. MAME remains the preferred source of duplicated technical machine information; GH supplies PORTS and complementary Trivia. Accordingly, a GH Technical section's removal is a content difference, **not** proof of a parsing fault. For `twinhawk`, the original GH source actually removed the Technical section and referred readers to *Dai Senpuu*.
+
+**Verified example, not a current invariant:** In the earlier 0.288 -> 0.289 processed outputs, the combined comparator reported 201 distinct affected machines (184 Wiki-related plus 22 with changed Trivia, five overlapping), including 17 Trivia-only machines and 35 changed Trivia sections. There were three page-name changes. The focused regression suite passed 39 tests. These values precede the later processing of GH 2.89a and must not be reused as a current revision-diff result.
+
+**Separation from DD-009, DD-010, DD-015 and DD-016:** The working content comparison does **not** compare anomaly snapshots, determine whether an upstream GH typo was fixed, establish detector-version comparability or preserve human review decisions. Those are separate, unfinished anomaly-reporting responsibilities. The existing `mht diff` is read-only and does not modify source archives, regenerated datasets or the live ExoticA Wiki.
+
+**Future Preview work:** Reuse the existing comparison functions in the established Preview architecture rather than duplicating the comparison algorithm. Visual selection, filtering and expandable diagnostics are design ideas, **not implemented features at this baseline**. Inspect existing routes, templates, loaders and tests before adopting a UI design. Introduce small changes with focused regression tests.
 
 ## Updating decisions
 
