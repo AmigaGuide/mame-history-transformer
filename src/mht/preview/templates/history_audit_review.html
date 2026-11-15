@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}GH History findings - MHT Preview{% endblock %}
+
+{% block nav_left %}
+  <a href="{{ url_for('home') }}">Home</a>
+  &nbsp;|&nbsp; <a href="{{ url_for('diagnostics') }}">Diagnostics</a>
+  &nbsp;|&nbsp; <strong>GH History findings</strong>
+{% endblock nav_left %}
+
+{% block content %}
+  <h1>Gaming History - individual audit findings</h1>
+  <p class="lead">Read-only observations recorded by MHT's History parser. A finding is
+    a candidate for investigation, not proof of a Gaming History error. The
+    original GH data and generated Wiki output are not changed here.</p>
+
+  {% if error %}
+    <section class="summary-block"><p>{{ error }}</p></section>
+  {% else %}
+    <section class="summary-block">
+      <p><strong>{{ total }}</strong> recorded finding{{ '' if total == 1 else 's' }}.
+        Source: <code>{{ provenance.zip_archive or 'not recorded' }}</code>
+        {% if provenance.zip_member %} / <code>{{ provenance.zip_member }}</code>{% endif %}.
+        {% if provenance.declared_version %} GH {{ provenance.declared_version }}.{% endif %}
+        {% if provenance.declared_date %} Dated {{ provenance.declared_date }}.{% endif %}</p>
+      <p class="muted">Source evidence: <code>data/releases/{{ version }}/summaries/history_audit_findings.json</code>.
+        This page lists individual audit findings; the
+        <a href="{{ url_for('diagnostics') }}">processing diagnostics</a> also include
+        summary-only structural observations.</p>
+
+      <form method="get" action="{{ url_for('history_audit_review') }}" class="catalogue-controls">
+        <label>Machine, rule or original text
+          <input type="search" name="q" value="{{ query }}" placeholder="Search findings">
+        </label>
+        <label>Detection rule
+          <select name="rule">
+            <option value="">All rules</option>
+            {% for option in rules %}
+              <option value="{{ option.name }}" {% if rule == option.name %}selected{% endif %}>{{ option.name }} ({{ option.count }})</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">Apply filters</button>
+      </form>
+      <p class="muted">{{ selected_total }} matching finding{{ '' if selected_total == 1 else 's' }};
+        page {{ page }} of {{ page_count }}. Up to {{ page_size }} per page.</p>
+
+      {% if rows %}
+        <div class="search-results">
+          <table>
+            <thead><tr><th>Machine</th><th>Section</th><th>Detection rule</th><th>Original source text</th></tr></thead>
+            <tbody>
+              {% for finding in rows %}
+                <tr>
+                  <td>
+                    {% if finding.machine_link %}
+                      <a href="{{ url_for('game', machine=finding.machine, _anchor='parsing-findings') }}">{{ finding.machine }}</a>
+                    {% else %}{{ finding.machine }}{% endif %}
+                  </td>
+                  <td>{{ finding.section }}</td>
+                  <td><code>{{ finding.rule_id }}</code></td>
+                  <td><pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:0">{{ finding.source_text }}</pre>
+                    {% if finding.value is not none %}<div class="muted">Candidate value: {{ finding.value }}</div>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p>No individual audit findings match the current filters.</p>
+      {% endif %}
+
+      {% if page_count > 1 %}
+        <nav class="catalogue-pages" aria-label="GH audit findings pages">
+          {% if page > 1 %}
+            <a href="{{ url_for('history_audit_review', q=query, rule=rule, page=page-1) }}">Previous page</a>
+          {% endif %}
+          <span>Page {{ page }} of {{ page_count }}</span>
+          {% if page < page_count %}
+            <a href="{{ url_for('history_audit_review', q=query, rule=rule, page=page+1) }}">Next page</a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock content %}

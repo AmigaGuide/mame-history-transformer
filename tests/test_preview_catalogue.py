@@ -91,7 +91,7 @@ def test_home_retains_published_count_and_shows_preview_count(client):
     )
 
 
-def test_loader_builds_union_of_wiki_and_trivia(monkeypatch):
+def test_loader_builds_union_of_wiki_and_trivia(monkeypatch, tmp_path):
     from mht.preview import loaders
 
     documents = {
@@ -110,6 +110,13 @@ def test_loader_builds_union_of_wiki_and_trivia(monkeypatch):
         return documents[label]
 
     monkeypatch.setattr(loaders, "load_json", fake_load_json)
+    # Isolate this catalogue test from real release audit files.
+    # The optional audit is deliberately absent in this fixture.
+    monkeypatch.setattr(
+        loaders,
+        "history_audit_findings_path",
+        lambda version: tmp_path / "missing_history_audit.json",
+    )
     preview = load_preview_data(version="0289")
     assert preview.machine_order == ["afm_113", "pacman"]
     assert "afm_113" not in preview.wiki_games

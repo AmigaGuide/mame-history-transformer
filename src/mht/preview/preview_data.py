@@ -7,7 +7,7 @@ Kept in a dedicated module so other preview modules can share types without
 creating circular imports.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 JsonDict = Dict[str, Any]
@@ -31,3 +31,6 @@ class PreviewData:
 
     # Stable navigation order for /game/<machine>
     machine_order: List[str]
+
+    # Optional audit evidence, loaded once when opening the Preview.
+    history_audit: JsonDict = field(default_factory=dict)

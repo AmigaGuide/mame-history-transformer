@@ -19,6 +19,7 @@ from mht.utils.paths import (
     mame_machines_path,
     outputs_dir,
     transform_summary_path,
+    history_audit_findings_path,
 )
 
 from .preview_data import JsonDict, PreviewData
@@ -159,6 +160,10 @@ def load_preview_data(version: str | None = None) -> PreviewData:
     ini_summary = load_json(ini_sum_path, "INI parsing summary")
     transform_summary = load_json(xform_sum_path, "Transform summary")
 
+    # Individual audit findings are optional in older processed releases.
+    audit_path = history_audit_findings_path(version)
+    history_audit = load_json(audit_path, "GH History audit") if audit_path.is_file() else {}
+
     # Preview both publishable games and GH systems with retained trivia.
     # The publishing gate remains exclusively in the transformer.
     machine_order = sorted(set(wiki_games) | set(trivia_by_machine), key=str.casefold)
@@ -173,4 +178,5 @@ def load_preview_data(version: str | None = None) -> PreviewData:
         ini_summary=ini_summary,
         transform_summary=transform_summary,
         machine_order=machine_order,
+        history_audit=history_audit,
     )

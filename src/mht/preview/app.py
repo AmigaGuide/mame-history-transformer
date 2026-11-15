@@ -28,6 +28,9 @@ from .catalogue import select_catalogue_page
 from .release_comparison import overview_context
 from .affected_browsing import select_affected_machines
 from .machine_detail import build_machine_detail
+from .history_audit_review import (
+    build_history_audit_context, build_machine_audit_context,
+)
 from .summary_contexts import (
     prep_history_summary_page_context,
     prep_ini_summary_page_context,
@@ -189,6 +192,10 @@ def create_app(
                     "blocks": blocks,
                 })
 
+        machine_audit = build_machine_audit_context(
+            pd.history_audit, version=version, machine=machine,
+        )
+
         return render_template(
             "game.html",
             machine=machine,
@@ -203,7 +210,20 @@ def create_app(
             mame_titles_display=rec.get("mame_titles_display"),
             trivia_sections=trivia_sections,
             ports_display=rec.get("ports_display") or [],
+            machine_audit=machine_audit,
         )
+
+    @app.route("/audit/history")
+    def history_audit_review() -> str:
+        ctx = build_history_audit_context(
+            preview_data.history_audit,
+            version=version,
+            machines=preview_data.machine_order,
+            query=request.args.get("q", ""),
+            rule=request.args.get("rule", ""),
+            page=request.args.get("page", "1"),
+        )
+        return render_template("history_audit_review.html", version=version, **ctx)
 
     @app.route("/diagnostics")
     def diagnostics() -> str:

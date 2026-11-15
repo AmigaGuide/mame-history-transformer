@@ -20,7 +20,7 @@
             {% endif %}
 
             {# Page-local navigation for potentially lengthy GH entries. #}
-            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display %}
+            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings %}
                 <nav class="trivia-toc" aria-label="Sections on this page">
                     <strong>On this page:</strong>
                     {% if overview_blocks %}<a href="#trivia-overview">Overview</a>{% endif %}
@@ -29,6 +29,7 @@
                         <a href="#{{ section.anchor }}">{{ section.title }}</a>
                     {% endfor %}
                     {% if ports_display %}<a href="#trivia-ports">Ports</a>{% endif %}
+                    {% if machine_audit.findings %}<a href="#parsing-findings">Parsing findings</a>{% endif %}
                 </nav>
             {% endif %}
 
@@ -137,6 +138,27 @@
                         </ul>
                     {% endfor %}
                 </div>
+            {% endif %}
+            {% if machine_audit.findings %}
+                <section class="summary-block" id="parsing-findings" style="margin-top:1.5rem;">
+                    <h2>Parsing findings ({{ machine_audit.findings|length }})</h2>
+                    <p class="muted">Read-only source observations - not proof of a Gaming History error.
+                       These are independent of Wiki publication eligibility.</p>
+                    {% if machine_audit.provenance.zip_archive %}
+                        <p class="muted">Source: <code>{{ machine_audit.provenance.zip_archive }}</code>                            {% if machine_audit.provenance.declared_version %} (GH {{ machine_audit.provenance.declared_version }}){% endif %}</p>
+                    {% endif %}
+                    {% for finding in machine_audit.findings %}
+                        <div style="border-top:1px solid #666;padding:0.7rem 0;">
+                            <strong>{{ finding.section }} - <code>{{ finding.rule_id }}</code></strong>
+                            <p class="muted">Original GH source text:</p>
+                            <pre style="white-space:pre-wrap;overflow-wrap:anywhere;">{{ finding.source_text }}</pre>
+                            {% if finding.value is defined and finding.value is not none %}
+                                <p class="muted">Candidate: {{ finding.value }}</p>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    <p><a href="{{ url_for('history_audit_review', q=machine) }}">Browse GH History findings</a></p>
+                </section>
             {% endif %}
         </div>
 
