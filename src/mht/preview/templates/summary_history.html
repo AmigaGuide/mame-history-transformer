@@ -74,6 +74,22 @@
     </div>
   {% endfor %}
 
+  {% if block_policy_review.rows or block_policy_review.blocks_with_suppressions is not none %}
+    <div class="summary-block" style="margin-top:1rem;">
+      <h2>Block processing policies</h2>
+      <p class="muted">These are section-processing invocations, not numbers of games or individual blocks.
+         Heuristic per-line invocations are included in the per-line column, not additional to it.</p>
+      {% if block_policy_review.blocks_with_suppressions is not none %}
+        <p>Blocks carrying recorded suppression markers: <strong>{{ block_policy_review.blocks_with_suppressions }}</strong></p>
+      {% endif %}
+      {% if block_policy_review.rows %}
+        <table class="search-results"><thead><tr><th>Section</th><th>Per-line invocations</th><th>Heuristic per-line invocations</th></tr></thead>
+          <tbody>{% for row in block_policy_review.rows %}<tr><td>{{ row.section }}</td><td>{{ row.per_line if row.per_line is not none else 'Not recorded' }}</td><td>{{ row.heuristic if row.heuristic is not none else 'Not recorded' }}</td></tr>{% endfor %}</tbody></table>
+      {% endif %}
+      <p class="muted">Evidence: <code>provenance_qc.policy_counts</code> and <code>provenance_qc.blocks_with_suppressions</code>.</p>
+    </div>
+  {% endif %}
+
   {% if report.blocks %}
     <div class="summary-block" style="margin-top:1rem;">
       <h2>Trivia blocks by type</h2>

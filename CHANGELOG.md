@@ -12,6 +12,14 @@ All notable changes to this project will be documented here.
 - Historical snapshot compatibility checks for releases processed before automatic audit preservation.
 - Anomaly-review tracking and source-aware cross-revision reporting (separate from ZIP acquisition and generated-content comparisons).
 
+### Preview evidence and quality-control milestones - 16 November 2026
+
+- **Individual GH audit and structural evidence:** Added read-only `/audit/history`, machine-level source findings including unpublished entries, and structural observations linked from Processing Diagnostics. Includes PORTS without category subheadings, near-miss banners, unidentified platforms and unmapped headings. Commits `408ec47`, `a7c5cab`, `5a4b690`.
+- **GH Trivia suppression review:** Exposed removed source lines and exact suppression rules on game pages, plus aggregate removal and no-surviving-content counts. Commit `a700c63`. Real GH 2.89a evidence: 41,555 removed lines and 1,152 section records without surviving non-blank content. The latter may include originally empty sections.
+- **Trivia classification and block provenance (uncommitted at documentation checkpoint):** Added an expandable per-game read-only block review and aggregate processing-policy figures on the History summary, using existing `gh_system_trivia.json` metadata and `history_parsing_summary.json`. User reports 29 focused tests passed and inspected real screenshots; no full regression rerun is claimed. Classified blocks: 63,383 paragraphs, 29,041 pairs, 4,436 subheadings, 4,296 bullet lists and 3,211 numbered lists (104,367 total). This bullet is **not** a claim of an existing Git commit for the latest increment.
+- **Heading review:** Comparison of local GH 2.81, 2.88 and 2.89a summaries found the same three occurrences across two rare non-standard names (`FORBIDDEN PLAYING METHODS`, `CAST OF ELEMENTS`). Their content remains preserved and no parser mapping change was made.
+- **Boundary:** Preview diagnostics are read-only and independent of Wiki publishing. Source anomalies, structural observations, deliberately removed lines and block-processing statistics are different kinds of evidence; none is automatically a confirmed upstream defect.
+
 ### Added - November 2026
 
 - **Gaming History revision acquisition and processing (14-15 November):** Read-only revision discovery, verified revised-ZIP downloads, canonical `historyNNN[a-z].zip` selection, and retention of original archives under the same four-digit release. Source selection remains separate from archive validation. Relevant commits: `dc367bd5`, `6f3da0ad`, `0ceb06d0`.

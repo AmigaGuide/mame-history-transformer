@@ -20,7 +20,7 @@
             {% endif %}
 
             {# Page-local navigation for potentially lengthy GH entries. #}
-            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings or machine_structural or machine_suppressions.has_evidence %}
+            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings or machine_structural or machine_suppressions.has_evidence or machine_blocks.has_evidence %}
                 <nav class="trivia-toc" aria-label="Sections on this page">
                     <strong>On this page:</strong>
                     {% if overview_blocks %}<a href="#trivia-overview">Overview</a>{% endif %}
@@ -32,6 +32,7 @@
                     {% if machine_audit.findings %}<a href="#parsing-findings">Parsing findings</a>{% endif %}
                     {% if machine_structural %}<a href="#structural-observations">Structural observations</a>{% endif %}
                     {% if machine_suppressions.has_evidence %}<a href="#suppression-review">Suppression review</a>{% endif %}
+                    {% if machine_blocks.has_evidence %}<a href="#block-provenance">Block provenance</a>{% endif %}
                 </nav>
             {% endif %}
 
@@ -210,6 +211,44 @@
                     {% endif %}
                     <p class="muted">Evidence: <code>history_parsing_summary.json</code>
                        (<code>suppressions.by_system</code> and <code>fully_suppressed_sections</code>).</p>
+                </section>
+            {% endif %}
+            {% if machine_blocks.has_evidence %}
+                <section class="summary-block" id="block-provenance" style="margin-top:1.5rem;">
+                    <h2>Block provenance</h2>
+                    <p class="muted">Read-only details of how the existing GH Trivia blocks were classified.
+                       Detector names and processing policies do not themselves indicate errors.
+                       The normal rendered Trivia above is unchanged.</p>
+                    <p>{{ machine_blocks.count }} classified blocks;
+                       {{ machine_blocks.heuristic_blocks }} carrying the heuristic per-line policy;
+                       {{ machine_blocks.suppression_marked_blocks }} with retained block-level suppression markers.</p>
+                    {% if machine_blocks.missing_meta %}<p class="muted">{{ machine_blocks.missing_meta }} block(s) without recorded metadata.</p>{% endif %}
+                    <h3>Blocks by section</h3>
+                    <ul>{% for section in machine_blocks.sections %}<li>{{ section.name }}: {{ section.count }}</li>{% endfor %}</ul>
+                    <h3>Block types</h3>
+                    <ul>{% for kind, count in machine_blocks.kinds %}<li>{{ kind }}: {{ count }}</li>{% endfor %}</ul>
+                    <h3>Detector usage</h3>
+                    <p class="muted">Counts represent recorded detector tags on blocks, not unique machines or confirmed parsing problems.</p>
+                    <ul>{% for detector, count in machine_blocks.detectors %}<li><code>{{ detector }}</code>: {{ count }}</li>{% else %}<li>No detector names retained.</li>{% endfor %}</ul>
+                    <details>
+                        <summary>Inspect individual block metadata (first {{ machine_blocks.rows|length }} of {{ machine_blocks.count }})</summary>
+                        <p class="muted">Original source line numbers are 1-based; filtered line indices are 0-based. Missing metadata is shown as not recorded.</p>
+                        {% for block in machine_blocks.rows %}
+                            <div style="border-top:1px solid #666;padding:0.6rem 0;">
+                                <strong>{{ block.section }} / {{ block.kind }} / block {{ block.index if block.index is not none else block.fallback_index }}</strong>
+                                <pre style="white-space:pre-wrap;overflow-wrap:anywhere;">{{ block.text }}</pre>
+                                <p class="muted">Detectors: {{ block.detectors|join(', ') if block.detectors else 'Not recorded' }}
+                                   | Per-line policy: {{ 'yes' if block.per_line else 'no or not recorded' }}
+                                   | Heuristic per-line policy: {{ 'yes' if block.heuristic else 'no or not recorded' }}</p>
+                                <p class="muted">Source lines: {{ block.raw_start if block.raw_start is not none else 'Not recorded' }} to {{ block.raw_end if block.raw_end is not none else 'Not recorded' }}
+                                   | Filtered indices: {{ block.filtered_start if block.filtered_start is not none else 'Not recorded' }} to {{ block.filtered_end if block.filtered_end is not none else 'Not recorded' }}</p>
+                                {% if block.suppressions %}<p class="muted">Block suppression markers: {{ block.suppressions|join(', ') }}</p>{% endif %}
+                                {% if block.text_hash %}<p class="muted">Text hash: <code>{{ block.text_hash }}</code></p>{% endif %}
+                            </div>
+                        {% endfor %}
+                        {% if machine_blocks.omitted %}<p class="muted">{{ machine_blocks.omitted }} further block(s) not expanded here. All blocks are included in the totals above.</p>{% endif %}
+                    </details>
+                    <p class="muted">Evidence: <code>gh_system_trivia.json</code> (<code>sections.*.blocks.*.meta</code>).</p>
                 </section>
             {% endif %}
         </div>

@@ -33,6 +33,7 @@ from .history_audit_review import (
 )
 from .history_structural_observations import build_machine_structural_observations
 from .history_suppression_review import build_machine_suppression_review
+from .history_block_review import build_machine_block_review, build_history_policy_review
 from .summary_contexts import (
     prep_history_summary_page_context,
     prep_ini_summary_page_context,
@@ -135,7 +136,7 @@ def create_app(
     @app.route("/summary/history")
     def summary_history() -> str:
         ctx = prep_history_summary_page_context(preview_data.history_summary)
-        return render_template("summary_history.html", version=version, **ctx)
+        return render_template("summary_history.html", version=version, block_policy_review=build_history_policy_review(preview_data.history_summary), **ctx)
 
     @app.route("/summary/ini")
     def summary_ini() -> str:
@@ -219,6 +220,7 @@ def create_app(
             machine_audit=machine_audit,
             machine_structural=machine_structural,
             machine_suppressions=machine_suppressions,
+            machine_blocks=build_machine_block_review(trivia),
         )
 
     @app.route("/audit/history")
