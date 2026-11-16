@@ -29,11 +29,57 @@ def finding_key(finding: dict) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _revision_snapshot_path(releases_dir: Path, version: str) -> Path:
+    """Locate a lettered or base GH audit under its base MAME release."""
+    match = re.fullmatch(r"(\d{4})([a-z]?)", version)
+    if not match:
+        raise ValueError(f"Invalid GH revision identifier: {version!r}")
+    base = match.group(1)
+    archive_stem = f"history{int(base)}{match.group(2)}"
+    return releases_dir / base / "summaries" / "gh_audit_revisions" / f"{archive_stem}.json"
+
+
+def _load_revision_audit(path: Path, version: str) -> dict:
+    """Validate the stored wrapper; return the nested audit without altering it."""
+    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    match = re.fullmatch(r"(\d{4})([a-z]?)", version)
+    if match is None:
+        raise ValueError(f"Invalid GH revision identifier: {version!r}")
+    base = match.group(1)
+    expected_archive = f"history{int(base)}{match.group(2)}.zip"
+    if (not isinstance(snapshot, dict)
+            or snapshot.get("schema_id") != "mht.gh.audit_snapshot"
+            or snapshot.get("release") != base
+            or snapshot.get("revision_archive") != expected_archive):
+        raise ValueError(f"GH audit snapshot does not match {version}: {path}")
+    audit = snapshot.get("audit")
+    if (not isinstance(audit, dict)
+            or audit.get("schema_id") != "mht.history.audit_findings"
+            or audit.get("release") != base
+            or not isinstance(audit.get("detectors"), dict)
+            or not isinstance(audit.get("findings"), list)):
+        raise ValueError(f"Invalid nested GH audit in {path}")
+    inputs = (audit.get("provenance") or {}).get("inputs")
+    if (not isinstance(inputs, list) or len(inputs) != 1
+            or not isinstance(inputs[0], dict)
+            or inputs[0].get("zip_archive") != expected_archive
+            or inputs[0].get("zip_member") != snapshot.get("source_member")):
+        raise ValueError(f"GH snapshot source provenance mismatch: {path}")
+    return audit
+
+
+def compare_history_revision_snapshots(releases_dir: Path, versions: list[str]) -> dict:
+    """Compare immutable GH ZIP revisions without rerunning the parser."""
+    return compare_history_audits(releases_dir, versions, revision_snapshots=True)
+
+
 def compare_history_audits(
     releases_dir: Path,
     versions: list[str],
+    *,
+    revision_snapshots: bool = False,
 ) -> dict:
-    """Compare findings from a sequence of completed GH audits."""
+    """Compare findings from releases or immutable GH revision snapshots."""
 
     if not versions:
         raise ValueError("No releases supplied for comparison")
@@ -67,24 +113,21 @@ def compare_history_audits(
 
     for version in versions:
         audit_path = (
-            releases_dir
-            / version
-            / "summaries"
-            / "history_audit_findings.json"
+            _revision_snapshot_path(releases_dir, version)
+            if revision_snapshots else
+            releases_dir / version / "summaries" / "history_audit_findings.json"
         )
-
         if not audit_path.is_file():
             raise FileNotFoundError(
-                f"Missing GH audit report for release {version}: "
-                f"{audit_path}"
+                f"Missing GH audit report for release {version}: {audit_path}"
             )
-
-        audit = json.loads(audit_path.read_text(encoding="utf-8"))
-
+        audit = (_load_revision_audit(audit_path, version)
+                 if revision_snapshots else
+                 json.loads(audit_path.read_text(encoding="utf-8")))
         if audit.get("schema_id") != "mht.history.audit_findings":
             raise ValueError(f"Unexpected audit schema in {audit_path}")
-
-        if audit.get("release") != version:
+        expected_release = version[:4] if revision_snapshots else version
+        if audit.get("release") != expected_release:
             raise ValueError(f"Release mismatch in {audit_path}")
 
         detectors = audit.get("detectors", {})
@@ -192,22 +235,24 @@ def write_history_comparison(
     releases_dir: Path,
     versions: list[str],
     output_path: Path,
+    *,
+    revision_snapshots: bool = False,
 ) -> bool:
     """Write a historical comparison with source audit provenance."""
 
     comparison = compare_history_audits(
         releases_dir,
         versions,
+        revision_snapshots=revision_snapshots,
     )
 
     source_reports = []
 
     for version in versions:
         audit_path = (
-            releases_dir
-            / version
-            / "summaries"
-            / "history_audit_findings.json"
+            _revision_snapshot_path(releases_dir, version)
+            if revision_snapshots else
+            releases_dir / version / "summaries" / "history_audit_findings.json"
         )
 
         source_reports.append({
