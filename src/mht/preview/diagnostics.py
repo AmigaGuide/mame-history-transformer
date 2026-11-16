@@ -119,6 +119,13 @@ def build_diagnostic_groups(data: PreviewData) -> list[dict]:
         affected=near_miss.get("systems_affected"), count_label="Systems",
         game_anchor="structural-observations")
 
+    null_ports = _mapping(anomalies.get("null_platform_ports"))
+    add(history, "PORTS entries without identified platforms",
+        null_ports.get("count"), "anomalies.null_platform_ports",
+        "Recorded PORTS occurrences for which the parser did not identify a platform; this is not automatically a GH error.",
+        null_ports.get("by_system"), affected=null_ports.get("systems_affected"),
+        count_label="Recorded occurrences", game_anchor="structural-observations")
+
     ini = group("Gaming History INI coverage", "summary_ini", "ini", "ini_parsing_summary.json")
     ini_totals = _mapping(data.ini_summary.get("totals"))
     for label, key in (
