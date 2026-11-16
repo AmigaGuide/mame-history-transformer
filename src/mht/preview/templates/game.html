@@ -19,6 +19,15 @@
                 <p class="muted">GH Trivia preview only - not included in the ExoticA wiki output.</p>
             {% endif %}
 
+            {% if publication_deferred_reason is not none %}
+                <section class="summary-block" id="publication-deferral" style="margin-bottom:1rem;">
+                    <h2>Publication deferral</h2>
+                    <p>This parent is retained in the raw dataset but is not included in the published ExoticA Wiki output.</p>
+                    <p><strong>Recorded reason:</strong> {{ publication_deferred_reason }}</p>
+                    <p><a href="{{ url_for('publication_deferrals', q=machine) }}">Browse publication deferrals</a></p>
+                </section>
+            {% endif %}
+
             {# Page-local navigation for potentially lengthy GH entries. #}
             {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings or machine_structural or machine_suppressions.has_evidence or machine_blocks.has_evidence %}
                 <nav class="trivia-toc" aria-label="Sections on this page">

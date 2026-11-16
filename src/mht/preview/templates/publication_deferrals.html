@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Publication deferrals - MHT Preview{% endblock %}
+{% block nav_left %}<a href="{{ url_for('home') }}">Home</a> | <a href="{{ url_for('diagnostics') }}">Diagnostics</a> | Publication deferrals{% endblock nav_left %}
+{% block content %}
+<h1>Transformation publication deferrals</h1>
+<p class="lead">Read-only reasons recorded by the Transformer for parent machines retained in the raw PORTS-bearing dataset but not published to ExoticA.</p>
+<p class="muted">Source: <code>transform_summary.json</code> - <code>publication.deferred_machine_reasons</code>. Deferral is not automatically an error. Machine pages are linked only where available.</p>
+<p>Recorded deferred-parent total: <strong>{{ recorded_total if recorded_total is not none else 'Not recorded' }}</strong>.
+Machine-specific reasons available: <strong>{{ all_records }}</strong>.
+{% if recorded_total is not none and recorded_total != all_records %}<strong>Note:</strong> the aggregate total and usable machine-level records differ.{% endif %}</p>
+<form action="{{ url_for('publication_deferrals') }}" method="get" style="margin:1rem 0;">
+  <label for="q">Search machine or reason</label>
+  <input id="q" name="q" value="{{ q }}" maxlength="120">
+  <label for="reason">Recorded reason</label>
+  <select name="reason" id="reason">
+    <option value="">All reasons</option>
+    {% for choice in reasons %}<option value="{{ choice }}" {% if choice == reason %}selected{% endif %}>{{ choice }}</option>{% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+  <a href="{{ url_for('publication_deferrals') }}">Clear</a>
+</form>
+<p>Showing {{ rows|length }} of {{ total }} matching machines (page {{ page }} of {{ pages }}).</p>
+<div class="summary-block">
+{% if rows %}
+<table class="search-results"><thead><tr><th>Parent machine</th><th>Recorded reason</th><th>Preview</th></tr></thead><tbody>
+{% for item in rows %}<tr>
+<td><code>{{ item.machine }}</code></td><td>{{ item.reason }}</td>
+<td>{% if item.preview %}<a href="{{ url_for('game', machine=item.machine, _anchor='publication-deferral') }}">Game page</a>{% else %}Not available{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% else %}<p class="muted">No matching machine-specific deferrals recorded.</p>{% endif %}
+</div>
+{% if pages > 1 %}
+<p>
+{% if page > 1 %}<a href="{{ url_for('publication_deferrals', q=q, reason=reason, page=page-1) }}">Previous page</a>{% endif %}
+&nbsp; Page {{ page }} of {{ pages }} &nbsp;
+{% if page < pages %}<a href="{{ url_for('publication_deferrals', q=q, reason=reason, page=page+1) }}">Next page</a>{% endif %}
+</p>
+{% endif %}
+{% endblock content %}
