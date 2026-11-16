@@ -57,7 +57,8 @@ def build_diagnostic_groups(data: PreviewData) -> list[dict]:
 
     def add(target: dict, label: str, value: Any, path: str, explanation: str,
             sample: Any = None, *, affected: Any = None,
-            count_label: str = "Recorded count", machine_examples: bool = True) -> None:
+            count_label: str = "Recorded count", machine_examples: bool = True,
+            game_anchor: str | None = None) -> None:
         count = _non_negative_count(value)
         if count is None:
             return
@@ -66,6 +67,7 @@ def build_diagnostic_groups(data: PreviewData) -> list[dict]:
             "label": label, "count": count, "count_label": count_label,
             "systems_affected": _non_negative_count(affected),
             "path": path, "explanation": explanation, "examples": names,
+            "game_anchor": game_anchor,
             "example_items": [
                 {"name": name, "machine": name if machine_examples and name in available else None}
                 for name in names
@@ -101,7 +103,8 @@ def build_diagnostic_groups(data: PreviewData) -> list[dict]:
         source_prefix = "residue_flags" if source is residue else "anomalies"
         add(history, label, entry.get("count"), f"{source_prefix}.{key}",
             explanation, entry.get("by_system"), affected=entry.get("systems_affected"),
-            count_label="Recorded occurrences")
+            count_label="Recorded occurrences",
+            game_anchor="structural-observations" if key == "ports_missing_subheadings" else None)
 
     unmapped = _mapping(headings.get("unmapped_headings"))
     if "unmapped_headings" in headings:
@@ -110,10 +113,11 @@ def build_diagnostic_groups(data: PreviewData) -> list[dict]:
             "Distinct non-standard headings without a recognised mapping (not a count of affected systems).",
             unmapped, count_label="Distinct headings", machine_examples=False)
     near_miss = _mapping(headings.get("near_miss_banners"))
-    add(history, "Systems with near-miss PORTS banners",
+    add(history, "Systems with near-miss section banners",
         near_miss.get("systems_affected"), "headings_qc.near_miss_banners.systems_affected",
         "Systems with potentially unusual banner spacing.", near_miss.get("by_system"),
-        affected=near_miss.get("systems_affected"), count_label="Systems")
+        affected=near_miss.get("systems_affected"), count_label="Systems",
+        game_anchor="structural-observations")
 
     ini = group("Gaming History INI coverage", "summary_ini", "ini", "ini_parsing_summary.json")
     ini_totals = _mapping(data.ini_summary.get("totals"))

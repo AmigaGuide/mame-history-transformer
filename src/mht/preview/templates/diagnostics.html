@@ -45,7 +45,7 @@
                     {% if finding.example_items %}
                       <div class="muted">Examples (up to 5):
                         {% for example in finding.example_items %}
-                          {% if example.machine %}<a href="{{ url_for('game', machine=example.machine) }}">{{ example.name }}</a>{% else %}{{ example.name }}{% endif %}{% if not loop.last %}, {% endif %}
+                          {% if example.machine %}<a href="{{ url_for('game', machine=example.machine, _anchor=finding.game_anchor) if finding.game_anchor else url_for('game', machine=example.machine) }}">{{ example.name }}</a>{% else %}{{ example.name }}{% endif %}{% if not loop.last %}, {% endif %}
                         {% endfor %}
                       </div>
                     {% endif %}

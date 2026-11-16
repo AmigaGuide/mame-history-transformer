@@ -20,7 +20,7 @@
             {% endif %}
 
             {# Page-local navigation for potentially lengthy GH entries. #}
-            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings %}
+            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings or machine_structural %}
                 <nav class="trivia-toc" aria-label="Sections on this page">
                     <strong>On this page:</strong>
                     {% if overview_blocks %}<a href="#trivia-overview">Overview</a>{% endif %}
@@ -30,6 +30,7 @@
                     {% endfor %}
                     {% if ports_display %}<a href="#trivia-ports">Ports</a>{% endif %}
                     {% if machine_audit.findings %}<a href="#parsing-findings">Parsing findings</a>{% endif %}
+                    {% if machine_structural %}<a href="#structural-observations">Structural observations</a>{% endif %}
                 </nav>
             {% endif %}
 
@@ -158,6 +159,29 @@
                         </div>
                     {% endfor %}
                     <p><a href="{{ url_for('history_audit_review', q=machine) }}">Browse GH History findings</a></p>
+                </section>
+            {% endif %}
+            {% if machine_structural %}
+                <section class="summary-block" id="structural-observations" style="margin-top:1.5rem;">
+                    <h2>Structural observations</h2>
+                    <p class="muted">Read-only observations from the current History parsing summary.
+                       They do not establish that GH or MHT is wrong, and do not affect Wiki publication.</p>
+                    {% for item in machine_structural %}
+                        <div style="border-top:1px solid #666;padding:0.7rem 0;">
+                            <strong>{{ item.label }}</strong>
+                            <p>{{ item.description }}</p>
+                            <p class="muted">{{ item.source_label }}:</p>
+                            {% for text in item["items"] %}
+                                <pre style="white-space:pre-wrap;overflow-wrap:anywhere;">{{ text }}</pre>
+                            {% else %}
+                                <p class="muted">No source excerpt retained in the summary.</p>
+                            {% endfor %}
+                            {% if item.omitted %}
+                                <p class="muted">{{ item.omitted }} additional recorded line(s) not shown.</p>
+                            {% endif %}
+                            <p class="muted"><code>{{ item.path }}</code></p>
+                        </div>
+                    {% endfor %}
                 </section>
             {% endif %}
         </div>
