@@ -28,7 +28,7 @@
 | DD-015 | Generate anomaly evidence automatically; preserve human review separately | Agreed design direction; detailed contract pending |
 | DD-016 | Track GH upstream corrections separately from MAME workarounds and MHT defects | Agreed reporting principle; workflow pending |
 | DD-017 | Keep generated Wiki content comparisons read-only and separate from anomaly-audit comparisons | Accepted and implemented for release content and Preview |
-| DD-018 | Expose existing diagnostics and processing evidence without modifying parsers | Accepted; block-provenance increment awaiting commit |
+| DD-018 | Expose existing diagnostics and processing evidence without modifying parsers | Accepted and Preview evidence-coverage audit completed |
 | DD-019 | Preserve rare GH headings and distinguish aggregate statistics from actionable findings | Accepted |
 
 ## DD-001 - Base release and GH revision model
@@ -238,11 +238,11 @@ The `TTL *` prefix is hardware-related and is retained in source lookup keys but
 
 ## DD-018 - Preview diagnostics expose recorded evidence without modifying parser behaviour
 
-**Status:** Accepted and implemented incrementally on `v2` (16 November 2026); block-provenance increment tested and visually reviewed but uncommitted at the documentation checkpoint.
+**Status:** Accepted and implemented on `v2` (16 November 2026); Preview summary-evidence coverage audit completed. Machine-level gaps unsupported by summary data remain explicitly documented.
 
 **Decision:** Make MHT's existing source observations, structural diagnostics and deliberate filtering decisions readable in the local Preview. Preserve the difference between individual audit findings, structural observations, removal decisions, classification provenance and ordinary processing statistics. An unusual GH format or a suppression is not automatically a source error or MHT defect.
 
-**Implementation:** `src/mht/preview/history_audit_review.py` shows individual GH source findings, including on unpublished systems; `history_structural_observations.py` displays retained summary observations with source excerpts or normalised labels as available; `history_suppression_review.py` presents recorded original removed lines and rules. `diagnostics.py` provides aggregate counts and safe links only for known Preview machines. `/summary/history` retains aggregate statistical context. New block review uses `history_block_review.py` and retained `gh_system_trivia.json` metadata (pending commit at this checkpoint).
+**Implementation:** `src/mht/preview/history_audit_review.py` shows individual GH source findings, including on unpublished systems; `history_structural_observations.py` displays retained summary observations with source excerpts or normalised labels as available; `history_suppression_review.py` presents recorded original removed lines and rules. `diagnostics.py` provides aggregate counts and safe links only for known Preview machines. `/summary/history` retains aggregate statistical context. Committed block review uses `history_block_review.py` and retained `gh_system_trivia.json` metadata. Transformation-specific inspection uses `publication_deferrals.py` and `transform_findings_review.py`; these are read-only presentation tools.
 
 **Evidence and distinctions:** GH 2.89a reported 41,555 removed lines, 1,152 section records with no surviving content and zero surviving blocks bearing suppression markers; these describe different stages of processing and are not contradictory. `wofch` and `kov7sprt` retain near-miss heading evidence even though the inspected rendered Trivia correctly shows subheadings. `sidearmsu` is an individual PORTS odd-quotes finding. Display limits must disclose omitted items, HTML escaping must protect source snippets, and diagnostics must not affect Wiki publication eligibility.
 
@@ -256,7 +256,7 @@ The `TTL *` prefix is hardware-related and is retained in source lookup keys but
 
 **Evidence:** GH 2.89a has 10 recognised standard section headings, four explicit aliases and no observed mapped non-standard variants. `FORBIDDEN PLAYING METHODS` occurs for `hpolym84` and `hyprolym` and covers techniques that can invalidate scores; `CAST OF ELEMENTS` occurs for `missile` and describes gameplay objects. All three occurrences were also present in the compared 2.81 and 2.88 summaries. MHT already preserves and displays their sections. No semantic remapping follows from rarity alone.
 
-**Consequences:** Continue the coverage audit of existing diagnostics. Do not treat aggregate block counts, heuristic policy invocations or suppression counts as machine-level anomalies. Record any future heading remapping as a separate, evidence-backed change with regression coverage, rather than burying it in a read-only Preview update.
+**Consequences:** The Preview coverage audit is complete as a presentation inventory. Do not treat aggregate block counts, heuristic policy invocations or suppression counts as machine-level anomalies. Record any future heading remapping as a separate, evidence-backed change with regression coverage, rather than burying it in a read-only Preview update.
 
 ## Updating decisions
 

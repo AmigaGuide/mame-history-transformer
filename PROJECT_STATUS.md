@@ -1,10 +1,10 @@
 # MHT - Project Status
 
-**Project:** MAME-History-Transformer (MHT)  
-**Repository:** `AmigaGuide/mame-history-transformer`  
-**Development branch:** `v2`  
-**Baseline date:** 16 November 2026  
-**Status:** GH ZIP revisions and audit snapshots implemented; Preview evidence coverage expanding; cross-revision anomaly review remains separate work  
+**Project:** MAME-History-Transformer (MHT)
+**Repository:** `AmigaGuide/mame-history-transformer`
+**Development branch:** `v2`
+**Baseline date:** 16 November 2026
+**Status:** GH ZIP revisions and audit snapshots implemented; Preview summary-evidence coverage audit completed; cross-revision anomaly review remains separate work
 **Companion:** `DESIGN_DECISIONS.md`
 
 > **Read this first when resuming development.** This document records the verified v2 architecture, known operational state and unfinished work. Source code and passing tests are authoritative for executable behaviour. Decisions are explained separately in `DESIGN_DECISIONS.md`. Update the current position after each substantial development increment, and distinguish verified facts from intentions.
@@ -44,52 +44,52 @@ The intended deliverable is automatic, source-backed findings plus a separate, p
 
 Additional figures from the user's logs: 18,363 systems with trivia output; 203 entries with port overviews; one History audit observation; 50,368 SNAPS classifications loaded by the transformer; 3.46 seconds for transformation. These numbers describe this particular release and run, not permanent invariants.
 
-## Preview diagnostics and processing-evidence update - 16 November 2026
+## Preview diagnostics and evidence coverage - 16 November 2026
 
-### Current position and verification
+### Completed exposure workstream
 
-- The read-only Preview now exposes individual GH audit findings (`history_audit_findings.json`) in an audit browser and on affected game pages, including unpublished GH Trivia entries. See commit `408ec47`.
-- Structural observations retained by the History summary are available on game pages, with links from Processing Diagnostics: PORTS without category subheadings, near-miss section banners, unidentified PORTS platforms and unmapped GH headings. See commits `a7c5cab` and `5a4b690`.
-- Deliberate GH Trivia filtering is now inspectable: aggregate suppressed-line and no-surviving-content counts, plus per-machine original removed lines, section and suppression rule. See commit `a700c63` and module `src/mht/preview/history_suppression_review.py`.
-- **Current uncommitted increment:** block-level provenance Preview work, including block classifications, detector identifiers, source-line positions, policy flags and text hashes, with aggregate processing-policy counts on `/summary/history`. The user reports **29 focused tests passed** and has shown real Preview screenshots. This increment is **not yet committed** at this checkpoint. Relevant new module: `src/mht/preview/history_block_review.py`; see `tests/test_preview_block_provenance.py`.
-- The older **783 passed, 1 skipped** full-suite result is a historical checkpoint from 15 November, **not** a fresh full-suite run after these Preview changes. The suppression-focused increment had **25 tests passed**; the latest block-provenance focused run had **29 tests passed**.
+The current `v2` Preview exposes recorded findings **without changing source archives, parser decisions, transformation eligibility or ExoticA Wiki outputs**. The project owner has visually inspected live GH 2.89a examples and confirmed successive focused regression checks. The most recent Transformation review checkpoint was **26 passing tests**; the last reported full regression baseline remains **783 passed, 1 skipped** on 15 November, before these later Preview increments. These are separate test checkpoints.
 
-### GH 2.89a observations worth preserving
+| Stage | Current recorded-evidence visibility | Remaining boundary |
+| --- | --- | --- |
+| MAME | Aggregate parsing statistics, machine/display distributions and invalid-display drop counts with retained sample details on the MAME stage summary; linked examples in Diagnostics | Dropped-display examples are bounded; not an exhaustive retained machine audit |
+| GH History | Individual source audit and game links (including unpublished Trivia), structural observations, unusual PORTS categories and banners, heading QC, source removals and full-section suppressions, block detectors, line positions and processing policies | Summary evidence and source-audit findings have different completeness and semantics; not every observation is a defect |
+| GH INI | Coverage, missing classification counts, per-file distributions and aggregate duplicate/multi-section counts on the INI summary | Duplicate-assignment shortname lists are not retained in the INI summary; do not fabricate affected-machine links |
+| Transformation | Publication deferrals with all recorded machine-specific reasons, title findings, parent/clone PORTS duplication, aggregate Wiki navigation conflicts and source/provenance statistics | Navigation summary contains conflict counts, not individual conflict details; duplicated PORTS membership alone does not retain the original duplicated source rows |
 
-These are values from the user's actual local GH 2.89a outputs and Preview screenshots. They are **not invariants**, quality scores or automatically confirmed defects.
+Key committed Preview checkpoints: individual audit `408ec47`; structural observations `a7c5cab`; additional structural evidence `5a4b690`; suppression review `a700c63`; Trivia block provenance/documentation `e4e6784`; remaining GH structural findings `bc2c410`; publication deferrals `a695fa4`; Transformation findings `ff51548`. Existing Preview release comparisons (`/compare`) compare Wiki and Trivia content, **not** anomaly snapshots.
 
-| Recorded observation | GH 2.89a | Meaning / follow-up |
+### GH 2.89a observations retained for future investigation
+
+The figures below were supplied by the project owner's local GH 2.89a Preview/screenshots. They are snapshot-specific counts, **not** general invariants or confirmed source defects.
+
+| Observation | Recorded value | Interpretation |
 | --- | ---: | --- |
-| GH individual History audit findings | 1 | `sidearmsu`, `gh.ports.odd_quotes`, original PORTS text retained. |
-| PORTS sections without category subheadings | 23 systems | Can be legitimate descriptive prose rather than a list of ports. |
-| Near-miss section banners | 2 systems | `wofch`, `kov7sprt`; both rendered their unusual lines as useful subheadings in inspected pages. |
-| Unmapped GH section headings | 2 distinct headings, 3 occurrences | `FORBIDDEN PLAYING METHODS` on `hpolym84` and `hyprolym`; `CAST OF ELEMENTS` on `missile`. The original sections and contents are retained. |
-| PORTS entries without identified platforms | 0 | No instances recorded by that detector; not proof that every PORTS interpretation is perfect. |
-| Unparseable dates | 0 | No instances recorded by that detector. |
-| Unexpected platform categories | 5 systems affected | Aggregate History summary observation; not equivalent to the individual audit count. |
-| Platform banners | 76 occurrences, 8 systems | History summary observation, not automatically an error. |
-| Deliberately suppressed GH Trivia lines | 41,555 | Includes redundant overview introductions and explicit technical labels; all recorded per machine with rule and removed line. |
-| Sections with no surviving non-blank content | 1,152 section records | May include originally empty sections; do not assume all were removed by suppression. |
-| Blocks carrying suppression markers | 0 | Distinct from removed source lines: filtering happens before surviving blocks are classified. |
+| Individual GH source audit | 1 finding | `sidearmsu`, `gh.ports.odd_quotes`; verbatim PORTS source evidence retained |
+| PORTS without subheadings | 23 systems | May represent legitimate prose |
+| Near-miss section banners | 2 systems | `wofch` and `kov7sprt`; both inspected examples rendered useful subheadings |
+| Unmapped GH headings | 2 labels, 3 occurrences | `FORBIDDEN PLAYING METHODS` twice; `CAST OF ELEMENTS` once; content preserved without forced remapping |
+| Unexpected PORTS categories | 1 distinct label affecting 5 systems | `DIGITAL` deserves later source review; classification is not auto-corrected |
+| PORTS platform banners | 76 occurrences in 8 systems | Alternative GH structure recorded, not presumed malformed |
+| Unidentified PORTS platforms / unparseable dates / residue systems | 0 / 0 / 0 | Detector-specific zeroes, not general proof of perfect data |
+| Suppressed GH Trivia lines | 41,555 | Recorded per-machine removed lines and suppression rules |
+| Sections with no surviving content | 1,152 | Includes possible originally blank sections |
+| Surviving blocks carrying suppression markers | 0 | Removed lines are counted before surviving block classification |
+| Classified Trivia blocks | 104,367 | 63,383 paragraphs; 29,041 pairs; 4,436 subheadings; 4,296 bullet lists; 3,211 numbered lists |
+| Publication deferrals | 64 parents, 64 machine reasons | Individual reasons listed separately from publication eligibility |
+| Transformation title findings | 0 records | No recorded examples in this run |
+| Parent/clone duplicate PORTS | 9 systems | Retained machine membership, not source-line duplication evidence |
+| Wiki navigation conflicts | 34 aggregate conflicts | Summary has breakdowns, not individual conflict identity |
 
-The two non-standard heading names and occurrences were unchanged between the user's processed GH 2.81, 2.88 and 2.89a summaries. Existing recognised headings remain **10 standard names and 4 explicit aliases**; no mapped non-standard variants were recorded in the 2.89a summary. The observed content of the three rare sections is meaningful and already retained, so **no heading remapping or parser change was approved**.
+The 2.81, 2.88 and 2.89a summaries preserve the same two uncommon GH section labels; no parser mapping adjustment was made. GH Trivia policy statistics also record 17,646 Overview per-line invocations, 7,108 Trivia per-line invocations and 106 Updates per-line/heuristic invocations. The 106 heuristic invocations are included in the Updates per-line count, not additional to it.
 
-### GH Trivia block classification and provenance
+### What is completed, and what is not
 
-The 2.89a History summary records **104,367 blocks**: 63,383 paragraphs, 29,041 pairs, 4,436 subheadings, 4,296 bullet lists and 3,211 numbered lists. These are recorded classified-block totals, not counts of games or source lines.
+**Completed:** The review of MAME, History, INI and Transformation summary-evidence presentation. The Preview now surfaces their recorded findings in an appropriate stage report, Diagnostics or machine/review page, or documents that the underlying summary has aggregate-only evidence. The temporary root file `PREVIEW_COVERAGE_AUDIT_2026-11-16.md` is a working checklist; retire it when this close-out is committed, rather than creating a series of dated coverage reports.
 
-The processing-policy summary shows per-line invocations for `overview` (17,646), `trivia` (7,108) and `updates` (106); `updates` also has **106 heuristic per-line invocations**. Heuristic invocations are included in the per-line counts, so they must not be added again. The per-block `meta` carries source/filtered line positions, detector names, processing policy, suppression markers where applicable and a short text hash. This is classification provenance, not a reliable mechanism for reconstructing lines removed *before* classification; those remain in `suppressions.by_system`.
+**Not completed:** A claim that all possible source anomalies are detected, per-machine evidence for summary fields that retain counts only, source-aware cross-revision anomaly comparison, or persistent human review decisions and export. These remain separate later work. In particular, do not interpret a vanished finding as an upstream fix without checking revision provenance and detector comparability.
 
-The current Preview blocks implementation displays aggregate policy counts on `/summary/history` and a bounded per-game block review. Its observed user tests and screenshots are positive, but the increment remains uncommitted until the working tree is reviewed and staged. No source XML, suppressor, parser or generated ExoticA Wiki output was changed for the Preview-only diagnostics increments.
-
-### Remaining work and boundaries
-
-1. Finish and commit the block-provenance Preview increment after checking the precise changed/untracked files; only stage `src/mht/preview/history_block_review.py`, `tests/test_preview_block_provenance.py` and the three actually modified Preview files. Do **not** stage temporary installer files or duplicated root-level Python modules/tests.
-2. Inventory **all existing** MAME, History, INI and Transform finding fields against visible Preview routes, and close specific gaps without inventing new detectors. Keep ordinary distributions on stage summaries; provide game-level evidence only when stored.
-3. Later, evaluate filter/search usability and persistent human review decisions. Cross-revision anomaly auditing and source-vs-detector attribution remain separate unfinished work (DD-009, DD-010, DD-015 and DD-016).
-4. Existing `/compare` and `/compare/machine/<machine>` Preview routes already provide read-only generated Wiki/Trivia release comparisons. Do not describe Preview integration of that content comparison as pending.
-
-The working objective is **expose existing evidence first; investigate possible GH or MHT fixes later**. Suppression, rare headings and heuristic classification are observations, not presumed defects. See DD-018 and DD-019.
+**Next focus:** Return to the existing audit snapshots, `src/mht/audit/history_compare.py` and decisions DD-009, DD-010, DD-015 and DD-016 to plan cross-revision findings and durable manual-review history. Do not create a second competing comparison engine or touch release outputs until the data contract and test cases are agreed.
 
 ## 2. Project purpose and history
 
@@ -327,7 +327,7 @@ Verified GH 2.89a member CRC32s from the user's live refresh test:
 
 ### Separate Preview workstream
 
-The existing Preview already includes read-only generated Wiki and Trivia content comparison, along with GH audit and processing-evidence views. The current task is a coverage audit of recorded MAME, History, INI and Transform findings; revision-aware anomaly comparison and persistent human review remain unfinished.
+The Preview evidence-coverage audit of MAME, History, INI and Transform summaries has been completed as a presentation and evidence-retention inventory. Revision-aware anomaly comparison and persistent human review remain unfinished, separate workstreams.
 
 ### Non-goals for the current increment
 
