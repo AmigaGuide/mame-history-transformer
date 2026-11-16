@@ -126,6 +126,25 @@ def build_diagnostic_groups(data: PreviewData) -> list[dict]:
         null_ports.get("by_system"), affected=null_ports.get("systems_affected"),
         count_label="Recorded occurrences", game_anchor="structural-observations")
 
+    suppressions = _mapping(data.history_summary.get("suppressions"))
+    suppression_counts = _mapping(suppressions.get("counts"))
+    add(history, "Suppressed GH Trivia source lines",
+        suppression_counts.get("total"), "suppressions.counts.total",
+        "Deliberately removed lines, often duplicate introductory or technical data; not necessarily defects.",
+        suppressions.get("by_system"), count_label="Removed lines",
+        game_anchor="suppression-review")
+    fully = _mapping(data.history_summary.get("fully_suppressed_sections"))
+    if "fully_suppressed_sections" in data.history_summary:
+        members = sorted({machine for systems in fully.values()
+                          if isinstance(systems, list)
+                          for machine in systems if isinstance(machine, str)})
+        total = sum(len([machine for machine in systems if isinstance(machine, str)])
+                    for systems in fully.values() if isinstance(systems, list))
+        add(history, "GH Trivia sections with no surviving content", total,
+            "fully_suppressed_sections",
+            "Section records without surviving non-blank content after filtering; may include originally empty sections.",
+            members, count_label="Section records", game_anchor="suppression-review")
+
     ini = group("Gaming History INI coverage", "summary_ini", "ini", "ini_parsing_summary.json")
     ini_totals = _mapping(data.ini_summary.get("totals"))
     for label, key in (

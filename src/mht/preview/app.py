@@ -32,6 +32,7 @@ from .history_audit_review import (
     build_history_audit_context, build_machine_audit_context,
 )
 from .history_structural_observations import build_machine_structural_observations
+from .history_suppression_review import build_machine_suppression_review
 from .summary_contexts import (
     prep_history_summary_page_context,
     prep_ini_summary_page_context,
@@ -199,6 +200,7 @@ def create_app(
         machine_structural = build_machine_structural_observations(
             pd.history_summary, machine,
         )
+        machine_suppressions = build_machine_suppression_review(pd.history_summary, machine)
 
         return render_template(
             "game.html",
@@ -216,6 +218,7 @@ def create_app(
             ports_display=rec.get("ports_display") or [],
             machine_audit=machine_audit,
             machine_structural=machine_structural,
+            machine_suppressions=machine_suppressions,
         )
 
     @app.route("/audit/history")

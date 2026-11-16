@@ -20,7 +20,7 @@
             {% endif %}
 
             {# Page-local navigation for potentially lengthy GH entries. #}
-            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings or machine_structural %}
+            {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings or machine_structural or machine_suppressions.has_evidence %}
                 <nav class="trivia-toc" aria-label="Sections on this page">
                     <strong>On this page:</strong>
                     {% if overview_blocks %}<a href="#trivia-overview">Overview</a>{% endif %}
@@ -31,6 +31,7 @@
                     {% if ports_display %}<a href="#trivia-ports">Ports</a>{% endif %}
                     {% if machine_audit.findings %}<a href="#parsing-findings">Parsing findings</a>{% endif %}
                     {% if machine_structural %}<a href="#structural-observations">Structural observations</a>{% endif %}
+                    {% if machine_suppressions.has_evidence %}<a href="#suppression-review">Suppression review</a>{% endif %}
                 </nav>
             {% endif %}
 
@@ -182,6 +183,33 @@
                             <p class="muted"><code>{{ item.path }}</code></p>
                         </div>
                     {% endfor %}
+                </section>
+            {% endif %}
+            {% if machine_suppressions.has_evidence %}
+                <section class="summary-block" id="suppression-review" style="margin-top:1.5rem;">
+                    <h2>Suppression review</h2>
+                    <p class="muted">Read-only record of deliberate GH Trivia processing. Suppressed lines
+                       are not automatically errors or missing information in the published Wiki.</p>
+                    {% if machine_suppressions.line_count %}
+                        <h3>Removed source lines ({{ machine_suppressions.line_count }})</h3>
+                        {% for entry in machine_suppressions.lines %}
+                            <div style="border-top:1px solid #666;padding:0.7rem 0;">
+                                <strong>{{ entry.section }} - <code>{{ entry.rule }}</code></strong>
+                                <pre style="white-space:pre-wrap;overflow-wrap:anywhere;">{{ entry.line }}</pre>
+                            </div>
+                        {% endfor %}
+                        {% if machine_suppressions.lines_omitted %}
+                            <p class="muted">{{ machine_suppressions.lines_omitted }} additional removed line(s) not shown.</p>
+                        {% endif %}
+                    {% endif %}
+                    {% if machine_suppressions.fully_suppressed %}
+                        <h3>Sections completely removed</h3>
+                        <p class="muted">Sections recorded as having no surviving non-blank lines after filtering.
+                           This can also include sections that were empty originally.</p>
+                        <ul>{% for section in machine_suppressions.fully_suppressed %}<li>{{ section }}</li>{% endfor %}</ul>
+                    {% endif %}
+                    <p class="muted">Evidence: <code>history_parsing_summary.json</code>
+                       (<code>suppressions.by_system</code> and <code>fully_suppressed_sections</code>).</p>
                 </section>
             {% endif %}
         </div>
