@@ -104,4 +104,68 @@ def build_machine_structural_observations(summary: dict, machine: str) -> list[d
             "omitted": max(0, len(heading_labels) - MAX_BANNER_LINES),
         })
 
+
+    # Category names are retained with affected machine memberships; they are
+    # not verbatim source lines and need not constitute errors.
+    unexpected = _mapping(anomalies.get("unexpected_platform_categories"))
+    category_map = _mapping(unexpected.get("by_category"))
+    categories = sorted(
+        category for category, entry in category_map.items()
+        if isinstance(category, str)
+        and isinstance(entry, dict)
+        and isinstance(entry.get("systems"), list)
+        and machine in entry["systems"]
+    )
+    if categories:
+        result.append({
+            "label": "Unexpected PORTS category names",
+            "description": (
+                "These category names were not among the parser's expected PORTS "
+                "categories. They may be legitimate source vocabulary; "
+                "the summary stores labels rather than original source lines."
+            ),
+            "items": categories[:MAX_BANNER_LINES],
+            "source_label": "Recorded category labels (not verbatim source lines)",
+            "path": "anomalies.unexpected_platform_categories.by_category",
+            "omitted": max(0, len(categories) - MAX_BANNER_LINES),
+        })
+
+    # Per-machine platform banner frequencies are observations, not faults.
+    banners_by_machine = _mapping(_mapping(anomalies.get("platform_banners")).get("by_system"))
+    banner_entry = _mapping(banners_by_machine.get(machine))
+    banner_counts = _mapping(banner_entry.get("banners"))
+    banner_lines = [
+        f"{name} ({count} occurrence(s))"
+        for name, count in sorted(banner_counts.items(), key=lambda kv: str(kv[0]).casefold())
+        if isinstance(name, str) and type(count) is int and count >= 0
+    ]
+    if banner_lines:
+        result.append({
+            "label": "PORTS platform banners",
+            "description": (
+                "Banners and their recorded frequencies in this machine's PORTS "
+                "section. Their presence is not necessarily a formatting defect."
+            ),
+            "items": banner_lines[:MAX_BANNER_LINES],
+            "source_label": "Recorded banner labels and occurrence counts",
+            "path": "anomalies.platform_banners.by_system",
+            "omitted": max(0, len(banner_lines) - MAX_BANNER_LINES),
+        })
+
+    # The residue flag records membership only, not a reason or source line.
+    residue = _mapping(summary.get("residue_flags"))
+    residual_members = _mapping(residue.get("systems_with_residue")).get("items")
+    if isinstance(residual_members, list) and machine in residual_members:
+        result.append({
+            "label": "Recorded residue flag",
+            "description": (
+                "The History parser flagged this machine as having residue. "
+                "This summary field does not specify the cause or retain source text."
+            ),
+            "items": [],
+            "source_label": "No per-machine residue details retained in this field",
+            "path": "residue_flags.systems_with_residue.items",
+            "omitted": 0,
+        })
+
     return result

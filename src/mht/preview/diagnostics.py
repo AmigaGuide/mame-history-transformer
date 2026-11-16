@@ -126,6 +126,35 @@ def build_diagnostic_groups(data: PreviewData) -> list[dict]:
         null_ports.get("by_system"), affected=null_ports.get("systems_affected"),
         count_label="Recorded occurrences", game_anchor="structural-observations")
 
+    # GH summary-only evidence that already includes machine membership.
+    # Do not turn source category labels into machine identifiers.
+    unexpected = _mapping(anomalies.get("unexpected_platform_categories"))
+    categories = _mapping(unexpected.get("by_category"))
+    category_members = sorted({
+        name for entry in categories.values() if isinstance(entry, dict)
+        for name in (entry.get("systems") if isinstance(entry.get("systems"), list) else [])
+        if isinstance(name, str)
+    })
+    add(history, "Unexpected PORTS category names",
+        unexpected.get("unique"), "anomalies.unexpected_platform_categories.unique",
+        "Distinct unexpected category labels (not a count of occurrences or source errors).",
+        category_members, affected=unexpected.get("systems_affected"),
+        count_label="Distinct categories", game_anchor="structural-observations")
+
+    platform_banners = _mapping(anomalies.get("platform_banners"))
+    add(history, "PORTS platform banners",
+        platform_banners.get("count"), "anomalies.platform_banners.count",
+        "Recorded banner occurrences, not automatically malformed headings.",
+        platform_banners.get("by_system"), affected=platform_banners.get("systems_affected"),
+        count_label="Banner occurrences", game_anchor="structural-observations")
+
+    residue_members = _mapping(residue.get("systems_with_residue"))
+    add(history, "Systems with recorded residue",
+        residue_members.get("count"), "residue_flags.systems_with_residue.count",
+        "Machines flagged for residue review; this field does not explain the cause.",
+        residue_members.get("items"), count_label="Systems",
+        game_anchor="structural-observations")
+
     suppressions = _mapping(data.history_summary.get("suppressions"))
     suppression_counts = _mapping(suppressions.get("counts"))
     add(history, "Suppressed GH Trivia source lines",
