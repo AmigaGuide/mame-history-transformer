@@ -33,6 +33,7 @@ from .history_audit_review import (
 )
 from .history_structural_observations import build_machine_structural_observations
 from .publication_deferrals import build_publication_review, machine_deferred_reason
+from .transform_findings_review import build_transform_findings_review, build_machine_transform_findings
 from .history_suppression_review import build_machine_suppression_review
 from .history_block_review import build_machine_block_review, build_history_policy_review
 from .summary_contexts import (
@@ -204,6 +205,7 @@ def create_app(
         )
         machine_suppressions = build_machine_suppression_review(pd.history_summary, machine)
         publication_deferred_reason = machine_deferred_reason(pd.transform_summary, machine)
+        machine_transform_findings = build_machine_transform_findings(pd.transform_summary, machine)
 
         return render_template(
             "game.html",
@@ -223,6 +225,7 @@ def create_app(
             machine_structural=machine_structural,
             machine_suppressions=machine_suppressions,
             publication_deferred_reason=publication_deferred_reason,
+            machine_transform_findings=machine_transform_findings,
             machine_blocks=build_machine_block_review(trivia),
         )
 
@@ -248,6 +251,16 @@ def create_app(
             page=request.args.get("page", "1"),
         )
         return render_template("publication_deferrals.html", version=version, **context)
+
+    @app.route("/review/transform")
+    def transform_findings_review() -> str:
+        ctx = build_transform_findings_review(
+            preview_data.transform_summary,
+            preview_machines=preview_data.machine_order,
+            query=request.args.get("q", ""), kind=request.args.get("kind", ""),
+            page=request.args.get("page", "1"),
+        )
+        return render_template("transform_findings_review.html", version=version, **ctx)
 
     @app.route("/diagnostics")
     def diagnostics() -> str:

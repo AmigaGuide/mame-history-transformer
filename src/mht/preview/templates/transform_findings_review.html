@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Transformation findings - MHT Preview{% endblock %}
+{% block nav_left %}<a href="{{ url_for('home') }}">Home</a> | <a href="{{ url_for('diagnostics') }}">Diagnostics</a> | Transformation findings{% endblock nav_left %}
+{% block content %}
+<h1>Transformation findings review</h1>
+<p class="lead">Read-only title observations and parent/clone PORTS duplication recorded by the Transformation stage. They are not necessarily defects.</p>
+<p class="muted">Evidence: <code>transform_summary.json</code> - <code>title_anomalies</code>, <code>ports.parent_clone_duplicate_ports</code> and <code>wiki_navigation</code>.</p>
+<p>Retained individual records: <strong>{{ all_records }}</strong> (title: {{ title_records }}, PORTS: {{ ports_records }}).
+Recorded duplicate-PORTS system total: {{ recorded_ports_total if recorded_ports_total is not none else 'Not recorded' }}.</p>
+<form action="{{ url_for('transform_findings_review') }}" method="get" style="margin:1rem 0;">
+<label for="q">Search machine, category or evidence</label><input id="q" name="q" maxlength="120" value="{{ q }}">
+<label for="kind">Type</label><select id="kind" name="kind"><option value="">All types</option><option value="title" {% if kind == 'title' %}selected{% endif %}>Title</option><option value="ports" {% if kind == 'ports' %}selected{% endif %}>PORTS duplication</option></select>
+<button type="submit">Filter</button> <a href="{{ url_for('transform_findings_review') }}">Clear</a>
+</form>
+<p>Showing {{ rows|length }} of {{ total }} matching records (page {{ page }} of {{ pages }}).</p>
+<section class="summary-block">
+{% if rows %}
+<table class="search-results"><thead><tr><th>Type / category</th><th>Machine</th><th>Recorded evidence</th><th>Preview</th></tr></thead><tbody>
+{% for item in rows %}<tr>
+<td>{{ item.category }}</td><td><code>{{ item.machine or 'Not recorded' }}</code></td>
+<td>{% if item.evidence is not none %}<span style="overflow-wrap:anywhere">{{ item.evidence }}</span>{% if item.pre_override %} <span class="muted">(before title override)</span>{% endif %}{% else %}<span class="muted">Machine membership recorded; no individual PORTS source lines in this field.</span>{% endif %}</td>
+<td>{% if item.preview %}<a href="{{ url_for('game', machine=item.machine, _anchor='transformation-findings') }}">Game page</a>{% else %}Not available{% endif %}</td>
+</tr>{% endfor %}</tbody></table>
+{% else %}<p class="muted">No matching individual records.</p>{% endif %}
+</section>
+{% if pages > 1 %}<p>{% if page > 1 %}<a href="{{ url_for('transform_findings_review', q=q, kind=kind, page=page-1) }}">Previous page</a>{% endif %} Page {{ page }} of {{ pages }} {% if page < pages %}<a href="{{ url_for('transform_findings_review', q=q, kind=kind, page=page+1) }}">Next page</a>{% endif %}</p>{% endif %}
+<section class="summary-block" style="margin-top:1rem;">
+<h2>Wiki navigation conflict categories</h2>
+<p>Recorded total: {{ navigation_total if navigation_total is not none else 'Not recorded' }}. The Transformation summary contains aggregate counts, <strong>not individual conflicting page names or redirects</strong>. No source detail has been invented.</p>
+<table class="search-results"><thead><tr><th>Category</th><th>Recorded count</th><th>JSON field</th></tr></thead><tbody>
+{% for item in navigation_rows %}<tr><td>{{ item.label }}</td><td>{{ item.count if item.count is not none else 'Not recorded' }}</td><td><code>{{ item.path }}</code></td></tr>{% endfor %}
+</tbody></table>
+</section>
+{% endblock content %}

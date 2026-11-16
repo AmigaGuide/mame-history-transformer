@@ -28,6 +28,17 @@
                 </section>
             {% endif %}
 
+            {% if machine_transform_findings %}
+                <section class="summary-block" id="transformation-findings" style="margin-bottom:1rem;">
+                    <h2>Transformation findings</h2>
+                    <p class="muted">Read-only observations recorded by the Transformer, not necessarily source defects.</p>
+                    {% for item in machine_transform_findings %}
+                        <p><strong>{{ item.label }}</strong>{% if item.detail is not none %}<br>{{ item.detail }}{% else %}<br><span class="muted">Only machine membership was recorded.</span>{% endif %}</p>
+                    {% endfor %}
+                    <p><a href="{{ url_for('transform_findings_review', q=machine) }}">Browse Transformation findings</a></p>
+                </section>
+            {% endif %}
+
             {# Page-local navigation for potentially lengthy GH entries. #}
             {% if overview_blocks or trivia_sections or mame_titles_display or ports_display or machine_audit.findings or machine_structural or machine_suppressions.has_evidence or machine_blocks.has_evidence %}
                 <nav class="trivia-toc" aria-label="Sections on this page">

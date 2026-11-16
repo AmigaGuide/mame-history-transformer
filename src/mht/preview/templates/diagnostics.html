@@ -21,6 +21,8 @@
 
   <p><a href="{{ url_for('publication_deferrals') }}">Browse Transformation publication deferrals</a> - all recorded deferred parents and their reasons, including machines without a Preview game page.</p>
 
+  <p><a href="{{ url_for('transform_findings_review') }}">Browse Transformation title, PORTS and navigation findings</a> - recorded machine evidence and aggregate navigation counts.</p>
+
   {% for group in diagnostic_groups %}
     <section class="summary-block" style="margin-top:1rem;">
       <h2>{{ group.title }}</h2>
